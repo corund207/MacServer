@@ -1,5 +1,18 @@
 # Architecture handoff
 
+Phase 3 checkpoint (2026-09-07): apps/admin contains a tested read-only foundation,
+not a fully verified or deployed admin app. See PHASE-3-STATUS.md. Its entry path
+is direct private HTTPS -> local daemon whois of actual socket peer -> independent
+per-user admin token -> user/device-bound session. It rejects forwarded headers;
+no proxy/Serve/Funnel is supported. Loopback binds are allowed but real loopback
+peers fail whois; test identity injection exists only in the factory/tests, not
+as a production environment switch. The process has no Docker/DB client or
+privileged helper. Host telemetry is read locally; optional curated files use
+pinned Linux directory descriptors. SQL, file writes and disruptive operations
+unconditionally deny execution. Browser/accessibility, private deployment and
+live TLS/identity/security checks remain outstanding. Do not start Phase 4.
+
+
 Phase 1 offline foundation and Phase 2 offline data-service configuration exist;
 the appliance is not installed. User authorized local commits without a remote.
 See docs/adr/0001-staged-foundation.md and docs/DATA-SERVICES.md.

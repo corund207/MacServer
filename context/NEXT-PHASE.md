@@ -1,30 +1,28 @@
-# Phase 3 handoff
+# Continue Phase 3 — do not start Phase 4
 
-Phase 2 delivered an offline foundation only: a790d54, 88854a0, b593d04,
-2f9bf75. All commits are local; push skipped because no remote/upstream exists. Read PHASE-2-STATUS.md,
-docs/DATA-SERVICES.md and docs/MIGRATION.md; preserve every runtime/deployment gate.
-No SQL, services or production access was exercised. Phase 3 must not assume a
-running Supabase appliance or invent live health data.
+The implementing task reached a terminal usage checkpoint at the user's request.
+Read PHASE-3-STATUS.md and USAGE-CHECKPOINT.md; verify git history/status and preserve
+all work. The read-only foundation compiles and passes 8 admin and 17 existing
+Python tests. It is not the complete Phase 3 deliverable or a deployed appliance.
 
-Precise next-task prompt:
+When account usage permits, resume unfinished Phase 3 in the existing task:
 
-> Implement Phase 3, the Tailscale-only administration app described in
-> PROMPT_TAILSCALE_ADMIN_APP.md. Read all applicable AGENTS.md files, all prompts,
-> README, context handoffs and data-service/migration runbooks. Inspect git status,
-> history and service definitions before editing; preserve existing work. Respect
-> the user's local delivery authorization: commit each validated unit with the
-> configured identity and no co-author trailers; push only when an upstream exists,
-> otherwise report skipped without inventing a remote. Build a private control
-> plane requiring verified Tailscale identity plus independent app authorization.
-> Never trust source IP or browser-supplied identity headers alone. Keep service-role,
-> database and Docker credentials out of the browser; use narrow operation helpers,
-> no browser terminal. Start with offline/testable interfaces and honest unavailable
-> telemetry. Supabase currently has no host listeners, api-only REST exposure,
-> optional service profiles and an empty function allowlist. Preserve these limits.
-> Do not start appliance services, apply migrations, connect to production or expose
-> routes without authorization and the documented backup/network gates. Add tests
-> for authorization, CSRF, input boundaries and secret redaction; follow the phase
-> prompt for build and accessibility checks. Update PHASE-3-STATUS.md, ARCHITECTURE.md
-> and NEXT-PHASE.md. Carry forward Phase 2's unexecuted SQL/RLS/runtime tests and
-> Phase 5 recovery prerequisites. Do not begin Phase 4. Report commits, validation,
-> skipped pushes and residual risks precisely.
+> Read all applicable AGENTS.md, prompts, README, context and runbooks. Inspect
+> status/history/remotes. Review apps/admin and the recorded limitations. Complete
+> browser/login/theme/mobile/stale-data and axe accessibility checks; synthetic
+> TLS/socket integration; official versioned Tailscale whois fields/expiry review;
+> provisioning, file-route, audit capacity/failure tests; private systemd example,
+> operator/rollback/threat-model documentation and CI integration. Read the browser
+> skill before browser tooling. Keep every unavailable operation explicitly gated
+> and do not create an authentication bypass or fake metrics. Review the complete
+> diff, test and commit each completed unit with the configured identity and no
+> co-author trailers. Push only if an upstream exists; otherwise report skipped.
+> Update Phase 3 handoffs. Do not start services, connect to production, execute SQL,
+> change the host, or perform destructive work. Preserve Phase 2 runtime/SQL/RLS/
+> network/hardware gates and Phase 5 recovery prerequisites. Do not start Phase 4.
+
+Only after Phase 3 is verified and delivered should a separate Phase 4 task build
+its fullscreen local operations dashboard. It must isolate read-only telemetry
+from private admin sessions, show stale/unavailable state honestly, add kiosk
+recovery tests, and preserve all deployment/recovery gates. This is a conditional
+future handoff, not authorization to skip remaining Phase 3 work.

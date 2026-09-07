@@ -1,0 +1,26 @@
+{
+  "name": "@macserver/admin",
+  "version": "1.0.0",
+  "description": "Private read-only appliance control plane",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.browser.json",
+    "test": "npm run build && node --test build/test/*.test.js",
+    "test:browser": "playwright test",
+    "start": "node build/src/main.js",
+    "provision": "node build/src/provision.js"
+  },
+  "type": "module",
+  "dependencies": {
+    "fastify": "5.12.3"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@playwright/test": "1.63.0",
+    "@types/node": "26.4.1",
+    "typescript": "7.0.2"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=24 <27"
+  }
+}
