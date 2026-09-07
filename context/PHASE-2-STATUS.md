@@ -1,24 +1,41 @@
 # Phase 2 status
 
-2026-09-07 — offline data-service foundation implemented; migration tooling next.
+2026-09-07 — safe offline services and migration foundation delivered. Not deployed
+or runtime-qualified. No production connection, SQL execution or service startup.
 
-User resume authorization supersedes the historical missing-remote stop rule:
-commit completed units locally, skip push while no upstream exists, invent no remote.
-Initial Phase 1 commit: 55605b6. Intake checkpoint: a790d54.
+User resume authorization permits local commits when no upstream exists. Pushes
+are skipped because `git remote -v` is empty; no remote was invented.
 
-Implemented official self-hosted/v0.8.0 source at commit
-241bb11c0627f2981746d37033f57dbfa81d29b0, source hashes and amd64 image digest pins;
-Debian 13 Docker package pins; deterministic private Compose adaptation; exclusive
-secret bootstrap; optional service profiles; deny-by-default Functions dispatcher.
-No ports are published; no service or production connection was started.
+Completed units:
+- a790d54: record intake and local delivery authorization.
+- 88854a0: pinned private Supabase configuration and secret bootstrap.
+- b593d04: normalize three upstream comment-line spaces, retain provenance hashes
+  and restore normal whitespace checks for every source file.
+- Migration foundation: separate NOLOGIN application owner/schema migration created
+  with verified CLI 2.116.0; offline catalog auditor; rollback-only synthetic RLS
+  probe; tamper-detecting export manifest tooling; managed migration runbook.
 
-Validation: source integrity/determinism, secret signatures/permissions/refusal,
-all-profile Compose configuration passed; 11 Python tests pass. Runtime service
-health and dispatcher behavior remain target validation gates. No schema migration
-or production readiness is claimed. See docs/DATA-SERVICES.md for limitations.
+Official service release: self-hosted/v0.8.0 at
+241bb11c0627f2981746d37033f57dbfa81d29b0. Source hashes, linux/amd64 image digests,
+Debian 13 Docker package pins and migration CLI archive checksum are recorded.
+All Compose profiles publish no ports. Only api is configured for REST exposure;
+Storage, Realtime, Functions and management are optional. Functions start with an
+empty allowlist and receive no database/service-role/signing secret.
 
-Push skipped: no remote or upstream. Phase 3 has not started.
+Validation: scripts/validate.py and scripts/supabase_config.py pass; all 17 Python
+tests pass, including all-profile Docker Compose config on CLI 5.5.0 without daemon
+use, source integrity, secret permissions/signatures/refusals, catalog negative
+fixtures and bundle tamper/symlink/overwrite refusal. Whitespace checks pass.
+The Debian target Compose pin is 5.5.1 and has not been installed/tested here.
 
-Service foundation committed as 88854a0. Follow-up normalizes three upstream
-comment-line trailing spaces and updates the integrity hash, removing the whitespace
-exception. All source files now use the normal whitespace check.
+Runtime gates remain: SQL parsing/execution and RLS probe on an approved isolated
+Supabase target; actual app schema/grant/policy inventory and two-user API tests;
+Auth/Storage compatibility and object parity; dispatcher/Edge Runtime tests; pinned
+image startup/health/resource measurements; Docker/firewall/Tailscale forwarding;
+private ingress and narrow egress; scoped app authorization/public route limits;
+Debian/T2 hardware qualification; encrypted backups and isolated restores (Phase 5).
+No RLS certification, production cutover or recovery-readiness claim is made.
+
+Read docs/DATA-SERVICES.md and docs/MIGRATION.md for exact commands, limitations,
+secret handling, one-project boundaries and rollback. No Phase 3 code was started.
+The next-task prompt in NEXT-PHASE.md preserves all outstanding runtime gates.

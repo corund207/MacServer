@@ -9,7 +9,11 @@ PostgreSQL 17, Auth, PostgREST and Envoy; Functions, Storage, Realtime and Studi
 are selected explicitly. No ports are published; one internal-only Docker network
 holds the trusted services. External egress, private ingress and public application
 routes remain gated. Functions receive no database/service-role/signing secret.
-Only api is selected for REST exposure; grants and RLS must precede deployment.
+Only api is selected for REST exposure. A separate macserver_owner NOLOGIN role and
+api/app_private schema migration are staged, not applied. Owner defaults deny
+implicit client object access; app grants/RLS remain explicit. Read-only catalog
+capture, offline structural audit, synthetic RLS probe and export manifests support
+migration rehearsals. They do not replace real per-app authorization tests.
 
 ```text
 Future application clients -> outbound tunnel -> HTTPS route allowlist

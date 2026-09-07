@@ -17,3 +17,8 @@ __pycache__/
 node_modules/
 .venv/
 .DS_Store
+
+# Private migration exports and local Supabase CLI state
+migration-exports/
+supabase/.temp/
+supabase/.branches/

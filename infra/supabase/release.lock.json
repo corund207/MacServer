@@ -107,5 +107,11 @@
   "package_index": "https://download.docker.com/linux/debian/dists/trixie/stable/binary-amd64/Packages",
   "normalizations": {
     "volumes/functions/main/index.ts": "Removed trailing spaces on upstream lines 83, 88 and 91 only; code unchanged."
+  },
+  "migration_cli": {
+    "version": "2.116.0",
+    "url": "https://github.com/supabase/cli/releases/download/v2.116.0/supabase_2.116.0_linux_amd64.tar.gz",
+    "sha256": "5b3031cb297d51b25be4c284e4c852254460ec722ec221d3b81b07d55acfd158",
+    "verification": "Archive checksum verified; version/help and migration new only. No DB command executed."
   }
 }

@@ -3,7 +3,7 @@
 Debian 13 backend-appliance foundation for a 2019 Intel MacBook Air. The source
 brief calls the appliance VEXVortex; this saved project is the canonical workspace.
 
-**Phase 1 is offline scaffolding, not an installed or production-ready server.**
+**Phases 1–2 are offline foundations, not an installed or production-ready server.**
 No service starts, port opens, disk changes, package installs, or migrations occur.
 
 ```sh
@@ -23,3 +23,7 @@ Read [installation](docs/INSTALL.md), [architecture](context/ARCHITECTURE.md),
 Layout: `apps/admin` private control plane; `apps/dashboard` local display;
 `infra` inert templates; `scripts` offline tooling; `tests` safety tests;
 `security` threat model; `docs` operator guides; `context` phase handoffs.
+
+Phase 2: [data services](docs/DATA-SERVICES.md), [migration runbook](docs/MIGRATION.md),
+[status and validation limits](context/PHASE-2-STATUS.md). No service startup or SQL
+execution is authorized by these configuration artifacts.
