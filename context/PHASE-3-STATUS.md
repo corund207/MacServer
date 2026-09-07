@@ -9,8 +9,9 @@ appliance, working recovery or production readiness. Phase 4 has not started.
 - 0281a37: private read-only admin foundation and initial usage checkpoint.
 - 684758a: versioned Tailscale identity/expiry and failure-boundary hardening.
 - d8d5aca: browser/accessibility tests and visual verification.
-- Final deployment/documentation unit: Add private admin deployment and operator
-  checks (resolve its exact hash from Git history or the final task response).
+- 8d8d511: private deployment/operator checks, threat model, runtime metadata,
+  inert unit validator and CI.
+- A final documentation-only commit records these exact delivery hashes.
 
 Commits use the configured identity without co-author trailers. Push skipped for
 all units: no remote/upstream exists. No remote was invented. Phase 2 history and

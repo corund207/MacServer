@@ -11,8 +11,11 @@ Implementing task: 01a07b2f-e64a-76f0-a6d4-3fed4d4a01ee. Initial main was clean 
 - 0281a37: private read-only foundation (previous usage checkpoint).
 - 684758a: versioned identity/expiry and failure-boundary hardening.
 - d8d5aca: browser/accessibility flow verification.
-- Final deployment/operator checks unit is being committed; its hash is in Git
-  history and will be recorded in the final handoff/task response.
+- 8d8d511: private deployment/operator checks, threat model, runtime pin and CI.
+
+Code delivery HEAD is 8d8d511, verified clean after commit. A final documentation-only
+commit records these hashes; use git log -1 for that handoff commit. No upstream
+exists; push is skipped for the final unit and handoff as for every earlier unit.
 
 The resumed task's requested verification/documentation scope is complete. Full
 admin capability is not claimed: SQL/metadata connections, service/raw-log
