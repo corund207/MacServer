@@ -68,3 +68,7 @@ additional synthetic tests are in progress; no new pass claimed yet.
 Resumed unit 1 passes all 13 tests including synthetic TLS. It is committed as
 Harden admin identity and failure boundaries; obtain its hash from Git history.
 No upstream exists, push skipped. Remaining: browser/a11y and deployment/docs/CI.
+
+Identity/failure-boundary unit committed as 684758a. Browser unit now passes five
+Playwright tests and all 21 axe scans, with agent-browser visual inspection. All
+synthetic fixtures closed; next complete deployment/docs/CI, no Phase 4.

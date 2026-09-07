@@ -9,11 +9,15 @@ cd apps/admin
 npm ci
 npm test
 npm audit --omit=dev
+npm run test:browser
 ```
 
-Expected: two TypeScript builds, 8 passing tests, dependency audit result.
-`npm run test:browser` has no suite yet; accessibility and visual verification are
-pending. `npm start` is a production entry point, not a local unauthenticated demo.
+Expected: production TypeScript builds, 13 backend tests, 5 browser tests and
+a dependency audit result. Browser tests use an isolated loopback HTTPS fixture,
+synthetic identity/credentials, temporary exports and ephemeral certificates.
+They use /usr/bin/chromium if present; otherwise run `npx playwright install chromium`
+for the pinned Playwright browser. ADMIN_TEST_CHROMIUM can select an explicit test
+executable. Automated accessibility checks supplement manual screen-reader testing. `npm start` is a production entry point, not a local unauthenticated demo.
 Do not run it as root, a Docker-group member, a sudoer or a Tailscale operator.
 
 The deployment candidate requires direct HTTPS on a Tailscale address verified

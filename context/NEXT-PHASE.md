@@ -30,3 +30,7 @@ future handoff, not authorization to skip remaining Phase 3 work.
 Resumed progress: identity/expiry review, provisioning/file-route/audit-failure and
 synthetic TLS tests are now complete (13 tests pass). Continue browser/a11y and
 deployment/docs/CI work next; do not redo or mislabel these as still missing.
+
+Resumed progress: browser/login/theme/mobile/stale-data and axe checks now pass,
+with manual visual inspection. Remaining in this task: private systemd example,
+operator/rollback/threat-model documentation, CI integration and final handoff.

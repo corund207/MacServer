@@ -5,7 +5,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.browser.json",
     "test": "npm run build && node --test build/test/*.test.js",
-    "test:browser": "playwright test",
+    "test:browser": "npm run build && playwright test",
     "start": "node build/src/main.js",
     "provision": "node build/src/provision.js"
   },

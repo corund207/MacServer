@@ -91,3 +91,16 @@ closes it; no production service or tailnet query. Initial TLS fixture SNI/Host
 mismatch was corrected so certificate trust and HTTP Host are tested separately.
 Remaining resumed work: browser/a11y, deployment/operator/threat-model and CI.
 Push skipped because no remote/upstream exists.
+
+### Resumed unit 2: browser and accessibility verification
+
+Five Playwright tests PASS on local Chromium: independent login, secure cookies,
+reload/logout, 10 views in dark/light themes, theme persistence, keyboard skip
+link, mobile overflow and unavailable controls, confined file navigation/download,
+audit filtering, stale data and absolute session expiry. Axe reported zero WCAG
+2 A/AA and 2.1 AA violations across 20 theme/view combinations and mobile login.
+No browser page errors. Manual agent-browser 0.36.0 verified login, desktop metrics
+navigation and no page errors; desktop/mobile screenshots were inspected.
+Only synthetic loopback HTTPS fixtures ran and were closed; no tailnet or appliance
+service started. Playwright outputs are ignored, not committed as operational
+evidence. Browser command rebuilds first. Remaining: deployment/docs/CI.

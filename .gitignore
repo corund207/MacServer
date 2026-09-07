@@ -15,6 +15,8 @@ vendor/
 __pycache__/
 *.pyc
 node_modules/
+apps/admin/test-results/
+apps/admin/playwright-report/
 .venv/
 .DS_Store
 

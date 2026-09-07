@@ -65,3 +65,7 @@ accepted; online kernel-TUN self state and expiry are checked before peer whois.
 Explicit machine authorization, matching user/node address, no tags/shares and
 peer expiry validation precede app token/session checks. Synthetic HTTPS and
 failure-path tests pass (13 total); actual tailnet identity remains a target gate.
+
+Admin browser verification now uses a separate test-only TLS fixture with synthetic
+identity, not a runtime bypass. Five browser tests and 21 axe scans pass; desktop
+and mobile layouts were visually inspected. Production runtime remains unchanged.
