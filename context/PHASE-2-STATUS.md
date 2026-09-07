@@ -11,7 +11,7 @@ Completed units:
 - 88854a0: pinned private Supabase configuration and secret bootstrap.
 - b593d04: normalize three upstream comment-line spaces, retain provenance hashes
   and restore normal whitespace checks for every source file.
-- Migration foundation: separate NOLOGIN application owner/schema migration created
+- 2f9bf75: migration foundation with separate NOLOGIN application owner/schema migration created
   with verified CLI 2.116.0; offline catalog auditor; rollback-only synthetic RLS
   probe; tamper-detecting export manifest tooling; managed migration runbook.
 
@@ -39,3 +39,8 @@ No RLS certification, production cutover or recovery-readiness claim is made.
 Read docs/DATA-SERVICES.md and docs/MIGRATION.md for exact commands, limitations,
 secret handling, one-project boundaries and rollback. No Phase 3 code was started.
 The next-task prompt in NEXT-PHASE.md preserves all outstanding runtime gates.
+
+Delivery record: the four implementation/intake commits above are local on main,
+with no Co-authored-by trailers. The final documentation commit records this list;
+resolve its ID with `git log -1 --oneline`. Push skipped for every unit because no
+remote/upstream exists. No implementation files remain pending.

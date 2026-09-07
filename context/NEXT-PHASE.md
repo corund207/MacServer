@@ -1,6 +1,7 @@
 # Phase 3 handoff
 
-Phase 2 delivered an offline foundation only. Read PHASE-2-STATUS.md,
+Phase 2 delivered an offline foundation only: a790d54, 88854a0, b593d04,
+2f9bf75. All commits are local; push skipped because no remote/upstream exists. Read PHASE-2-STATUS.md,
 docs/DATA-SERVICES.md and docs/MIGRATION.md; preserve every runtime/deployment gate.
 No SQL, services or production access was exercised. Phase 3 must not assume a
 running Supabase appliance or invent live health data.
