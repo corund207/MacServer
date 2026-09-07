@@ -1,0 +1,71 @@
+[Unit]
+Description=MacServer private read-only administration
+Documentation=file:/opt/macserver/docs/ADMIN.md
+After=network-online.target tailscaled.service
+Wants=network-online.target
+Requires=tailscaled.service
+ConditionArchitecture=x86-64
+# Inert until target checks and operator approval; never create this from CI.
+ConditionPathExists=/etc/macserver-admin/DEPLOYMENT-APPROVED
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=macserver-admin
+Group=macserver-admin
+WorkingDirectory=/opt/macserver/apps/admin
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/macserver-admin/admin.env
+LoadCredential=credentials.json:/etc/macserver-admin/credentials.json
+LoadCredential=tls.key:/etc/macserver-admin/tls.key
+LoadCredential=tls.crt:/etc/macserver-admin/tls.crt
+Environment=ADMIN_CREDENTIALS_FILE=%d/credentials.json
+Environment=ADMIN_TLS_KEY=%d/tls.key
+Environment=ADMIN_TLS_CERT=%d/tls.crt
+Environment=ADMIN_AUDIT_FILE=/var/lib/macserver-admin/audit.jsonl
+ExecStart=/opt/macserver-runtime/node-v26.8.1-linux-x64/bin/node /opt/macserver/apps/admin/build/src/main.js
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=20
+UMask=0077
+StateDirectory=macserver-admin
+StateDirectoryMode=0700
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+# /proc/self/fd and host counters are required; do not set ProcSubset=pid.
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+RemoveIPC=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost 100.64.0.0/10 fd7a:115c:a1e0::/48
+InaccessiblePaths=-/run/docker.sock -/var/run/docker.sock -/var/lib/docker
+ReadOnlyPaths=-/srv/macserver-admin-exports
+ReadWritePaths=/var/lib/macserver-admin
+MemoryMax=512M
+CPUQuota=50%
+TasksMax=64
+LimitNOFILE=1024
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

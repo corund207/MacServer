@@ -27,3 +27,8 @@ Layout: `apps/admin` private control plane; `apps/dashboard` local display;
 Phase 2: [data services](docs/DATA-SERVICES.md), [migration runbook](docs/MIGRATION.md),
 [status and validation limits](context/PHASE-2-STATUS.md). No service startup or SQL
 execution is authorized by these configuration artifacts.
+
+Phase 3: [private read-only admin](apps/admin/README.md), [operator guide](docs/ADMIN.md),
+[threat model](security/ADMIN-THREAT-MODEL.md) and [verified scope](context/PHASE-3-STATUS.md).
+Synthetic tests are local-only; no appliance service is deployed. SQL, collectors,
+file writes and privileged operations remain unavailable.

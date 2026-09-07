@@ -1,6 +1,8 @@
 # Private admin read-only foundation
 
-Phase 3 is incomplete and not deployed. See [status](../../context/PHASE-3-STATUS.md).
+The read-only Phase 3 slice is verified locally and remains undeployed. Broader
+admin capabilities are deferred. See [status](../../context/PHASE-3-STATUS.md) and
+the [operator guide](../../docs/ADMIN.md).
 No Supabase services, database connections or privileged operations are required
 for compilation or the in-process synthetic tests:
 
@@ -17,7 +19,8 @@ a dependency audit result. Browser tests use an isolated loopback HTTPS fixture,
 synthetic identity/credentials, temporary exports and ephemeral certificates.
 They use /usr/bin/chromium if present; otherwise run `npx playwright install chromium`
 for the pinned Playwright browser. ADMIN_TEST_CHROMIUM can select an explicit test
-executable. Automated accessibility checks supplement manual screen-reader testing. `npm start` is a production entry point, not a local unauthenticated demo.
+executable. Automated accessibility checks do not replace manual screen-reader testing.
+`npm start` is a production entry point, not a local unauthenticated demo.
 Do not run it as root, a Docker-group member, a sudoer or a Tailscale operator.
 
 The deployment candidate requires direct HTTPS on a Tailscale address verified
@@ -31,8 +34,9 @@ Use an administrator-only tailnet grant and target firewall rules before deploym
 The env example is documentation only. Startup requires valid protected TLS files,
 a canonical HTTPS `.ts.net` origin with the same port, a private credential file,
 and a writable private audit path. Credentials are loaded at startup; restarting
-invalidates sessions and reloads authorization. Certificate renewal/restart and
-the systemd hardening example remain to be implemented and verified.
+invalidates sessions and reloads authorization. The inert systemd example and
+certificate/rollback procedures are in the operator guide; target runtime and
+renewal verification remain required.
 
 `npm run provision -- NUMERIC_TAILSCALE_USER_ID /trusted/new-private-directory`
 creates a new directory with a salted verifier and `initial-token.txt`, both 0600.
@@ -66,4 +70,5 @@ Official references checked during implementation:
 [WhoIsResponse source](https://github.com/tailscale/tailscale/blob/main/client/tailscale/apitype/apitype.go),
 [Fastify server](https://fastify.dev/docs/latest/Reference/Server/),
 [Supabase private proxy boundaries](https://supabase.com/docs/guides/self-hosting/self-hosted-proxy-https).
-Pin and review the actual target CLI's identity/expiry fields before deployment.
+The versioned identity/expiry review is in [ADMIN-IDENTITY.md](../../docs/ADMIN-IDENTITY.md);
+verify the actual target against that contract before deployment.

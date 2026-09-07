@@ -1,106 +1,101 @@
-# Phase 3 — read-only foundation checkpoint
+# Phase 3 — verified read-only slice
 
-2026-09-07. The user/coordinator requested a terminal checkpoint at 76% five-hour
-usage and explicitly requested a local implementation commit after focused checks
-passed. This commit delivers a read-only foundation, not the complete Phase 3
-prompt or a deployed/production-qualified admin app. Do not start Phase 4.
+2026-09-07. The authorized resumed verification/documentation work is complete.
+This is a delivered read-only slice, NOT the entire admin prompt, an installed
+appliance, working recovery or production readiness. Phase 4 has not started.
 
-Intake read all local prompts, README, context, nested AGENTS.md and data-service
-and migration runbooks. Verified Phase 2 history through 90f4db7 and its 17 tests.
-The worktree initially was clean; main has no remote/upstream.
+## Delivery
 
-Implemented in apps/admin:
-- Exact dependency pins and lockfile; Fastify 5.12.3, TypeScript 7.0.2; Node >=24
-  <27, tested locally on 26.8.1. Server and browser production compilation.
-- Fixed read-only /usr/bin/tailscale status/whois calls; real socket-peer daemon
-  identity, user/device matching, tagged-device rejection, assigned private bind.
-  Forwarded identity headers are rejected. No proxy/Serve/Funnel trust.
-- Separate random per-user administration tokens, scrypt verifier, protected
-  credential files, 15-minute absolute user/device-bound sessions, secure cookies,
-  login and session CSRF checks, canonical Host, CSP and security headers, bounded
-  request/login/session capacity, sanitized errors and no request-body logging.
-- Private append-and-sync fixed-schema audit, latest 200 in-process events,
-  16 MiB durable-file refusal threshold. No tokens/SQL/file content in events.
-- Optional curated-root file listing and <=1 MiB text attachments; descriptor-
-  relative no-follow traversal, symlink/hardlink/hidden/path/type/size refusal.
-- Observed CPU/RAM/root-filesystem/uptime/aggregate-network metrics and bounded
-  sample history. Missing temperature, services and backup evidence are unavailable.
-- Responsive themed interface with overview, alerts, service state, graphs,
-  Tailscale, backups, files, database, updates, audit filtering and configuration.
-  Unavailable actions are visibly disabled and execution endpoints return 501.
-- Private TLS and exclusive credential-provisioning entry points, not executed.
+- 0281a37: private read-only admin foundation and initial usage checkpoint.
+- 684758a: versioned Tailscale identity/expiry and failure-boundary hardening.
+- d8d5aca: browser/accessibility tests and visual verification.
+- Final deployment/documentation unit: Add private admin deployment and operator
+  checks (resolve its exact hash from Git history or the final task response).
 
-Not implemented: SQL execution/database metadata connection; service/raw-log
-collectors; privileged helper; file writes; backup/restore/restart/update execution;
-re-authentication for those actions; browser terminal (intentionally excluded).
-Disabled controls do not constitute delivery of those capabilities.
+Commits use the configured identity without co-author trailers. Push skipped for
+all units: no remote/upstream exists. No remote was invented. Phase 2 history and
+unrelated work are preserved. The working tree is checked at final delivery.
 
-Actual validation:
-- cd apps/admin && npm test: PASS, both TypeScript builds and all 8 focused tests.
-  Covers private bind, daemon identity shape, independent authorization, session
-  expiry/device binding, login/session CSRF, security headers, static assets,
-  offline telemetry, unavailable operations, logout, audit content/failure,
-  login limits, path/symlink/hardlink/size and credential-file protections.
-- npm audit --omit=dev: zero reported vulnerabilities; subsequent lock refresh
-  also reported zero across 59 packages. Not a source/security certification.
-- python3 scripts/validate.py and scripts/supabase_config.py: PASS.
-- python3 -m unittest discover -s tests -v: PASS, 17 tests, including offline
-  Compose config. No Docker daemon use, services, SQL or production connections.
-- Whitespace checks pass. Source reviewed at checkpoint; full security review
-  remains outstanding. Initial unknown-error TypeScript typing failure was fixed.
+## Implemented scope
 
-Unexecuted checks and residual work: browser/mobile/theme/stale-state testing,
-axe accessibility (dependencies exist but no suite/config yet), production TLS
-integration, versioned Tailscale identity/expiry review, systemd deployment example,
-CI admin checks, provisioning/audit-capacity/logout-failure/file-route integration
-coverage, and full threat-model/operator/rollback review. Live ACLs, firewall,
-certificate renewal, Debian/T2 and identity behavior remain target-only gates.
+Fastify/TypeScript app with exact dependency lock; independent random user-specific
+admin token/scrypt verifier; absolute 15-minute user/device-bound session; secure
+cookies, login/session CSRF, canonical Host, CSP and security headers, bounded
+requests/logins/sessions/CLI calls, generic errors and no request-body logging.
 
-Security assumptions: unprivileged service account, no Docker/sudo/operator grant,
-root-controlled code/configuration and read-only curated exports. Downloads are
-not redacted; never allow secret/live database/backup roots. Audit is not resistant
-to compromise of its service account or root and needs external archival. The
-current identity parser needs upstream key-expiry/field review before deployment.
-Metrics describe the process host, not a remotely inferred appliance; memory
-includes cache, and network aggregates may double-count virtual interfaces.
+Direct private HTTPS only. The actual socket peer is resolved by fixed local CLI
+calls. Reviewed daemon 1.102.3, online kernel-TUN/self expiry and assigned addresses
+are checked; peer machine authorization, user ID, exact node address, stable ID
+and expiry must validate. Tagged/shared/unsigned-only/WireGuard-only devices and
+forwarded headers are denied. Versioned source hashes in docs/ADMIN-IDENTITY.md.
+An independent app token remains mandatory; there is no production test bypass.
 
-Delivery: one focused local read-only foundation commit at the user's explicit
-checkpoint request, using configured Git identity and no co-author trailer.
-Resolve the implementation and checkpoint commit hashes with git log. Push skipped:
-no remote/upstream exists. Phase 2 and every recovery/network/SQL/runtime gate are
-preserved. No real secrets, host changes, listeners or appliance services created.
-Phase 3 remains incomplete; this task ends safely at the checkpoint.
+Observed host CPU/RAM/root disk/uptime/aggregate network with bounded sample history;
+explicit unavailable readings, timestamps and staleness. Optional curated text
+exports use pinned directory descriptors, no-follow traversal, single-link regular
+files, size/type/listing bounds and audited attachment download. No content redaction
+is promised for exports. Audit serializes append-and-sync fixed-schema events,
+checks its 16 MiB limit before writing and shows 200 events since startup. Audit
+failure blocks login/file delivery; logout still revokes its session.
 
-## Resumed after reset — 2026-09-07
+Responsive dark/light UI includes overview, alerts, services, metrics, Tailscale,
+backups, files, database, updates, audit filtering and configuration. Unsupported
+controls are explicitly disabled; execution routes always return 501.
 
-The user authorized continuation after the usage reset. Tool verification showed
-7% five-hour / 39% weekly usage, clean main at 0281a37 and no remote. This
-supersedes the historical stop-only instructions above. Continue the remaining
-Phase 3 verification/documentation; no Phase 4 work. Identity hardening and
-additional synthetic tests are in progress; no new pass claimed yet.
+An inert systemd unit, runtime checksum pin, env example, private deployment and
+certificate/credential/audit/rollback guide, scoped threat model, offline unit
+parser and pinned CI checks complete the reviewed slice. No approval marker is
+created and no automatic host/deployment apply command exists.
 
-### Resumed unit 1: identity and failure boundaries
+## Actual validation
 
-Complete and validated: v1.102.3 daemon/status/expiry/device contract (official
-versioned source hashes in docs/ADMIN-IDENTITY.md), bounded CLI concurrency, audit
-capacity check before append, nonblocking special-file refusal, complete bounded
-file reads, file-denial audit, stricter provisioning parent checks. Added synthetic
-provisioning, audit, file-route and HTTPS tests. npm test PASS: both builds and all
-13 tests. TLS test uses an ephemeral certificate and loopback listener only, then
-closes it; no production service or tailnet query. Initial TLS fixture SNI/Host
-mismatch was corrected so certificate trust and HTTP Host are tested separately.
-Remaining resumed work: browser/a11y, deployment/operator/threat-model and CI.
-Push skipped because no remote/upstream exists.
+Final clean `npm ci --ignore-scripts` succeeded. `npm test`: both production
+TypeScript builds and all 13 backend tests PASS. Covers auth/CSRF/session/headers,
+identity/expiry/version, provisioning/refusal, audit capacity/reopen/failure, file
+routes/paths and synthetic TLS certificate/socket-peer/Host behavior.
 
-### Resumed unit 2: browser and accessibility verification
+`npm run test:browser`: all 5 Playwright tests PASS on local Chromium. Covers login,
+independent credential, secure cookie, reload/logout; all ten views and theme
+persistence; keyboard and mobile overflow; file download/audit filtering; network
+failure, staleness and session expiry. Axe reported zero WCAG 2 A/AA and 2.1 AA
+violations across 20 theme/view combinations plus mobile login. No page errors.
+Agent-browser 0.36.0 manually verified login/navigation and no page errors; desktop
+and mobile screenshots were visually inspected. Screenshots are ignored test
+artifacts, not appliance health evidence or a screen-reader certification.
 
-Five Playwright tests PASS on local Chromium: independent login, secure cookies,
-reload/logout, 10 views in dark/light themes, theme persistence, keyboard skip
-link, mobile overflow and unavailable controls, confined file navigation/download,
-audit filtering, stale data and absolute session expiry. Axe reported zero WCAG
-2 A/AA and 2.1 AA violations across 20 theme/view combinations and mobile login.
-No browser page errors. Manual agent-browser 0.36.0 verified login, desktop metrics
-navigation and no page errors; desktop/mobile screenshots were inspected.
-Only synthetic loopback HTTPS fixtures ran and were closed; no tailnet or appliance
-service started. Playwright outputs are ignored, not committed as operational
-evidence. Browser command rebuilds first. Remaining: deployment/docs/CI.
+`npm audit --omit=dev`: zero reported vulnerabilities. Both repo validators PASS.
+`python3 scripts/validate_admin_unit.py`: PASS with disposable executable/dependency
+stubs, no service execution. All 18 Python tests PASS including offline Compose
+config and inert admin deployment boundary. Staged whitespace/secret-marker review
+performed before commit. Hosted GitHub CI has not run because there is no remote.
+
+Initial TLS test SNI/Host mismatch was fixed in the fixture. A direct local unit
+check found no template Node binary on the development host; disposable-root
+parsing passed after supplying explicit parser stubs. Neither is a target pass.
+Only temporary loopback TLS fixtures and synthetic secrets were used, then cleaned
+up. No real tailnet status/identity queried; only installed CLI version/help read.
+
+## Deferred features and target gates
+
+NOT implemented: SQL execution/database metadata connection, service/raw-log
+collectors, privileged helper, file writes, backup/restore/restart/update execution,
+and re-authentication for those unavailable operations. Disabled UI is not delivery
+of these features. A browser terminal is intentionally excluded; use SSH keys.
+
+Before deployment: actual Debian 13/T2 qualification, authenticated runtime package
+provenance, certificate trust/renewal, clock, daemon/user permissions, service
+sandbox/cgroup/BPF and Docker/firewall/tailnet policy verification, approved/denied
+user/device tests, restart/rollback and recovery. The existing policy's 443 grant
+does not cover admin 8443; operator must reconcile and validate, not expose it.
+
+Risks: daemon control knowledge may lag revocation; local root/daemon are trusted;
+app compromise can read all OS-allowed curated exports; live files can change while
+read; audit is not tamper-resistant and has no automatic external archival; resource
+caps and Node/syscall compatibility require target testing. Missing temperature,
+service/request rates/backup evidence are never claimed healthy. No production,
+SQL/RLS, destructive-action or Phase 5 encrypted-recovery gate is waived.
+
+See docs/ADMIN.md, security/ADMIN-THREAT-MODEL.md and NEXT-PHASE.md for exact remaining
+work. Earlier 76–97% stop instructions are historical; resumption was explicitly
+authorized after reset and verified at 7% five-hour usage. This task now ends at
+completed read-only verification scope, not because a test failed.

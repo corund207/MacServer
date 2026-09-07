@@ -1,17 +1,25 @@
 # Architecture handoff
 
-Phase 3 checkpoint (2026-09-07): apps/admin contains a tested read-only foundation,
-not a fully verified or deployed admin app. See PHASE-3-STATUS.md. Its entry path
-is direct private HTTPS -> local daemon whois of actual socket peer -> independent
-per-user admin token -> user/device-bound session. It rejects forwarded headers;
-no proxy/Serve/Funnel is supported. Loopback binds are allowed but real loopback
-peers fail whois; test identity injection exists only in the factory/tests, not
-as a production environment switch. The process has no Docker/DB client or
-privileged helper. Host telemetry is read locally; optional curated files use
-pinned Linux directory descriptors. SQL, file writes and disruptive operations
-unconditionally deny execution. Browser/accessibility, private deployment and
-live TLS/identity/security checks remain outstanding. Do not start Phase 4.
+Phase 3 read-only slice is locally verified and delivered; not deployed or the full
+admin prompt. See PHASE-3-STATUS.md for commits/checks and deferred capabilities.
+Direct private HTTPS -> local Tailscale daemon status/whois of actual socket peer
+-> independent per-user token -> 15-minute user/device session. Reviewed daemon
+1.102.3, self/peer expiry, explicit machine authorization and exact addresses are
+required; tagged/shared/forwarded identity is denied. No proxy/Serve/Funnel.
 
+App has no Docker/DB client, privileged helper or browser terminal. It reads host
+observations and optional curated exports through pinned Linux directory descriptors,
+and writes bounded private audit events. SQL, file writes and disruptive routes
+unconditionally refuse execution. Service/backup/sensor data without collectors
+remain unavailable. Synthetic TLS/backend/browser/a11y verification passes; the
+production entry point has no environment-based identity bypass.
+
+The inert dedicated-user systemd candidate uses loaded credentials, read-only
+filesystem protection, private-network/resource limits and an absent approval
+marker. Node runtime metadata, operator/rollback guide, threat model and pinned CI
+are included. Parser stubs verify syntax only; actual Debian sandbox, TLS/renewal,
+Tailscale permissions/policy/firewall and all recovery gates remain outstanding.
+Phase 4 was not started. Scope and conditional future handoff are in NEXT-PHASE.md.
 
 Phase 1 offline foundation and Phase 2 offline data-service configuration exist;
 the appliance is not installed. User authorized local commits without a remote.
@@ -59,13 +67,3 @@ Phase mapping is in PHASE-PLAN.md. Phase 2 handles data services/migration tooli
 Phase 3 admin; Phase 4 dashboard; Phase 5 backup/recovery; Phase 6 audit; Phase 7
 readiness. Production deployment is gated on working recovery and exposure tests,
 regardless of which phase produces the code.
-
-Resumed Phase 3 identity boundary: only reviewed Tailscale daemon 1.102.3 is
-accepted; online kernel-TUN self state and expiry are checked before peer whois.
-Explicit machine authorization, matching user/node address, no tags/shares and
-peer expiry validation precede app token/session checks. Synthetic HTTPS and
-failure-path tests pass (13 total); actual tailnet identity remains a target gate.
-
-Admin browser verification now uses a separate test-only TLS fixture with synthetic
-identity, not a runtime bypass. Five browser tests and 21 axe scans pass; desktop
-and mobile layouts were visually inspected. Production runtime remains unchanged.
