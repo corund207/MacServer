@@ -87,7 +87,10 @@ export function createApp(options: Options) {
     try {
       const result = await options.files.list(String(q.path ?? ''));
       await options.audit.record(identities.get(req)!.userId, 'file-list', 'ok'); return result;
-    } catch { return reply.code(503).send({ error: 'File listing unavailable or path denied' }); }
+    } catch {
+      await options.audit.record(identities.get(req)!.userId, 'file-denied', 'denied');
+      return reply.code(503).send({ error: 'File listing unavailable or path denied' });
+    }
   });
   app.get('/api/files/download', async (req, reply) => {
     if (!options.files) return reply.code(503).send({ error: 'No curated file root configured' });
@@ -97,7 +100,10 @@ export function createApp(options: Options) {
       const data = await options.files.download(q.path);
       await options.audit.record(identities.get(req)!.userId, 'file-download', 'ok');
       return reply.header('content-disposition', 'attachment; filename="admin-export.txt"').type('application/octet-stream').send(data);
-    } catch { return reply.code(503).send({ error: 'File unavailable or path denied' }); }
+    } catch {
+      await options.audit.record(identities.get(req)!.userId, 'file-denied', 'denied');
+      return reply.code(503).send({ error: 'File unavailable or path denied' });
+    }
   });
   for (const operation of ['sql', 'backup', 'restore', 'update', 'restart', 'upload', 'delete']) {
     app.post(`/api/operations/${operation}`, async (req, reply) => {

@@ -16,7 +16,7 @@ export async function verify(c: Credential, secret: string) {
   return timingSafeEqual(await derive(secret, c.salt, 64) as Buffer, Buffer.from(c.hash, 'hex'));
 }
 export async function loadCredentials(path: string): Promise<Credential[]> {
-  const f = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  const f = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const s = await f.stat();
     if (!s.isFile() || (s.mode & 0o077) || s.size > 65536 || s.nlink !== 1) throw new Error('Unsafe credential file');

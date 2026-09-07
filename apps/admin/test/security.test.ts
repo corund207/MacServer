@@ -29,7 +29,7 @@ test('bind policy rejects public, wildcard, LAN, and unassigned CGNAT addresses'
   assertBind('127.0.0.1', []); assertBind('100.64.0.2', ['100.64.0.2']);
 });
 test('daemon identity requires exact node address, matching user and untagged device', () => {
-  const value = { Node: { StableID: 'node1', User: 123, Addresses: ['100.64.0.2/32'] }, UserProfile: { ID: 123 } };
+  const value = { Node: { StableID: 'node1', User: 123, MachineAuthorized: true, Addresses: ['100.64.0.2/32'] }, UserProfile: { ID: 123 } };
   assert.deepEqual(parseIdentity(value, '100.64.0.2'), user);
   assert.throws(() => parseIdentity(value, '100.64.0.3'));
   for (const extra of [{ Tags: ['tag:server'] }, { Expired: true }, { User: 999 }, { IsWireGuardOnly: true }]) assert.throws(() => parseIdentity({ ...value, Node: { ...value.Node, ...extra } }, '100.64.0.2'));

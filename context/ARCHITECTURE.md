@@ -59,3 +59,9 @@ Phase mapping is in PHASE-PLAN.md. Phase 2 handles data services/migration tooli
 Phase 3 admin; Phase 4 dashboard; Phase 5 backup/recovery; Phase 6 audit; Phase 7
 readiness. Production deployment is gated on working recovery and exposure tests,
 regardless of which phase produces the code.
+
+Resumed Phase 3 identity boundary: only reviewed Tailscale daemon 1.102.3 is
+accepted; online kernel-TUN self state and expiry are checked before peer whois.
+Explicit machine authorization, matching user/node address, no tags/shares and
+peer expiry validation precede app token/session checks. Synthetic HTTPS and
+failure-path tests pass (13 total); actual tailnet identity remains a target gate.

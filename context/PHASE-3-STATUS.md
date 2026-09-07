@@ -70,3 +70,24 @@ Resolve the implementation and checkpoint commit hashes with git log. Push skipp
 no remote/upstream exists. Phase 2 and every recovery/network/SQL/runtime gate are
 preserved. No real secrets, host changes, listeners or appliance services created.
 Phase 3 remains incomplete; this task ends safely at the checkpoint.
+
+## Resumed after reset — 2026-09-07
+
+The user authorized continuation after the usage reset. Tool verification showed
+7% five-hour / 39% weekly usage, clean main at 0281a37 and no remote. This
+supersedes the historical stop-only instructions above. Continue the remaining
+Phase 3 verification/documentation; no Phase 4 work. Identity hardening and
+additional synthetic tests are in progress; no new pass claimed yet.
+
+### Resumed unit 1: identity and failure boundaries
+
+Complete and validated: v1.102.3 daemon/status/expiry/device contract (official
+versioned source hashes in docs/ADMIN-IDENTITY.md), bounded CLI concurrency, audit
+capacity check before append, nonblocking special-file refusal, complete bounded
+file reads, file-denial audit, stricter provisioning parent checks. Added synthetic
+provisioning, audit, file-route and HTTPS tests. npm test PASS: both builds and all
+13 tests. TLS test uses an ephemeral certificate and loopback listener only, then
+closes it; no production service or tailnet query. Initial TLS fixture SNI/Host
+mismatch was corrected so certificate trust and HTTP Host are tested separately.
+Remaining resumed work: browser/a11y, deployment/operator/threat-model and CI.
+Push skipped because no remote/upstream exists.

@@ -1,11 +1,13 @@
 import { mkdir, writeFile, lstat } from 'node:fs/promises';
-import { isAbsolute, dirname } from 'node:path';
+import { isAbsolute, dirname, normalize } from 'node:path';
 import { credential, token } from './security.js';
 
 // Creates a NEW private directory; never rotates or overwrites an existing credential.
 const [userId, directory] = process.argv.slice(2);
 try {
-  if (!/^[1-9][0-9]{0,15}$/.test(userId ?? '') || !directory || !isAbsolute(directory)) throw new Error();
+  if (!/^[1-9][0-9]{0,15}$/.test(userId ?? '') || !Number.isSafeInteger(Number(userId)) || !directory || !isAbsolute(directory) || normalize(directory) !== directory || directory.endsWith('/')) throw new Error();
+  const parentStat = await lstat(dirname(directory));
+  if ((parentStat.mode & 0o022) || ![0, process.getuid!()].includes(parentStat.uid)) throw new Error();
   let parent = dirname(directory);
   while (true) { const s = await lstat(parent); if (!s.isDirectory() || s.isSymbolicLink()) throw new Error(); if (parent === '/') break; parent = dirname(parent); }
   await mkdir(directory, { mode: 0o700 });

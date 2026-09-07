@@ -44,9 +44,14 @@ export class Files {
     try {
       const s = await fd.stat();
       if (!s.isFile() || s.nlink !== 1 || s.size > 1024 * 1024) throw new Error('Unsafe file');
-      const buffer = Buffer.alloc(1024 * 1024 + 1); const { bytesRead } = await fd.read(buffer, 0, buffer.length, 0);
-      if (bytesRead > 1024 * 1024) throw new Error('File too large');
-      return buffer.subarray(0, bytesRead);
+      const buffer = Buffer.alloc(1024 * 1024 + 1); let total = 0;
+      while (total < buffer.length) {
+        const { bytesRead } = await fd.read(buffer, total, buffer.length - total, total);
+        if (!bytesRead) break;
+        total += bytesRead;
+      }
+      if (total > 1024 * 1024) throw new Error('File too large');
+      return buffer.subarray(0, total);
     } finally { await fd.close(); }
   }
   close() { return this.root.close(); }

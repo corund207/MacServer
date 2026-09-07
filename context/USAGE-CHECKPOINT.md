@@ -56,3 +56,15 @@ Terminal state: safely checkpointed read-only foundation; full Phase 3 incomplet
 Final coordinator update: five-hour usage reached 94%. Stop all feature work.
 The staged read-only foundation has passed the checks above; only staged secret/
 whitespace review and local commit remain. No broad new tests or Phase 4 work.
+
+## Resumed after reset — 2026-09-07
+
+The user authorized continuation after the usage reset. Tool verification showed
+7% five-hour / 39% weekly usage, clean main at 0281a37 and no remote. This
+supersedes the historical stop-only instructions above. Continue the remaining
+Phase 3 verification/documentation; no Phase 4 work. Identity hardening and
+additional synthetic tests are in progress; no new pass claimed yet.
+
+Resumed unit 1 passes all 13 tests including synthetic TLS. It is committed as
+Harden admin identity and failure boundaries; obtain its hash from Git history.
+No upstream exists, push skipped. Remaining: browser/a11y and deployment/docs/CI.
