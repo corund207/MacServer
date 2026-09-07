@@ -67,3 +67,9 @@ Phase mapping is in PHASE-PLAN.md. Phase 2 handles data services/migration tooli
 Phase 3 admin; Phase 4 dashboard; Phase 5 backup/recovery; Phase 6 audit; Phase 7
 readiness. Production deployment is gated on working recovery and exposure tests,
 regardless of which phase produces the code.
+
+## Coordinator boundary — 2026-09-07T14:42:31.404314+00:00
+
+Verified read-only Phase 3 delivery is at ca8e0f2; the implementing task is idle.
+At 78% five-hour usage, Phase 4 remains unstarted. This scheduling checkpoint
+changes no architecture, deployment state, deferred capability or recovery gate.

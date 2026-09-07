@@ -33,3 +33,10 @@ Tailscale provenance, TLS/renewal/clock, dedicated-user daemon access, systemd/B
 firewall/tailnet 8443 allow/deny, credential/audit lifecycle and rollback rehearsal.
 No real host, production DB, RLS runtime, hardware or encrypted restore qualification
 was completed here. Public administration remains forbidden.
+
+## Coordinator scheduling hold — 2026-09-07T14:42:31.404314+00:00
+
+At 78% five-hour usage (50% weekly), remain at the completed read-only boundary.
+After usage permits, recheck current task state and the scope condition above
+before dispatch. Do not retry completed verification or silently erase deferred
+admin capabilities. Latest delivery before this checkpoint is ca8e0f2.

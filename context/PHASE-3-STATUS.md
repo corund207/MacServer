@@ -100,3 +100,10 @@ See docs/ADMIN.md, security/ADMIN-THREAT-MODEL.md and NEXT-PHASE.md for exact re
 work. Earlier 76–97% stop instructions are historical; resumption was explicitly
 authorized after reset and verified at 7% five-hour usage. This task now ends at
 completed read-only verification scope, not because a test failed.
+
+## Coordinator checkpoint — 2026-09-07T14:42:31.404314+00:00
+
+Confirmed implementing task completed and idle; clean local delivery at ca8e0f2.
+Usage is now 78% five-hour / 50% weekly, so no further implementation or new phase
+was dispatched. Test results above are implementing-task evidence, not rerun by
+the coordinator. See USAGE-CHECKPOINT.md for the latest continuation boundary.

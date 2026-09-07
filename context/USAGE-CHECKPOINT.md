@@ -45,3 +45,18 @@ work needs no retry. Any future privileged/SQL/collector work must honor its exp
 authorization and Phase 5 recovery gates. Conditional Phase 4 instructions are in
 NEXT-PHASE.md; no Phase 4 implementation occurs in this task. Public administration
 remains forbidden and all Phase 2 SQL/RLS/runtime/network/hardware gates remain.
+
+## Coordinator safe boundary — 2026-09-07T14:42:31.404314+00:00
+
+Latest tool observation: 78% of the five-hour window and 50% weekly consumed.
+Five-hour reset is reported for 2026-09-07 18:40:15 UTC; recheck actual usage
+rather than assuming it has reset. No reset credit consumed by this run.
+Phase 3 implementing task is idle/completed; main was clean at ca8e0f2.
+The verified read-only delivery needs no retry. No new phase or feature work was
+started. Existing test evidence and all deferred features/target gates above stand.
+
+Continuation: read all AGENTS.md, prompts and context; check usage, Git and task
+state. Do not duplicate Phase 3 verification. Respect the conditional scope in
+NEXT-PHASE.md before creating a fresh Phase 4 task (gpt-6-astra, medium reasoning).
+If scope remains unresolved, preserve the deferrals rather than treating the full
+admin phase as complete. Local delivery remains authorized; no upstream exists.
