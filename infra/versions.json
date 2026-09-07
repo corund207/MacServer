@@ -1,8 +1,17 @@
 {
-  "os": {"id": "debian", "version": "13", "architecture": "x86_64"},
+  "os": {
+    "id": "debian",
+    "version": "13",
+    "architecture": "x86_64"
+  },
   "python": "3.13",
-  "supabase": {"source": "https://github.com/supabase/supabase", "commit": null},
-  "docker_engine_package": null,
-  "docker_compose_package": null,
+  "supabase": {
+    "source": "https://github.com/supabase/supabase",
+    "commit": "241bb11c0627f2981746d37033f57dbfa81d29b0",
+    "release": "self-hosted/v0.8.0",
+    "lock": "infra/supabase/release.lock.json"
+  },
+  "docker_engine_package": "5:29.8.0-1~debian.13~trixie",
+  "docker_compose_package": "5.5.1-1~debian.13~trixie",
   "deployment_enabled": false
 }

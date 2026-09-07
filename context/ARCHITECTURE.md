@@ -1,15 +1,15 @@
 # Architecture handoff
 
-Resume authorization (2026-09-07): implement and commit completed units locally;
-skip pushes while no upstream exists. This supersedes the historical remote blocker
-below. Do not invent a remote. Phase 2 implementation is now authorized.
+Phase 1 offline foundation and Phase 2 offline data-service configuration exist;
+the appliance is not installed. User authorized local commits without a remote.
+See docs/adr/0001-staged-foundation.md and docs/DATA-SERVICES.md.
 
-Phase 1 offline foundation is implemented; the appliance is not installed.
-See docs/adr/0001-staged-foundation.md for the accepted decision and tradeoffs.
-
-Phase 2 intake (2026-09-07) confirmed the absent Git remote/upstream. Implementation
-is blocked by the delivery gate; no data-service architecture has been implemented
-or deployed. See PHASE-2-STATUS.md for the resume requirements.
+Phase 2 pins the official Supabase v0.8.0 distribution and image digests. Core is
+PostgreSQL 17, Auth, PostgREST and Envoy; Functions, Storage, Realtime and Studio/meta
+are selected explicitly. No ports are published; one internal-only Docker network
+holds the trusted services. External egress, private ingress and public application
+routes remain gated. Functions receive no database/service-role/signing secret.
+Only api is selected for REST exposure; grants and RLS must precede deployment.
 
 ```text
 Future application clients -> outbound tunnel -> HTTPS route allowlist
@@ -19,8 +19,8 @@ Internal SSD -> future verified encrypted backup -> removable 250 GB flash drive
 Local console -> future read-only operations dashboard
 ```
 
-Only the offline preflight, bundle staging, backup-password generation, candidate
-host settings, tests and documentation exist today. No arrows above are deployed.
+Offline preflight, staging, secret generation, candidate host settings, pinned
+service configuration, tests and documentation exist. No arrows above are deployed.
 The stage command reads infra, writes a private bundle and hashes its contents;
 it never applies configuration. Preflight checks Debian 13 amd64, memory and space
 on the selected state filesystem; hardware qualification remains manual.
@@ -28,12 +28,12 @@ on the selected state filesystem; hardware qualification remains manual.
 Fixed decisions: Debian 13 minimal; encrypted internal live storage; no plaintext
 disk swap; physical unlock after reboot initially; Tailscale-only management;
 ordinary key-only OpenSSH; no router forwarding; no public management services.
-Future service pins must be exact before deployment is enabled. The native
+Service and package pins are recorded; target validation must precede deployment. The native
 nftables input candidate is not Docker forwarding protection and must pass a
 backend-specific integration review. Journald, time sync, lid behavior, updates
 and SSH templates remain unapplied.
 
-Open: T2 hardware support; exact Docker/backend and service pins; application
+Open: T2 hardware support; Docker backend integration; application
 inventory and isolation model; domain/tunnel provider; route and credential design;
 backup capacity and off-device destination; recovery-time requirements. No real
 identity, domain, device UUID or secret belongs in tracked configuration.

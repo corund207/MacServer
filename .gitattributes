@@ -1,0 +1,2 @@
+# Preserve exact upstream bytes for provenance verification.
+infra/supabase/upstream/** -whitespace

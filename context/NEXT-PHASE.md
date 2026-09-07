@@ -1,17 +1,9 @@
 # Next phase handoff
 
-Resume authorization (2026-09-07): implement and commit completed units locally;
-skip pushes while no upstream exists. This supersedes the historical remote blocker
-below. Do not invent a remote. Phase 2 implementation is now authorized.
+Phase 2 is in progress. Complete migration inventory/export/import runbooks, schema
+and RLS verification tooling before handing off to Phase 3. Read PHASE-2-STATUS.md
+and docs/DATA-SERVICES.md. Do not start services or connect to production.
 
-Phase 2 intake on 2026-09-07 confirmed this blocker is still present: main points
-to 55605b6, with no remote or upstream. See PHASE-2-STATUS.md. The prompt below
-remains the resume task; Phase 3 must wait for completed Phase 2 delivery.
-
-Do not begin Phase 2 in this task. First resolve Git delivery: supply the actual
-GitHub remote and upstream branch, then push the Phase 1 commit as documented in
-docs/DEVELOPMENT.md. No remote was invented. Check account usage before dispatch.
-
-Precise next-task prompt:
-
-> Continue MacServer with Phase 2: Supabase-compatible data services and managed-project migration tooling. Read AGENTS.md and every nested AGENTS.md, all PROMPT*.md and README.md, and all context/*.md including the Phase 1 status. Inspect Git status, history, remotes, upstream and diffs; preserve existing work. Resolve the documented Git delivery blocker before starting new delivery units. Load the Supabase skill and verify current official self-hosting documentation. Review the Phase 1 ADR and installer/firewall gates. Select and record an exact upstream revision, image digests and Debian 13 Docker Engine/CLI/containerd/Compose package versions; implement a reviewable Compose configuration and secret bootstrap without starting services on this development host. Define one-project compatibility and application isolation, private management bindings, network segmentation, health checks, and only explicitly approved public routes (keep public ingress disabled absent the necessary values and authorization controls). Add non-destructive migration tooling/runbooks for schema/data, Storage, Edge Functions, secrets and RLS negative tests with cutover/rollback gates. Do not install an OS, change host networking, wipe disks, delete volumes, migrate production data or deploy publicly. Stateful target deployment requires separately verified backup/restore readiness. Validate proportionately, review each delivery unit, commit using configured identity without co-author trailers, and push to the configured upstream. Update context/PHASE-2-STATUS.md, ARCHITECTURE.md and NEXT-PHASE.md; checkpoint before usage exhaustion. Report commits, pushes, evidence, unresolved target gates and the next-phase prompt. Do not start Phase 3.
+User authorizes local commits per delivery unit; skip pushes while no upstream
+exists. Do not invent a remote. Target deployment, backup/restore, network and
+hardware gates remain mandatory. No Phase 3 work is authorized in this task.

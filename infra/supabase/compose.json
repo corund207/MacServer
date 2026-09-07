@@ -1,0 +1,578 @@
+{
+  "name": "macserver-data",
+  "services": {
+    "studio": {
+      "image": "supabase/studio:2026.08.03-sha-022b374@sha256:2616bb9ed337963fe27ce682b1783875083537d5fb54bfea4c399fb0c56ff03e",
+      "restart": "unless-stopped",
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "node -e \"fetch('http://localhost:3000/api/platform/profile').then((r) => {if (r.status !== 200) throw new Error(r.status)})\""
+        ],
+        "timeout": "10s",
+        "interval": "5s",
+        "retries": 3,
+        "start_period": "20s"
+      },
+      "environment": {
+        "HOSTNAME": "0.0.0.0",
+        "STUDIO_PG_META_URL": "http://meta:8080",
+        "POSTGRES_PORT": "${POSTGRES_PORT}",
+        "POSTGRES_HOST": "${POSTGRES_HOST}",
+        "POSTGRES_DB": "${POSTGRES_DB}",
+        "POSTGRES_PASSWORD": "${POSTGRES_PASSWORD:?required}",
+        "POSTGRES_USER_READ_WRITE": "postgres",
+        "PG_META_CRYPTO_KEY": "${PG_META_CRYPTO_KEY:?required}",
+        "PGRST_DB_SCHEMAS": "api",
+        "PGRST_DB_MAX_ROWS": "${PGRST_DB_MAX_ROWS:-1000}",
+        "PGRST_DB_EXTRA_SEARCH_PATH": "extensions",
+        "DEFAULT_ORGANIZATION_NAME": "${STUDIO_DEFAULT_ORGANIZATION}",
+        "DEFAULT_PROJECT_NAME": "${STUDIO_DEFAULT_PROJECT}",
+        "OPENAI_API_KEY": "${OPENAI_API_KEY}",
+        "SUPABASE_URL": "http://api-gw:8000",
+        "SUPABASE_PUBLIC_URL": "${SUPABASE_PUBLIC_URL}",
+        "SUPABASE_ANON_KEY": "${ANON_KEY:?required}",
+        "SUPABASE_SERVICE_KEY": "${SERVICE_ROLE_KEY:?required}",
+        "AUTH_JWT_SECRET": "${JWT_SECRET:?required}",
+        "SUPABASE_PUBLISHABLE_KEY": "${SUPABASE_PUBLISHABLE_KEY}",
+        "SUPABASE_SECRET_KEY": "${SUPABASE_SECRET_KEY}",
+        "ENABLED_FEATURES_LOGS_ALL": "false",
+        "SNIPPETS_MANAGEMENT_FOLDER": "/app/snippets",
+        "EDGE_FUNCTIONS_MANAGEMENT_FOLDER": "/app/edge-functions"
+      },
+      "volumes": [
+        "snippets:/app/snippets",
+        "./functions:/app/edge-functions:ro"
+      ],
+      "platform": "linux/amd64",
+      "profiles": [
+        "management"
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "mem_limit": "768m",
+      "pids_limit": 256,
+      "logging": {
+        "driver": "local",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      },
+      "depends_on": {
+        "meta": {
+          "condition": "service_started"
+        }
+      }
+    },
+    "api-gw": {
+      "image": "envoyproxy/envoy:v1.39.0@sha256:f6e2f57b1bef8235083a2553b523508cf97d8991c893fd2aae3a94a6b21096a2",
+      "restart": "unless-stopped",
+      "networks": {
+        "default": {
+          "aliases": [
+            "envoy",
+            "kong"
+          ]
+        }
+      },
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "timeout 1 bash -c '</dev/tcp/127.0.0.1/8000'"
+        ],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 3
+      },
+      "depends_on": {
+        "rest": {
+          "condition": "service_healthy"
+        },
+        "auth": {
+          "condition": "service_healthy"
+        }
+      },
+      "volumes": [
+        "./upstream/volumes/api/envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro",
+        "./upstream/volumes/api/envoy/cds.yaml:/etc/envoy/cds.yaml:ro",
+        "./upstream/volumes/api/envoy/lds.template.yaml:/etc/envoy/lds.template.yaml:ro",
+        "./upstream/volumes/api/envoy/docker-entrypoint.sh:/docker-entrypoint.sh:ro"
+      ],
+      "environment": {
+        "ANON_KEY": "${ANON_KEY:?required}",
+        "SERVICE_ROLE_KEY": "${SERVICE_ROLE_KEY:?required}",
+        "SUPABASE_PUBLISHABLE_KEY": "${SUPABASE_PUBLISHABLE_KEY:-}",
+        "SUPABASE_SECRET_KEY": "${SUPABASE_SECRET_KEY:-}",
+        "ANON_KEY_ASYMMETRIC": "${ANON_KEY_ASYMMETRIC:-}",
+        "SERVICE_ROLE_KEY_ASYMMETRIC": "${SERVICE_ROLE_KEY_ASYMMETRIC:-}",
+        "DASHBOARD_USERNAME": "${DASHBOARD_USERNAME}",
+        "DASHBOARD_PASSWORD": "${DASHBOARD_PASSWORD:?required}"
+      },
+      "entrypoint": [
+        "/bin/sh",
+        "/docker-entrypoint.sh"
+      ],
+      "platform": "linux/amd64",
+      "profiles": [
+        "core"
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "mem_limit": "256m",
+      "pids_limit": 256,
+      "logging": {
+        "driver": "local",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+    },
+    "auth": {
+      "image": "supabase/gotrue:v2.189.0@sha256:0a8557cbe0fd53a067726fe656f79eb1b03a1ab3cdde4b59907ce5a1e1a202ab",
+      "restart": "unless-stopped",
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:9999/health"
+        ],
+        "timeout": "5s",
+        "interval": "5s",
+        "retries": 3
+      },
+      "depends_on": {
+        "db": {
+          "condition": "service_healthy"
+        }
+      },
+      "environment": {
+        "GOTRUE_API_HOST": "0.0.0.0",
+        "GOTRUE_API_PORT": 9999,
+        "API_EXTERNAL_URL": "${API_EXTERNAL_URL}",
+        "GOTRUE_DB_DRIVER": "postgres",
+        "GOTRUE_DB_DATABASE_URL": "postgres://supabase_auth_admin:${POSTGRES_PASSWORD:?required}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}",
+        "GOTRUE_SITE_URL": "${SITE_URL}",
+        "GOTRUE_URI_ALLOW_LIST": "${ADDITIONAL_REDIRECT_URLS}",
+        "GOTRUE_DISABLE_SIGNUP": "${DISABLE_SIGNUP}",
+        "GOTRUE_JWT_ADMIN_ROLES": "service_role",
+        "GOTRUE_JWT_AUD": "authenticated",
+        "GOTRUE_JWT_DEFAULT_GROUP_NAME": "authenticated",
+        "GOTRUE_JWT_EXP": "${JWT_EXPIRY}",
+        "GOTRUE_JWT_SECRET": "${JWT_SECRET:?required}",
+        "GOTRUE_JWT_ISSUER": "${API_EXTERNAL_URL}",
+        "GOTRUE_EXTERNAL_EMAIL_ENABLED": "${ENABLE_EMAIL_SIGNUP}",
+        "GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED": "${ENABLE_ANONYMOUS_USERS}",
+        "GOTRUE_MAILER_AUTOCONFIRM": "${ENABLE_EMAIL_AUTOCONFIRM}",
+        "GOTRUE_SMTP_ADMIN_EMAIL": "${SMTP_ADMIN_EMAIL}",
+        "GOTRUE_SMTP_HOST": "${SMTP_HOST}",
+        "GOTRUE_SMTP_PORT": "${SMTP_PORT}",
+        "GOTRUE_SMTP_USER": "${SMTP_USER}",
+        "GOTRUE_SMTP_PASS": "${SMTP_PASS}",
+        "GOTRUE_SMTP_SENDER_NAME": "${SMTP_SENDER_NAME}",
+        "GOTRUE_MAILER_URLPATHS_INVITE": "${MAILER_URLPATHS_INVITE}",
+        "GOTRUE_MAILER_URLPATHS_CONFIRMATION": "${MAILER_URLPATHS_CONFIRMATION}",
+        "GOTRUE_MAILER_URLPATHS_RECOVERY": "${MAILER_URLPATHS_RECOVERY}",
+        "GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE": "${MAILER_URLPATHS_EMAIL_CHANGE}",
+        "GOTRUE_EXTERNAL_PHONE_ENABLED": "${ENABLE_PHONE_SIGNUP}",
+        "GOTRUE_SMS_AUTOCONFIRM": "${ENABLE_PHONE_AUTOCONFIRM}"
+      },
+      "platform": "linux/amd64",
+      "profiles": [
+        "core"
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "mem_limit": "256m",
+      "pids_limit": 256,
+      "logging": {
+        "driver": "local",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+    },
+    "rest": {
+      "image": "postgrest/postgrest:v14.12@sha256:560895fc1f6cb78f36ae64682c85bfc923c73da2d3a473ae2f55755fd7991ad1",
+      "restart": "unless-stopped",
+      "depends_on": {
+        "db": {
+          "condition": "service_healthy"
+        }
+      },
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "postgrest",
+          "--ready"
+        ],
+        "interval": "5s",
+        "timeout": "5s",
+        "retries": 3
+      },
+      "environment": {
+        "PGRST_DB_URI": "postgres://authenticator:${POSTGRES_PASSWORD:?required}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}",
+        "PGRST_DB_SCHEMAS": "api",
+        "PGRST_DB_MAX_ROWS": "${PGRST_DB_MAX_ROWS:-1000}",
+        "PGRST_DB_EXTRA_SEARCH_PATH": "extensions",
+        "PGRST_DB_ANON_ROLE": "anon",
+        "PGRST_ADMIN_SERVER_PORT": 3001,
+        "PGRST_ADMIN_SERVER_HOST": "localhost",
+        "PGRST_JWT_SECRET": "${JWT_JWKS:-${JWT_SECRET:?required}}",
+        "PGRST_DB_USE_LEGACY_GUCS": "false",
+        "PGRST_APP_SETTINGS_JWT_SECRET": "${JWT_SECRET:?required}",
+        "PGRST_APP_SETTINGS_JWT_EXP": "${JWT_EXPIRY}"
+      },
+      "command": [
+        "postgrest"
+      ],
+      "platform": "linux/amd64",
+      "profiles": [
+        "core"
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "mem_limit": "256m",
+      "pids_limit": 256,
+      "logging": {
+        "driver": "local",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+    },
+    "realtime": {
+      "image": "supabase/realtime:v2.102.3@sha256:2cc87edf0db5cebf1f58c9a4116bb80a25ff764c8706b6802fa68d976e66e5d7",
+      "restart": "unless-stopped",
+      "depends_on": {
+        "db": {
+          "condition": "service_healthy"
+        }
+      },
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "curl -sSfL --head -o /dev/null -H \"Authorization: Bearer ${ANON_KEY}\" http://localhost:4000/api/tenants/realtime-dev/health"
+        ],
+        "timeout": "5s",
+        "interval": "30s",
+        "retries": 3,
+        "start_period": "10s"
+      },
+      "environment": {
+        "PORT": 4000,
+        "DB_HOST": "${POSTGRES_HOST}",
+        "DB_PORT": "${POSTGRES_PORT}",
+        "DB_USER": "supabase_admin",
+        "DB_PASSWORD": "${POSTGRES_PASSWORD:?required}",
+        "DB_NAME": "${POSTGRES_DB}",
+        "DB_AFTER_CONNECT_QUERY": "SET search_path TO _realtime",
+        "DB_ENC_KEY": "${REALTIME_DB_ENC_KEY:?required}",
+        "API_JWT_SECRET": "${JWT_SECRET:?required}",
+        "SECRET_KEY_BASE": "${SECRET_KEY_BASE:?required}",
+        "METRICS_JWT_SECRET": "${JWT_SECRET:?required}",
+        "ERL_AFLAGS": "-proto_dist inet_tcp",
+        "DNS_NODES": "''",
+        "RLIMIT_NOFILE": "10000",
+        "APP_NAME": "realtime",
+        "SEED_SELF_HOST": "true",
+        "RUN_JANITOR": "true",
+        "DISABLE_HEALTHCHECK_LOGGING": "true"
+      },
+      "hostname": "realtime-dev.supabase-realtime",
+      "container_name": "realtime-dev.supabase-realtime",
+      "platform": "linux/amd64",
+      "profiles": [
+        "realtime"
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "mem_limit": "512m",
+      "pids_limit": 256,
+      "logging": {
+        "driver": "local",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+    },
+    "storage": {
+      "image": "supabase/storage-api:v1.60.4@sha256:6f706c1184d97b081446527bb62a3193d3d47ad0daafcf738fd5c3e5a62aed97",
+      "restart": "unless-stopped",
+      "depends_on": {
+        "db": {
+          "condition": "service_healthy"
+        },
+        "rest": {
+          "condition": "service_started"
+        },
+        "imgproxy": {
+          "condition": "service_started"
+        }
+      },
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://storage:5000/status"
+        ],
+        "timeout": "5s",
+        "interval": "5s",
+        "retries": 3,
+        "start_period": "10s"
+      },
+      "environment": {
+        "ANON_KEY": "${ANON_KEY:?required}",
+        "SERVICE_KEY": "${SERVICE_ROLE_KEY:?required}",
+        "POSTGREST_URL": "http://rest:3000",
+        "AUTH_JWT_SECRET": "${JWT_SECRET:?required}",
+        "DATABASE_URL": "postgres://supabase_storage_admin:${POSTGRES_PASSWORD:?required}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}",
+        "STORAGE_PUBLIC_URL": "${SUPABASE_PUBLIC_URL}",
+        "REQUEST_ALLOW_X_FORWARDED_PATH": "true",
+        "FILE_SIZE_LIMIT": 52428800,
+        "STORAGE_BACKEND": "file",
+        "GLOBAL_S3_BUCKET": "${GLOBAL_S3_BUCKET}",
+        "FILE_STORAGE_BACKEND_PATH": "/var/lib/storage",
+        "TENANT_ID": "${STORAGE_TENANT_ID}",
+        "REGION": "${REGION}",
+        "ENABLE_IMAGE_TRANSFORMATION": "true",
+        "IMGPROXY_URL": "http://imgproxy:5001",
+        "S3_PROTOCOL_ACCESS_KEY_ID": "${S3_PROTOCOL_ACCESS_KEY_ID:?required}",
+        "S3_PROTOCOL_ACCESS_KEY_SECRET": "${S3_PROTOCOL_ACCESS_KEY_SECRET:?required}"
+      },
+      "volumes": [
+        "storage-data:/var/lib/storage"
+      ],
+      "platform": "linux/amd64",
+      "profiles": [
+        "storage"
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "mem_limit": "512m",
+      "pids_limit": 256,
+      "logging": {
+        "driver": "local",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+    },
+    "imgproxy": {
+      "image": "darthsim/imgproxy:v3.30.1@sha256:965c3782818766a477a056016e18f88f9a028bf68b39cb2316978945ac2c0492",
+      "restart": "unless-stopped",
+      "volumes": [
+        "storage-data:/var/lib/storage:ro"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "imgproxy",
+          "health"
+        ],
+        "timeout": "5s",
+        "interval": "5s",
+        "retries": 3
+      },
+      "environment": {
+        "IMGPROXY_BIND": ":5001",
+        "IMGPROXY_LOCAL_FILESYSTEM_ROOT": "/",
+        "IMGPROXY_USE_ETAG": "true",
+        "IMGPROXY_AUTO_WEBP": "${IMGPROXY_AUTO_WEBP}",
+        "IMGPROXY_MAX_SRC_RESOLUTION": 16.8
+      },
+      "platform": "linux/amd64",
+      "profiles": [
+        "storage"
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "mem_limit": "256m",
+      "pids_limit": 256,
+      "logging": {
+        "driver": "local",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+    },
+    "meta": {
+      "image": "supabase/postgres-meta:v0.96.6@sha256:b9edad6fff2d4fb991ecd57837dbe3f21d2efa0f0ccb186f6ccf0e2d57192fed",
+      "restart": "unless-stopped",
+      "depends_on": {
+        "db": {
+          "condition": "service_healthy"
+        }
+      },
+      "environment": {
+        "PG_META_PORT": 8080,
+        "PG_META_DB_HOST": "${POSTGRES_HOST}",
+        "PG_META_DB_PORT": "${POSTGRES_PORT}",
+        "PG_META_DB_NAME": "${POSTGRES_DB}",
+        "PG_META_DB_USER": "postgres",
+        "PG_META_DB_PASSWORD": "${POSTGRES_PASSWORD:?required}",
+        "CRYPTO_KEY": "${PG_META_CRYPTO_KEY:?required}"
+      },
+      "platform": "linux/amd64",
+      "profiles": [
+        "management"
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "mem_limit": "256m",
+      "pids_limit": 256,
+      "logging": {
+        "driver": "local",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+    },
+    "functions": {
+      "image": "supabase/edge-runtime:v1.74.0@sha256:8c17262ecf2fcc43fe19c48d239280592129f2164e61f0f17ba56533120f92d5",
+      "restart": "unless-stopped",
+      "volumes": [
+        "./functions:/home/deno/functions:ro",
+        "deno-cache:/root/.cache/deno"
+      ],
+      "depends_on": {
+        "api-gw": {
+          "condition": "service_healthy"
+        }
+      },
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "timeout 1 bash -c '</dev/tcp/127.0.0.1/9000'"
+        ],
+        "interval": "5s",
+        "timeout": "5s",
+        "retries": 3
+      },
+      "environment": {
+        "SUPABASE_URL": "http://api-gw:8000",
+        "SUPABASE_PUBLIC_URL": "${SUPABASE_PUBLIC_URL}",
+        "SUPABASE_ANON_KEY": "${ANON_KEY:?required}",
+        "SUPABASE_PUBLISHABLE_KEYS": "{\"default\":\"${SUPABASE_PUBLISHABLE_KEY:-}\"}",
+        "VERIFY_JWT": "true",
+        "SUPABASE_AUTH_URL": "http://auth:9999"
+      },
+      "command": [
+        "start",
+        "--main-service",
+        "/home/deno/functions/main"
+      ],
+      "platform": "linux/amd64",
+      "profiles": [
+        "functions"
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "mem_limit": "512m",
+      "pids_limit": 256,
+      "logging": {
+        "driver": "local",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+    },
+    "db": {
+      "image": "supabase/postgres:17.6.1.136@sha256:5a4314708484bec672de2c09653a5c01fb1c84a998564ac231b0325e2238ed5b",
+      "restart": "unless-stopped",
+      "volumes": [
+        "./upstream/volumes/db/realtime.sql:/docker-entrypoint-initdb.d/migrations/99-realtime.sql:ro",
+        "./upstream/volumes/db/webhooks.sql:/docker-entrypoint-initdb.d/init-scripts/98-webhooks.sql:ro",
+        "./upstream/volumes/db/roles.sql:/docker-entrypoint-initdb.d/init-scripts/99-roles.sql:ro",
+        "./upstream/volumes/db/jwt.sql:/docker-entrypoint-initdb.d/init-scripts/99-jwt.sql:ro",
+        "db-data:/var/lib/postgresql/data",
+        "./upstream/volumes/db/_supabase.sql:/docker-entrypoint-initdb.d/migrations/97-_supabase.sql:ro",
+        "./upstream/volumes/db/logs.sql:/docker-entrypoint-initdb.d/migrations/99-logs.sql:ro",
+        "./upstream/volumes/db/pooler.sql:/docker-entrypoint-initdb.d/migrations/99-pooler.sql:ro",
+        "db-config:/etc/postgresql-custom"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "pg_isready",
+          "-U",
+          "postgres",
+          "-h",
+          "localhost"
+        ],
+        "interval": "5s",
+        "timeout": "5s",
+        "retries": 10
+      },
+      "environment": {
+        "POSTGRES_HOST": "/var/run/postgresql",
+        "PGPORT": "${POSTGRES_PORT}",
+        "POSTGRES_PORT": "${POSTGRES_PORT}",
+        "PGPASSWORD": "${POSTGRES_PASSWORD:?required}",
+        "POSTGRES_PASSWORD": "${POSTGRES_PASSWORD:?required}",
+        "PGDATABASE": "${POSTGRES_DB}",
+        "POSTGRES_DB": "${POSTGRES_DB}",
+        "JWT_SECRET": "${JWT_SECRET:?required}",
+        "JWT_EXP": "${JWT_EXPIRY}"
+      },
+      "command": [
+        "postgres",
+        "-c",
+        "config_file=/etc/postgresql/postgresql.conf",
+        "-c",
+        "log_min_messages=fatal"
+      ],
+      "platform": "linux/amd64",
+      "profiles": [
+        "core"
+      ],
+      "security_opt": [
+        "no-new-privileges:true"
+      ],
+      "mem_limit": "2048m",
+      "pids_limit": 256,
+      "logging": {
+        "driver": "local",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+    }
+  },
+  "volumes": {
+    "db-data": {},
+    "db-config": {},
+    "storage-data": {},
+    "deno-cache": {},
+    "snippets": {}
+  },
+  "networks": {
+    "default": {
+      "internal": true
+    }
+  }
+}
