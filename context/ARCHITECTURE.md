@@ -1,7 +1,15 @@
 # Architecture handoff
 
+Resume authorization (2026-09-07): implement and commit completed units locally;
+skip pushes while no upstream exists. This supersedes the historical remote blocker
+below. Do not invent a remote. Phase 2 implementation is now authorized.
+
 Phase 1 offline foundation is implemented; the appliance is not installed.
 See docs/adr/0001-staged-foundation.md for the accepted decision and tradeoffs.
+
+Phase 2 intake (2026-09-07) confirmed the absent Git remote/upstream. Implementation
+is blocked by the delivery gate; no data-service architecture has been implemented
+or deployed. See PHASE-2-STATUS.md for the resume requirements.
 
 ```text
 Future application clients -> outbound tunnel -> HTTPS route allowlist

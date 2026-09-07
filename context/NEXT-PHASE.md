@@ -1,5 +1,13 @@
 # Next phase handoff
 
+Resume authorization (2026-09-07): implement and commit completed units locally;
+skip pushes while no upstream exists. This supersedes the historical remote blocker
+below. Do not invent a remote. Phase 2 implementation is now authorized.
+
+Phase 2 intake on 2026-09-07 confirmed this blocker is still present: main points
+to 55605b6, with no remote or upstream. See PHASE-2-STATUS.md. The prompt below
+remains the resume task; Phase 3 must wait for completed Phase 2 delivery.
+
 Do not begin Phase 2 in this task. First resolve Git delivery: supply the actual
 GitHub remote and upstream branch, then push the Phase 1 commit as documented in
 docs/DEVELOPMENT.md. No remote was invented. Check account usage before dispatch.
