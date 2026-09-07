@@ -1,2 +1,1 @@
-# Preserve exact upstream bytes for provenance verification.
-infra/supabase/upstream/** -whitespace
+# Vendored source is checked by the same whitespace rules as local source.

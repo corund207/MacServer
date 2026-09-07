@@ -17,7 +17,7 @@
     "volumes/api/envoy/envoy.yaml": "3697f23b0be9ec5b829f937c600eb9b878f1f778ab510b42ad5e4f14742447e9",
     "volumes/api/envoy/docker-entrypoint.sh": "7ae0abaa8d76332d001e60dc29d4f29985890f89e04ee78489abbf680495631d",
     "volumes/api/envoy/cds.yaml": "1d7514b891370ed27c25911df008887402e16ab09273e6e433225bb7f09f7905",
-    "volumes/functions/main/index.ts": "5fb63babd5ebe7fda6f2e541fa9b4e3513a7514f8fa511ad7fdb37f46d2b9a95",
+    "volumes/functions/main/index.ts": "daa4c31d63747183541aed1668adf6be69de097c55375f9a598ea28fb9be2b70",
     "compose.json": "930a80ec7cc151ed207ba2c06428aaa42cbb95484f14fcf88cb18faf739010b2"
   },
   "images": {
@@ -104,5 +104,8 @@
       "Filename": "dists/trixie/pool/stable/amd64/docker-compose-plugin_5.5.1-1~debian.13~trixie_amd64.deb"
     }
   },
-  "package_index": "https://download.docker.com/linux/debian/dists/trixie/stable/binary-amd64/Packages"
+  "package_index": "https://download.docker.com/linux/debian/dists/trixie/stable/binary-amd64/Packages",
+  "normalizations": {
+    "volumes/functions/main/index.ts": "Removed trailing spaces on upstream lines 83, 88 and 91 only; code unchanged."
+  }
 }

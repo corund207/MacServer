@@ -17,8 +17,9 @@ and target compatibility are still required before installation. No packages wer
 installed and no container images were pulled or run to resolve those digests.
 
 `upstream/compose.json` is the lossless JSON data-model conversion of the official
-YAML (comments omitted); other vendored files are byte-for-byte copies with the
-upstream license. Never deploy this upstream source directly. The deterministic
+YAML (comments omitted); other vendored files retain the upstream license. Only three trailing
+spaces in the reference Functions runner are normalized, recorded in the lock;
+all other copied files are byte-for-byte upstream. Never deploy this upstream source directly. The deterministic
 adaptation is `compose.json`; `scripts/supabase_config.py` defines every change.
 Use these commands from the repository root:
 

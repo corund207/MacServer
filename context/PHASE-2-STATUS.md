@@ -18,3 +18,7 @@ health and dispatcher behavior remain target validation gates. No schema migrati
 or production readiness is claimed. See docs/DATA-SERVICES.md for limitations.
 
 Push skipped: no remote or upstream. Phase 3 has not started.
+
+Service foundation committed as 88854a0. Follow-up normalizes three upstream
+comment-line trailing spaces and updates the integrity hash, removing the whitespace
+exception. All source files now use the normal whitespace check.
