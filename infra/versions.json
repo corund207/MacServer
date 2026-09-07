@@ -1,0 +1,8 @@
+{
+  "os": {"id": "debian", "version": "13", "architecture": "x86_64"},
+  "python": "3.13",
+  "supabase": {"source": "https://github.com/supabase/supabase", "commit": null},
+  "docker_engine_package": null,
+  "docker_compose_package": null,
+  "deployment_enabled": false
+}
