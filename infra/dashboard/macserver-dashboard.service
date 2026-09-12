@@ -1,0 +1,57 @@
+[Unit]
+Description=MacServer loopback-only local dashboard
+Documentation=file:/opt/macserver/docs/DASHBOARD.md
+After=network.target macserver-status-collector.service
+ConditionPathExists=/etc/macserver-dashboard/DEPLOYMENT-APPROVED
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=macserver-dashboard
+Group=macserver-dashboard
+WorkingDirectory=/opt/macserver/apps/dashboard
+Environment=NODE_ENV=production
+Environment=MACSERVER_DASHBOARD_BIND=127.0.0.1
+Environment=MACSERVER_DASHBOARD_PORT=7460
+Environment=MACSERVER_STATUS_FILE=/run/macserver/status.json
+ExecStart=/opt/macserver-runtime/node-v26.8.1-linux-x64/bin/node /opt/macserver/apps/dashboard/src/server.mjs
+Restart=always
+RestartSec=5
+TimeoutStopSec=15
+UMask=0077
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+RemoveIPC=true
+RestrictAddressFamilies=AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+ReadOnlyPaths=/run/macserver
+MemoryMax=256M
+CPUQuota=25%
+TasksMax=48
+LimitNOFILE=512
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

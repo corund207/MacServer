@@ -1,0 +1,13 @@
+[Unit]
+Description=Refresh MacServer local status evidence
+ConditionPathExists=/etc/macserver-dashboard/DEPLOYMENT-APPROVED
+
+[Timer]
+OnBootSec=20s
+OnUnitActiveSec=15s
+AccuracySec=2s
+Persistent=false
+Unit=macserver-status-collector.service
+
+[Install]
+WantedBy=timers.target

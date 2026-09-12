@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-11T00:00:00Z",
+  "title": "Design System: MacServer Operations",
+  "extensions": {
+    "colorMeta": {
+      "ground": { "role": "neutral", "displayName": "Blue-Black Ground", "canonical": "#0a1015", "tonalRamp": ["#05080a", "#0a1015", "#14202a", "#2d3d48", "#56656e", "#87939a", "#bec5c9", "#eef1f2"] },
+      "surface": { "role": "neutral", "displayName": "Instrument Surface", "canonical": "#101820", "tonalRamp": ["#080c10", "#101820", "#1c2a36", "#344651", "#5c6b74", "#8b969c", "#c0c6ca", "#eff1f2"] },
+      "surface-raised": { "role": "neutral", "displayName": "Raised Instrument Surface", "canonical": "#16222c", "tonalRamp": ["#0b1116", "#16222c", "#263744", "#3e505c", "#65747d", "#929ca2", "#c4c9cc", "#f0f2f3"] },
+      "divider": { "role": "neutral", "displayName": "Divider", "canonical": "#263744", "tonalRamp": ["#10171d", "#1b2832", "#263744", "#40525f", "#667681", "#929da4", "#c4cacf", "#f1f2f3"] },
+      "divider-strong": { "role": "neutral", "displayName": "Strong Divider", "canonical": "#3a4e5d", "tonalRamp": ["#141c22", "#273640", "#3a4e5d", "#566a78", "#788993", "#9faab0", "#cbd0d3", "#f2f4f4"] },
+      "ink": { "role": "neutral", "displayName": "Primary Ink", "canonical": "#ecf3f7", "tonalRamp": ["#15191b", "#30373b", "#515b61", "#77838a", "#a1abb1", "#c7cfd3", "#e2e9ed", "#f4f8fa"] },
+      "muted": { "role": "neutral", "displayName": "Muted Evidence Text", "canonical": "#9eb0bb", "tonalRamp": ["#151b1f", "#2c3941", "#455863", "#627681", "#81939e", "#9eb0bb", "#c8d1d6", "#f0f3f5"] },
+      "verified-mint": { "role": "primary", "displayName": "Verified Mint", "canonical": "#75dec4", "tonalRamp": ["#09251f", "#10483b", "#1f6d59", "#31927a", "#4cb79a", "#75dec4", "#b8eee0", "#eafbf6"] },
+      "secondary-blue": { "role": "secondary", "displayName": "Secondary Data Blue", "canonical": "#79aef8", "tonalRamp": ["#0c2343", "#183f72", "#285da2", "#3f7cd0", "#5e99ec", "#79aef8", "#bfd6fb", "#edf5ff"] },
+      "attention-amber": { "role": "tertiary", "displayName": "Attention Amber", "canonical": "#f4c474", "tonalRamp": ["#2b1b05", "#55370c", "#805517", "#aa7628", "#d29b46", "#f4c474", "#f9dfb4", "#fff7e8"] },
+      "failure-red": { "role": "tertiary", "displayName": "Failure Red", "canonical": "#ff8d87", "tonalRamp": ["#310b0b", "#611a19", "#912b29", "#c24642", "#e86560", "#ff8d87", "#ffc5c1", "#fff0ef"] },
+      "selection-ink": { "role": "neutral", "displayName": "Selection Ink", "canonical": "#07100e", "tonalRamp": ["#030706", "#07100e", "#172925", "#344641", "#5b6a66", "#8b9693", "#c2c8c6", "#f0f2f1"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Verdict Display", "purpose": "One page-level operational conclusion." },
+      "metric": { "displayName": "Tabular Metric", "purpose": "Large changing host measurements." },
+      "title": { "displayName": "Section Title", "purpose": "Compact operational region headings." },
+      "body": { "displayName": "Operational Body", "purpose": "Evidence explanation and task context." },
+      "label": { "displayName": "Evidence Label", "purpose": "Uppercase keys and semantic state words." }
+    },
+    "shadows": [
+      { "name": "live-plot", "value": "0 18px 45px rgba(0,0,0,.28)", "purpose": "The only persistent lift, reserved for live plotted evidence." }
+    ],
+    "motion": [],
+    "breakpoints": [
+      { "name": "dashboard-stack", "value": "1050px" },
+      { "name": "dashboard-mobile", "value": "620px" },
+      { "name": "admin-compact", "value": "1100px" },
+      { "name": "admin-mobile", "value": "700px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Identity Mark",
+      "kind": "custom",
+      "refersTo": "identity-mark",
+      "description": "A quiet appliance locator shared by dashboard and admin identity blocks.",
+      "html": "<span class=\"ds-identity-mark\" aria-hidden=\"true\">M</span>",
+      "css": ".ds-identity-mark{width:38px;height:38px;display:grid;place-items:center;border:1px solid var(--mint,#75dec4);border-radius:11px;background:var(--ground,#0a1015);color:var(--mint,#75dec4);font:750 18px/1 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif}"
+    },
+    {
+      "name": "Admin Primary Button",
+      "kind": "button",
+      "description": "The private admin's affirmative control; never appears on the read-only local dashboard.",
+      "html": "<button class=\"ds-admin-primary\" type=\"button\">Confirm sign in</button>",
+      "css": ".ds-admin-primary{min-height:42px;padding:9px 13px;border:1px solid #8de4d1;border-radius:8px;background:#8de4d1;color:#0d1117;font:600 15px/1.6 system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;cursor:pointer}.ds-admin-primary:hover{background:#23313f;color:#e5edf5}.ds-admin-primary:focus-visible{outline:3px solid #9ac9ff;outline-offset:4px}.ds-admin-primary:active{filter:brightness(.92)}"
+    },
+    {
+      "name": "Admin Text Field",
+      "kind": "input",
+      "description": "A native-feeling bordered field for the authenticated private admin surface.",
+      "html": "<label class=\"ds-admin-label\" for=\"ds-field\">Administration token</label><input class=\"ds-admin-field\" id=\"ds-field\" type=\"password\" value=\"evidence-only\">",
+      "css": ".ds-admin-label{display:block;margin:10px 0 5px;color:#e5edf5;font:600 15px/1.6 system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif}.ds-admin-field{width:100%;padding:9px 13px;border:1px solid #2b3846;border-radius:8px;background:#0d1117;color:#e5edf5;font:15px/1.6 system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif}.ds-admin-field:hover{border-color:#506477}.ds-admin-field:focus-visible{outline:3px solid #9ac9ff;outline-offset:4px}"
+    },
+    {
+      "name": "Admin Navigation Item",
+      "kind": "nav",
+      "description": "A restrained current-view marker for the private operations rail.",
+      "html": "<nav class=\"ds-admin-nav\" aria-label=\"Example\"><a href=\"#\" aria-current=\"page\">Overview</a><a href=\"#\">Services</a></nav>",
+      "css": ".ds-admin-nav{display:grid;gap:4px;width:210px;background:#11171e;padding:8px}.ds-admin-nav a{padding:9px 12px;border-radius:7px;color:#a6b6c7;text-decoration:none;font:15px/1.6 system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif}.ds-admin-nav a:hover,.ds-admin-nav a[aria-current=\"page\"]{background:#23313f;color:#e5edf5}.ds-admin-nav a[aria-current=\"page\"]{box-shadow:inset 3px 0 #8de4d1}.ds-admin-nav a:focus-visible{outline:3px solid #9ac9ff;outline-offset:4px}"
+    },
+    {
+      "name": "Freshness Evidence Strip",
+      "kind": "custom",
+      "refersTo": "freshness-cell",
+      "description": "Source and age evidence grouped without floating cards.",
+      "html": "<dl class=\"ds-freshness\"><div><dt>Evidence</dt><dd>Unavailable</dd></div><div><dt>Uptime</dt><dd>Unavailable</dd></div><div><dt>Sources</dt><dd>Host and collector unavailable</dd></div></dl>",
+      "css": ".ds-freshness{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;margin:0;background:var(--line,#263744);font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif}.ds-freshness div{min-width:0;padding:14px;background:var(--ground,#0a1015)}.ds-freshness dt{color:var(--muted,#9eb0bb);font-size:12px;letter-spacing:.1em;text-transform:uppercase}.ds-freshness dd{margin:5px 0 0;color:var(--ink,#ecf3f7);font-size:13px;font-weight:650;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}"
+    },
+    {
+      "name": "Alert Timeline Item",
+      "kind": "custom",
+      "description": "A text-first operational issue with semantic marker and ruled continuity.",
+      "html": "<ol class=\"ds-alerts\"><li><strong>Waiting for evidence</strong><span>No alert state has been loaded.</span></li></ol>",
+      "css": ".ds-alerts{list-style:none;margin:0;padding:0;color:var(--ink,#ecf3f7);font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif}.ds-alerts li{position:relative;padding:0 0 20px 20px}.ds-alerts li::before{content:\"\";position:absolute;left:4px;top:11px;bottom:3px;width:1px;background:var(--line,#263744)}.ds-alerts li::after{content:\"\";position:absolute;left:0;top:5px;width:9px;height:9px;border-radius:50%;background:var(--amber,#f4c474)}.ds-alerts strong,.ds-alerts span{display:block}.ds-alerts strong{font-size:13px}.ds-alerts span{margin-top:4px;color:var(--muted,#9eb0bb);font-size:12px}"
+    },
+    {
+      "name": "Service Cell",
+      "kind": "card",
+      "refersTo": "service-cell",
+      "description": "A flat evidence cell with explicit service state and source detail.",
+      "html": "<article class=\"ds-service\"><strong>No service evidence</strong><span>UNAVAILABLE</span><small>The collector snapshot has not arrived.</small></article>",
+      "css": ".ds-service{display:grid;grid-template-columns:1fr auto;gap:4px 12px;min-width:260px;padding:15px 16px;background:var(--surface,#101820);color:var(--ink,#ecf3f7);font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif}.ds-service strong{font-size:13px}.ds-service span{color:var(--muted,#9eb0bb);font-size:12px;letter-spacing:.08em;text-transform:uppercase}.ds-service small{grid-column:1/-1;color:var(--muted,#9eb0bb);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Evidence Instrument Board",
+    "overview": "MacServer uses a restrained blue-black operations world in which evidence is the interface. The local dashboard is the clearest expression: one continuous, line-divided instrument board that states what is known, how fresh it is, and what needs attention before exposing detail. The private admin inherits the same quiet system vocabulary while adding navigation, forms, and a user-selectable light theme for task work.\n\nThe visual language is sober, dense, and native to the operating system rather than branded through illustration. Status colors carry defined meanings; typography and rules do most of the organizing. Unavailable, unverified, and stale are first-class states, never cosmetically converted into reassurance.",
+    "keyCharacteristics": [
+      "Blue-black operational surfaces with fine, low-contrast dividers.",
+      "System UI typography, compact uppercase labels, and tabular measurements.",
+      "Mint for verified health, amber for attention, red for failure, and blue for secondary data.",
+      "Flat, continuous regions with depth reserved for the live plot.",
+      "Explicit provenance, freshness, and unavailable language at the point of use.",
+      "No decorative imagery or motion."
+    ],
+    "rules": [
+      { "name": "The Evidence Color Rule", "body": "Mint means verified healthy, amber means attention, red means verified failure, and blue means secondary or informational data; never use these colors as decoration.", "section": "colors" },
+      { "name": "The Text-Plus-Color Rule", "body": "Every status color is paired with a visible word such as NOMINAL, ATTENTION, ACTION REQUIRED, UNVERIFIED, healthy, degraded, failed, or unavailable.", "section": "colors" },
+      { "name": "The Measurement Rule", "body": "Times, freshness, percentages, and table values use tabular numerals; labels never carry the burden of aligning changing data.", "section": "typography" },
+      { "name": "The Native Voice Rule", "body": "Use the platform system stack only. Do not introduce webfonts, ornamental display faces, or faux-terminal monospace styling.", "section": "typography" },
+      { "name": "The First-Viewport Rule", "body": "On the local display, preserve the sequence verdict, freshness, vitals, trend, actionable issue, and service plane; evidence priority outranks symmetry.", "section": "layout" },
+      { "name": "The One Lift Rule", "body": "Persistent shadow belongs only to live plotted evidence; do not turn cards, service cells, navigation, or status blocks into floating tiles.", "section": "elevation" },
+      { "name": "The Ruled-Board Rule", "body": "Prefer continuous sections divided by one-pixel lines over collections of individually elevated cards.", "section": "shapes" }
+    ],
+    "dos": [
+      "Do lead with the strongest supported verdict and place its source and freshness nearby.",
+      "Do preserve stale last-known values while clearly labeling the interrupted or stale transport state.",
+      "Do use lines, spacing, and typographic contrast as the main hierarchy tools.",
+      "Do pair every semantic color with explicit text and retain keyboard-visible focus.",
+      "Do keep refresh as a data update; honor reduced-motion preferences and preserve stable layout."
+    ],
+    "donts": [
+      "Don't present unavailable, missing, or stale evidence as healthy.",
+      "Don't use mint, amber, red, or blue as decorative accents detached from their semantic roles.",
+      "Don't add decorative animation, pulsing status, ornamental gradients, illustrations, or fake telemetry.",
+      "Don't add shadows to ordinary cards or split the local dashboard into a floating-card mosaic.",
+      "Don't imply controls or credentials on the read-only local display."
+    ]
+  }
+}

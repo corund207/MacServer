@@ -1,0 +1,31 @@
+[Unit]
+Description=MacServer fullscreen local status browser
+Documentation=file:/opt/macserver/docs/DASHBOARD.md
+PartOf=graphical-session.target
+After=graphical-session.target macserver-dashboard.service
+Wants=macserver-dashboard.service
+ConditionPathExists=/etc/macserver-dashboard/DEPLOYMENT-APPROVED
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/chromium --kiosk --app=http://127.0.0.1:7460/ --no-first-run --disable-sync --disable-extensions --disable-background-networking --disable-component-update --disable-features=Translate --password-store=basic --user-data-dir=%S/macserver-kiosk
+Restart=always
+RestartSec=5
+TimeoutStopSec=15
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+StateDirectory=macserver-kiosk
+StateDirectoryMode=0700
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+MemoryMax=1G
+TasksMax=256
+
+[Install]
+WantedBy=graphical-session.target

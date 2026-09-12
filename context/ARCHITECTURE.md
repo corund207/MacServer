@@ -1,5 +1,14 @@
 # Architecture handoff
 
+Phase 4 adds a locally verified, loopback-only fullscreen status display. It has no
+credentials or mutations. A separate fixed-command collector writes a bounded atomic
+snapshot; the dashboard combines that with direct host observations and marks missing
+or older-than-60-second evidence unavailable/stale. The collector's privileged Docker
+socket access is never exposed as an HTTP helper. Candidate services remain inert behind
+an untracked operator approval marker. A graphical user unit restarts the kiosk, but
+target session/graphics/browser recovery is not qualified. The observed Debian Chromium
+package is below the recorded security floor, so kiosk approval remains blocked.
+
 Phase 3 read-only slice is locally verified and delivered; not deployed or the full
 admin prompt. See PHASE-3-STATUS.md for commits/checks and deferred capabilities.
 Direct private HTTPS -> local Tailscale daemon status/whois of actual socket peer
@@ -41,7 +50,7 @@ Future application clients -> outbound tunnel -> HTTPS route allowlist
   -> scoped application authorization / limits -> data services + RLS
 Future administrators -> Tailscale -> OpenSSH keys / authorized private admin app
 Internal SSD -> future verified encrypted backup -> removable 250 GB flash drive
-Local console -> future read-only operations dashboard
+Local console -> loopback-only read-only operations dashboard
 ```
 
 Offline preflight, staging, secret generation, candidate host settings, pinned
@@ -64,7 +73,7 @@ backup capacity and off-device destination; recovery-time requirements. No real
 identity, domain, device UUID or secret belongs in tracked configuration.
 
 Phase mapping is in PHASE-PLAN.md. Phase 2 handles data services/migration tooling;
-Phase 3 admin; Phase 4 dashboard; Phase 5 backup/recovery; Phase 6 audit; Phase 7
+Phase 3 admin; Phase 4 dashboard (repository-complete); Phase 5 backup/recovery; Phase 6 audit; Phase 7
 readiness. Production deployment is gated on working recovery and exposure tests,
 regardless of which phase produces the code.
 

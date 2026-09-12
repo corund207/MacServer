@@ -3,7 +3,7 @@
 Debian 13 backend-appliance foundation for a 2019 Intel MacBook Air. The source
 brief calls the appliance VEXVortex; this saved project is the canonical workspace.
 
-**Phases 1–2 are offline foundations, not an installed or production-ready server.**
+**The repository is an offline foundation, not an installed or production-ready server.**
 No service starts, port opens, disk changes, package installs, or migrations occur.
 
 ```sh
@@ -32,3 +32,9 @@ Phase 3: [private read-only admin](apps/admin/README.md), [operator guide](docs/
 [threat model](security/ADMIN-THREAT-MODEL.md) and [verified scope](context/PHASE-3-STATUS.md).
 Synthetic tests are local-only; no appliance service is deployed. SQL, collectors,
 file writes and privileged operations remain unavailable.
+
+Phase 4: [local operations dashboard](apps/dashboard/README.md), [deployment and
+recovery guide](docs/DASHBOARD.md), and [verified scope](context/PHASE-4-STATUS.md).
+The loopback display and bounded collector are tested with synthetic evidence; the
+candidate Chromium version is below the recorded security floor, so target deployment
+remains blocked pending a Debian security update and hardware/session qualification.

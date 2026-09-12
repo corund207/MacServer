@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>MacServer · Local status</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <a class="skip" href="#status">Skip to status</a>
+  <main>
+    <header>
+      <div class="identity">
+        <span class="mark" aria-hidden="true">M</span>
+        <div><strong>MacServer</strong><span>Local operations display</span></div>
+      </div>
+      <div class="clock"><time id="clock">--:--</time><span id="date">Waiting for local time</span></div>
+    </header>
+
+    <section class="verdict" id="status" aria-labelledby="verdict-title">
+      <div>
+        <h1 id="verdict-title">Collecting appliance evidence</h1>
+        <p id="verdict-label" class="state-word">CHECKING</p>
+        <p id="verdict-detail">No status has been assumed. The display will update when real observations arrive.</p>
+      </div>
+      <dl class="freshness">
+        <div><dt>Evidence</dt><dd id="evidence-age">Unavailable</dd></div>
+        <div><dt>Uptime</dt><dd id="uptime">Unavailable</dd></div>
+        <div><dt>Sources</dt><dd id="source">Host and collector unavailable</dd></div>
+      </dl>
+    </section>
+
+    <section class="vitals" aria-label="Host vitals">
+      <article><h2>CPU</h2><strong id="cpu">Collecting</strong><span id="cpu-note">Waiting for second sample</span></article>
+      <article><h2>Memory</h2><strong id="memory">Unavailable</strong><span id="memory-note">Local host observation</span></article>
+      <article><h2>Disk free</h2><strong id="disk">Unavailable</strong><span id="disk-note">Root filesystem</span></article>
+      <article><h2>Temperature</h2><strong id="temperature">Unavailable</strong><span id="temperature-note">No approved sensor</span></article>
+      <article><h2>Traffic</h2><strong id="traffic">Collecting</strong><span id="traffic-note">Aggregate receive / send</span></article>
+    </section>
+
+    <div class="operating-grid">
+      <section class="trend" aria-labelledby="trend-title">
+        <div class="section-heading"><div><h2 id="trend-title">Host rhythm</h2><p>CPU and allocated memory · latest 90 samples</p></div><span id="sample-time">Waiting</span></div>
+        <div class="plot-wrap"><canvas id="plot" width="900" height="260" role="img" aria-label="Waiting for host metric samples"></canvas><div class="legend"><span><i class="cpu-key"></i>CPU</span><span><i class="memory-key"></i>Memory</span></div></div>
+        <table>
+          <caption class="sr-only">Latest host and request measurements</caption>
+          <tbody>
+            <tr><th scope="row">Requests / min</th><td id="requests">Unavailable</td><th scope="row">Errors / min</th><td id="errors">Unavailable</td></tr>
+            <tr><th scope="row">Tailscale</th><td id="tailscale">Unavailable</td><th scope="row">Backup</th><td id="backup">Unavailable</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <aside class="attention" aria-labelledby="attention-title">
+        <div class="section-heading"><div><h2 id="attention-title">Needs attention</h2><p>Newest verified issues first</p></div><span id="alert-count">—</span></div>
+        <ol id="alerts"><li><strong>Waiting for evidence</strong><span>No alert state has been loaded.</span></li></ol>
+      </aside>
+    </div>
+
+    <section class="services" aria-labelledby="services-title">
+      <div class="section-heading"><div><h2 id="services-title">Service plane</h2><p>Collector-reported container health; unavailable is not healthy</p></div><span id="service-summary">0 observed</span></div>
+      <ul id="services"><li><strong>No service evidence</strong><span class="state unavailable">Unavailable</span><small>The collector snapshot has not arrived.</small></li></ul>
+    </section>
+
+    <footer>
+      <span>Read-only · loopback only · no credentials · no controls</span>
+      <span id="connection">Connecting to local display service</span>
+    </footer>
+  </main>
+</body>
+</html>

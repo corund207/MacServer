@@ -1,0 +1,36 @@
+[Unit]
+Description=MacServer local status collector
+Documentation=file:/opt/macserver/docs/DASHBOARD.md
+After=docker.service tailscaled.service
+ConditionPathExists=/etc/macserver-dashboard/DEPLOYMENT-APPROVED
+
+[Service]
+Type=oneshot
+User=root
+Group=macserver-dashboard
+ExecStart=/usr/bin/python3 /opt/macserver/scripts/collect_status.py
+UMask=0027
+RuntimeDirectory=macserver
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+ReadOnlyPaths=/opt/macserver -/var/lib/macserver-backup -/var/lib/macserver-ingress
+ReadWritePaths=/run/macserver
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+TimeoutStartSec=20
+StandardOutput=journal
+StandardError=journal

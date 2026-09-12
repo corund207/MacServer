@@ -13,5 +13,7 @@
   },
   "docker_engine_package": "5:29.8.0-1~debian.13~trixie",
   "docker_compose_package": "5.5.1-1~debian.13~trixie",
+  "chromium_package_observed": "152.0.7977.82-1~deb13u1",
+  "chromium_minimum_security_version": "153.0.8010.36",
   "deployment_enabled": false
 }

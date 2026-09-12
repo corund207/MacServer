@@ -1,42 +1,35 @@
-# Handoff after verified Phase 3 read-only slice
+# Handoff after Phase 4 repository delivery
 
-The resumed Phase 3 verification task is complete: identity/expiry/failure tests,
-synthetic TLS, browser/mobile/themes/stale-state/axe, inert deployment, operator
-and rollback/threat-model documentation, and CI are delivered. Read PHASE-3-STATUS
-for exact evidence and commits. No Phase 4 work was started in this task.
+The loopback-only local dashboard, bounded status collector, inert collector/display/
+kiosk units, browser/accessibility checks, and operator recovery guide are implemented.
+Read PHASE-4-STATUS for evidence and target blockers. No service was deployed. The
+observed Debian Chromium package is below the recorded security floor; target kiosk
+approval remains blocked until an adequate security update and revalidation.
 
-The broader admin prompt remains incomplete: SQL/metadata execution, service/log
-collectors, privileged helper, file writes and backup/restore/update/restart actions
-remain unavailable. Do not relabel disabled buttons as delivered capability. Such
-work needs a separately scoped authorized continuation with its security and
-recovery prerequisites. Current code can serve as the accepted read-only slice.
+The broader admin prompt still has disabled SQL, write, backup, restore, update, and
+restart operations. Do not relabel them as delivered. The dashboard is intentionally
+read-only and must never inherit admin credentials or helper access.
 
-## Conditional Phase 4 task prompt — do not run in this task
+## Phase 5 task boundary
 
-> Build only the local fullscreen read-only operations dashboard when the user
-> chooses to proceed with the delivered read-only scope and deferrals. Read all
-> AGENTS.md, prompts, README, context and operator runbooks. Check actual usage and
-> Git status/history/remotes. Preserve the Phase 3 commits and Phase 2 runtime gates.
-> Reuse telemetry concepts without giving a kiosk admin sessions, app tokens,
-> credential files or privileged helpers. Show source/timestamps/staleness and
-> unavailable state honestly. Do not fabricate service/backup/sensor health. Keep
-> local-only access and test fullscreen recovery, browser restart, offline states,
-> keyboard/accessibility and read-only API boundaries using isolated fixtures.
-> Stage recovery configuration without applying host changes. Do not deploy,
-> connect to production, execute SQL or enable privileged operations. Preserve
-> Phase 5 recovery and Phase 6 audit requirements. Test/review/commit each complete
-> unit with configured identity and no co-author trailers; push only with an
-> upstream, otherwise document skipped. Update Phase 4/architecture/next handoffs.
+Implement repository-only encrypted backup, retention, integrity, restore-drill, and
+safe update/recovery automation. Read every instruction and prior status first.
+Require exact removable-drive filesystem UUID plus a sentinel, minimum capacity,
+mountpoint and filesystem checks before writing. Use restic with an independently
+escrowed password, explicit source allowlists, PostgreSQL logical dumps, Storage and
+configuration coverage, prune/check policies, atomic status evidence, and an off-host
+copy recommendation. An absent drive must fail visibly without affecting live services.
 
-Before any real private deployment, complete docs/ADMIN.md target checks: Node and
-Tailscale provenance, TLS/renewal/clock, dedicated-user daemon access, systemd/BPF,
-firewall/tailnet 8443 allow/deny, credential/audit lifecycle and rollback rehearsal.
-No real host, production DB, RLS runtime, hardware or encrypted restore qualification
-was completed here. Public administration remains forbidden.
+Restore only into a new isolated destination/database by default. Never overwrite live
+state, remove volumes, rotate credentials, apply migrations, or execute a production
+restore without immediate explicit user confirmation and a tested rollback. Tests must
+use disposable fixtures and fake fixed-command runners; no real database, drive, Docker
+daemon, tailnet, or secrets. Add systemd candidates behind untracked approval markers,
+operator commands with expected results and rollback, and update PHASE-5-STATUS,
+ARCHITECTURE, and NEXT-PHASE. Review/test/commit the delivery unit with configured Git
+identity and no co-author trailers; push only if an upstream exists.
 
-## Coordinator scheduling hold — 2026-09-07T14:42:31.404314+00:00
-
-At 78% five-hour usage (50% weekly), remain at the completed read-only boundary.
-After usage permits, recheck current task state and the scope condition above
-before dispatch. Do not retry completed verification or silently erase deferred
-admin capabilities. Latest delivery before this checkpoint is ca8e0f2.
+Preserve all unresolved gates: Debian/T2 hardware, Docker/firewall/Tailscale runtime,
+private admin TLS/identity, production SQL/RLS and migration, public domain/tunnel and
+credential design, browser security floor, target reboot/network/power-loss testing,
+and off-device disaster recovery. Public administration remains forbidden.

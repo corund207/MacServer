@@ -17,6 +17,9 @@ __pycache__/
 node_modules/
 apps/admin/test-results/
 apps/admin/playwright-report/
+apps/dashboard/test-results/
+apps/dashboard/playwright-report/
+.impeccable/review/
 .venv/
 .DS_Store
 
