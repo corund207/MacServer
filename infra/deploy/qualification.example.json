@@ -1,0 +1,17 @@
+{
+  "format": 1,
+  "approvedCommit": "REPLACE_WITH_40_CHARACTER_GIT_COMMIT",
+  "checkedAt": "REPLACE_WITH_CURRENT_UTC_TIMESTAMP",
+  "checks": {
+    "debian13Amd64": false,
+    "t2Hardware": false,
+    "encryptedInternalStorage": false,
+    "consoleRecovery": false,
+    "tailscaleOnlyAdministration": false,
+    "keyOnlySsh": false,
+    "hostFirewallNegativeTest": false,
+    "dockerForwardingNegativeTest": false,
+    "noPublicManagementListeners": false,
+    "thermalRebootPowerTest": false
+  }
+}

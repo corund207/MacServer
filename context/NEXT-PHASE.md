@@ -1,14 +1,14 @@
-# Final operational handoff
+# Target commissioning handoff
 
-All seven repository phases are delivered. There is no next repository implementation
-phase and no deployment was performed. Start any future task by reading
-PHASE-7-STATUS, `docs/FINAL-VERIFICATION.md`, and `security/SECURITY-AUDIT.md`.
+Eight repository phases are delivered and no target deployment was performed. Start
+target work with `context/PHASE-8-STATUS.md`, `docs/DEPLOYMENT.md`,
+`docs/FINAL-VERIFICATION.md`, and `security/SECURITY-AUDIT.md`.
 The root `README.md` now gives the concise end-to-end setup order and routes every
 target-changing operation to the detailed operator runbooks.
 All future work must remain within the MacServer repository boundary; no other product
 repository is an instruction source or implementation dependency.
 
-The next legitimate work is target qualification, which requires the user to identify
+The next legitimate work is target commissioning, which requires the user to identify
 and authorize the exact MacBook appliance and any test endpoints. Gather the missing
 choices first: recovery objectives and media/off-host destination; application/domain/
 route inventory; app credential scopes; managed Supabase schema and RLS cases; tailnet

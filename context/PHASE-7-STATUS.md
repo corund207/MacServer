@@ -1,6 +1,7 @@
 # Phase 7 — final repository verification
 
-2026-09-12. The seven-phase repository delivery is complete and remains undeployed.
+2026-09-12. The original seven-phase repository delivery completed undeployed. Phase 8
+subsequently added guarded commissioning and update tooling; see PHASE-8-STATUS.md.
 The final consolidated verifier, traceability matrix, deliverable inventory, safe
 qualification order, rollback boundary and retest rules are implemented. No appliance,
 service, public endpoint, database, tailnet or physical backup device was touched.

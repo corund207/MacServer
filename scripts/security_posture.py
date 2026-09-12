@@ -69,6 +69,17 @@ def text_findings(root):
                   '"--network", "none"', "RESTORE_TARGET_NOT_NEW"):
         if value not in backup:
             findings.append(f"backup refusal boundary lacks {value}")
+    deploy = read("scripts/appliance.py")
+    unit = read("infra/deploy/macserver-data.service")
+    for value in ("source checkout is not clean", "target qualification is incomplete",
+                  "commissioning requires an empty Compose target", "backup_ready()",
+                  "writersDrained", "dataCompatibilityReviewed"):
+        if value not in deploy:
+            findings.append(f"deployment refusal boundary lacks {value}")
+    for value in ("ConditionPathExists=/etc/macserver/DEPLOYMENT-APPROVED",
+                  "--wait --wait-timeout 180", "Requires=docker.service tailscaled.service"):
+        if value not in unit:
+            findings.append(f"deployment unit lacks {value}")
     migration = read("supabase/migrations/20260907091838_establish_api_boundary.sql")
     verification = read("database/verification/rls_negative.sql")
     for value in ("REVOKE ALL ON SCHEMA", "REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC"):

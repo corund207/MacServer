@@ -5,11 +5,11 @@ appliance running Debian 13, Tailscale, Docker, and self-hosted
 Supabase-compatible services. Administration stays inside Tailscale, backups are
 encrypted, and no database or management service is exposed to the public Internet.
 
-> **Current state:** the source bundle is verified, but no physical appliance has
-> been qualified or deployed. `infra/versions.json` therefore keeps
-> `deployment_enabled` set to `false`. This guide takes you from a blank MacBook to
-> the production-readiness gate; it does not turn missing hardware, recovery, or
-> application evidence into approval.
+> **Current state:** the source bundle includes fail-closed commissioning and update
+> tooling, but no physical appliance has been qualified or deployed.
+> `deployment_enabled` means the private installer exists; `production_approved`
+> remains `false` until the real hardware, recovery, migration, and application
+> evidence passes.
 
 ## The finished system
 
@@ -249,11 +249,10 @@ sudo docker compose --env-file /etc/macserver/supabase.env \
   -f /opt/macserver/infra/supabase/compose.json config --quiet
 ```
 
-**Current stop point:** do not run `docker compose up` yet. The repository has not
-qualified the physical MacBook, Docker firewall, real schema/RLS, rotating backup,
-or application ingress, and `deployment_enabled` remains `false`. The exact gates
-for changing that decision are in [data services](docs/DATA-SERVICES.md) and
-[final verification](docs/FINAL-VERIFICATION.md).
+Do not run `docker compose up` directly. After completing the real qualification
+checks, use the fail-closed [deployment guide](docs/DEPLOYMENT.md) to commission a
+brand-new private stack. Production approval still requires the backup, migration,
+RLS, and final acceptance gates below.
 
 Optional components should be enabled only when needed:
 
@@ -395,6 +394,7 @@ NO-GO. Missing evidence means NO-GO.
 | Local status display | [Dashboard](docs/DASHBOARD.md) |
 | Encrypted backup and recovery | [Backup and restore](docs/BACKUP-RESTORE.md) |
 | Maintenance and rollback | [Update and rollback](docs/UPDATE-ROLLBACK.md) |
+| Commission, update, and release rollback | [Deployment](docs/DEPLOYMENT.md) |
 | Final evidence checklist | [Final verification](docs/FINAL-VERIFICATION.md) |
 | Current project handoff | [Next phase](context/NEXT-PHASE.md) |
 

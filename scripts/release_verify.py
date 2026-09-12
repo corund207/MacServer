@@ -23,6 +23,7 @@ def command_matrix(full=False):
         ("admin-unit", [sys.executable, "scripts/validate_admin_unit.py"], ROOT),
         ("dashboard-units", [sys.executable, "scripts/validate_dashboard_units.py"], ROOT),
         ("backup-units", [sys.executable, "scripts/validate_backup_units.py"], ROOT),
+        ("deploy-unit", [sys.executable, "scripts/validate_deploy_unit.py"], ROOT),
         ("python-tests", [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"], ROOT),
     ]
     if full:

@@ -13,6 +13,7 @@ jobs:
       - run: python3 scripts/validate_admin_unit.py
       - run: python3 scripts/validate_dashboard_units.py
       - run: python3 scripts/validate_backup_units.py
+      - run: python3 scripts/validate_deploy_unit.py
       - run: python3 scripts/security_posture.py
       - run: python3 -m unittest discover -s tests -v
   admin:

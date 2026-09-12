@@ -1,9 +1,9 @@
 # Final repository verification and readiness boundary
 
-Date: 2026-09-12. The seven-phase repository plan is complete. The result is a
-reviewable, testable appliance source bundle, not an installed server and not a GO for
-production or public exposure. Missing physical/runtime evidence is intentionally
-represented as blocked rather than inferred from synthetic tests.
+Date: 2026-09-12. Eight repository phases are complete, including fail-closed target
+commissioning and versioned update tooling. The result is not an installed server and
+not a GO for production or public exposure. Missing physical/runtime evidence is
+intentionally represented as blocked rather than inferred from synthetic tests.
 
 ## Consolidated verifier
 
@@ -37,7 +37,7 @@ state and can change independently:
 | --- | --- | --- | --- |
 | 1 | Inspect and decide architecture | ADR, phased context and architecture handoff | Repository-complete |
 | 2 | Layout, ignores, examples, pins, CI, rollback | Monorepo files, commit-pinned CI, locked runtimes/images | Repository-complete |
-| 3 | Safe Debian installer | Non-mutating preflight and immutable staging only | Target installation intentionally blocked |
+| 3 | Safe Debian installer | Preflight plus qualification-gated immutable commissioning | Target execution unverified |
 | 4 | Host hardening and recovery behavior | SSH/nftables/journal/update/time/lid candidates and runbooks | Target-unverified |
 | 5 | Pinned Docker/Supabase | Official pinned source, amd64 digests, internal Compose, no ports | Target-unverified |
 | 6 | Secrets and isolation | Exclusive private generators, required substitutions, internal network | Target-unverified |

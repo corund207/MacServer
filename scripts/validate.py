@@ -13,20 +13,22 @@ def main():
     for path in (ROOT / "infra").rglob("*.json"):
         json.loads(path.read_text())
     versions = json.loads((ROOT / "infra/versions.json").read_text())
-    if versions["deployment_enabled"] is not False:
-        raise ValueError("Phase 1 must remain disabled until live deployment gates are implemented")
+    if versions["deployment_enabled"] is not True or versions.get("production_approved") is not False:
+        raise ValueError("deployment tooling must be enabled while production remains target-gated")
     required = ["context/PHASE-1-STATUS.md", "context/PHASE-4-STATUS.md",
                 "context/PHASE-5-STATUS.md", "context/PHASE-6-STATUS.md",
                 "context/PHASE-7-STATUS.md",
+                "context/PHASE-8-STATUS.md",
                 "context/ARCHITECTURE.md", "context/NEXT-PHASE.md", "PRODUCT.md",
                 "docs/INSTALL.md", "docs/DEVELOPMENT.md", "docs/UPDATE-ROLLBACK.md",
                 "docs/DASHBOARD.md", "docs/BACKUP-RESTORE.md", "docs/FINAL-VERIFICATION.md",
+                "docs/DEPLOYMENT.md",
                 "security/SECURITY-AUDIT.md",
                 "docs/adr/0001-staged-foundation.md", "security/THREAT-MODEL.md"]
     for name in required:
         if not (ROOT / name).read_text().strip():
             raise ValueError(f"missing handoff: {name}")
-    print("PASS: Python syntax, JSON templates, disabled deployment, handoffs")
+    print("PASS: Python syntax, JSON templates, guarded deployment, handoffs")
 
 
 if __name__ == "__main__":

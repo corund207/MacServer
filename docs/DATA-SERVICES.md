@@ -1,9 +1,11 @@
 # Phase 2 data-service foundation
 
-This is a reviewable, offline configuration, not a deployed appliance. Do not run
-`up`, `run`, `exec`, `start`, upstream reset scripts or migrations on this development
-host. `infra/versions.json` retains `deployment_enabled: false`; Compose itself does
-not enforce that flag. Profiles are selection aids, not an authorization mechanism.
+This is a reviewable configuration, not evidence of a deployed appliance. Do not run
+`up`, `run`, `exec`, `start`, upstream reset scripts or migrations on a development
+host. `deployment_enabled: true` means the guarded target installer in
+`scripts/appliance.py` exists; `production_approved: false` remains the target verdict.
+Never bypass that installer with direct Compose startup. Profiles are selection aids,
+not an authorization mechanism.
 
 ## Provenance and validation
 

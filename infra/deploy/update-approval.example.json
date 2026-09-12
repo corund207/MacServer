@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "currentCommit": "REPLACE_WITH_CURRENT_40_CHARACTER_COMMIT",
+  "targetCommit": "REPLACE_WITH_TARGET_40_CHARACTER_COMMIT",
+  "checkedAt": "REPLACE_WITH_CURRENT_UTC_TIMESTAMP",
+  "writersDrained": false,
+  "dataCompatibilityReviewed": false
+}

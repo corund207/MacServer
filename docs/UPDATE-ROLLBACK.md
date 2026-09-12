@@ -1,5 +1,9 @@
 # Change and rollback gates
 
+For the guarded versioned-release commands, see `DEPLOYMENT.md`. GitHub updates are
+manual fast-forward pulls followed by exact-commit verification; they are never an
+unattended `git pull` or automatic database migration.
+
 The Phase 1 bundle is a read-only review artifact. Re-stage changes to a fresh
 path; retain the old bundle and compare manifests/content. No rollback command is
 needed for a host that has not been changed. Do not use staging to apply `/etc`.

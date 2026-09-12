@@ -1,0 +1,31 @@
+[Unit]
+Description=MacServer private Supabase-compatible data services
+Documentation=file:/opt/macserver/docs/DEPLOYMENT.md
+After=docker.service network-online.target tailscaled.service
+Wants=network-online.target
+Requires=docker.service tailscaled.service
+ConditionArchitecture=x86-64
+ConditionPathExists=/etc/macserver/DEPLOYMENT-APPROVED
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=/etc/macserver/runtime.env
+ExecStart=/usr/bin/docker compose --env-file /etc/macserver/supabase.env -f /opt/macserver/infra/supabase/compose.json up -d --remove-orphans --wait --wait-timeout 180
+ExecStop=/usr/bin/docker compose --env-file /etc/macserver/supabase.env -f /opt/macserver/infra/supabase/compose.json stop
+TimeoutStartSec=30m
+TimeoutStopSec=5m
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadOnlyPaths=/opt/macserver /etc/macserver
+ReadWritePaths=/srv/macserver /var/lib/docker /var/lib/containerd
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

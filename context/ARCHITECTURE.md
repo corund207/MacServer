@@ -1,5 +1,12 @@
 # Architecture handoff
 
+Phase 8 adds a private deployment boundary: clean synchronized GitHub source becomes a
+root-owned versioned release only after commit-specific target evidence. An approval-
+gated systemd unit starts digest-pinned internal-only Compose profiles and waits for
+health. Updates require current backup/restore evidence, switch the release symlink
+atomically, and return to the previous release on activation failure. Data migrations
+remain separately reviewed and are never inferred from a code rollback.
+
 MacServer is an independent repository and product boundary. Local specifications,
 agent instructions, source, deployment candidates, evidence, and operations docs must
 not depend on or modify another project workspace.
