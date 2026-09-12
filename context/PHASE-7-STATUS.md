@@ -16,6 +16,12 @@ tests, 3 dashboard Node tests and 4 dashboard browser tests. Both production dep
 audits report zero findings. A post-push clean/upstream-synchronized run is delivery
 evidence reported outside the commit it verifies.
 
+The first hosted final run passed all jobs but warned that Checkout v4's Node 20 runtime
+was deprecated. The workflow was advanced to the current official Checkout 7.0.1 and
+Setup Node 7.0.0 release commits while retaining full-SHA pins, read-only permissions
+and disabled credential persistence; the replacement hosted run is final delivery
+evidence outside the source commit.
+
 ## Completion meaning
 
 Repository-complete means the review artifacts, inert candidates, safe tooling,
