@@ -1,5 +1,11 @@
 # Architecture handoff
 
+The root README is the concise operational entry point for the architecture. Its
+ordered setup path preserves the same trust boundaries and NO-GO state: Tailscale-only
+administration, internal-only data services, encrypted live/backup storage, optional
+private interfaces, and no public management ingress. It does not add an installer,
+deployment approval, public tunnel, or runtime evidence.
+
 Phase 7 closes the repository plan with a consolidated no-secret verification manifest
 and requirement traceability. All source-only checks may pass while the manifest remains
 NO-GO with target/public evidence false. This prevents CI, a clean tree or synthetic

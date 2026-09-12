@@ -22,6 +22,15 @@ Setup Node 7.0.0 release commits while retaining full-SHA pins, read-only permis
 and disabled credential persistence; the replacement hosted run is final delivery
 evidence outside the source commit.
 
+The top-level README now provides one ordered operator path from Debian 13 media and
+T2 qualification through source verification, Tailscale, key-only SSH, host/Docker
+gates, private service preparation, encrypted backups, migration rehearsal, optional
+interfaces and final acceptance. It explicitly stops before unsupported production
+startup and points each target-changing step to its detailed rollback runbook.
+For this documentation delivery, the structural validator, 31 Python tests, security
+posture, deterministic Compose check, and all three disposable systemd parser groups
+pass. No appliance, service, tailnet, database, backup medium, or secret was contacted.
+
 ## Completion meaning
 
 Repository-complete means the review artifacts, inert candidates, safe tooling,
