@@ -1,29 +1,29 @@
-# Handoff after Phase 6 repository delivery
+# Final operational handoff
 
-The non-destructive repository security audit, offline posture assertions and safe
-private-admin policy correction are complete. Read PHASE-6-STATUS and
-security/SECURITY-AUDIT.md. No target or endpoint was tested, and the NO-GO verdict
-remains. Do not treat source checks as effective runtime controls.
+All seven repository phases are delivered. There is no next repository implementation
+phase and no deployment was performed. Start any future task by reading
+PHASE-7-STATUS, `docs/FINAL-VERIFICATION.md`, and `security/SECURITY-AUDIT.md`.
 
-## Phase 7 task boundary
+The next legitimate work is target qualification, which requires the user to identify
+and authorize the exact MacBook appliance and any test endpoints. Gather the missing
+choices first: recovery objectives and media/off-host destination; application/domain/
+route inventory; app credential scopes; managed Supabase schema and RLS cases; tailnet
+identities/policy; and acceptable maintenance windows. Keep production data and public
+exposure disabled until every blocking finding has evidence.
 
-Complete the repository-level end-to-end verification and production-readiness review.
-Build one dependency-free release verifier that runs or composes the existing offline
-checks, records exact scope and emits a machine-readable manifest without secrets.
-Add a traceability matrix from every main-build requirement to implementation,
-automated evidence, manual target evidence and status. Exercise only disposable local
-fixtures: failure/interruption/restart cases must not touch a real service, Docker
-daemon, tailnet, drive, database or network endpoint.
+Follow the ordered checklist in FINAL-VERIFICATION. Use only the designated appliance
+and explicitly listed endpoints; never scan the broader LAN. Preserve local console and
+rollback access. Any OS/disk formatting, volume deletion, production restore, migration,
+credential rotation or policy replacement needs immediate explicit confirmation and a
+tested backup/rollback path. Public management remains forbidden.
 
-Produce `context/PHASE-7-STATUS.md`, update ARCHITECTURE and replace this handoff with
-the final operational boundary. The final report must distinguish repository-complete,
-target-unverified and blocked work, include safe installation/qualification ordering,
-rollback and retest commands, and retain a NO-GO recommendation wherever required
-evidence is unavailable. Do not fabricate public ingress, app credentials, application
-schemas/RLS results, physical recovery, hardware compatibility or uptime evidence.
+For source-only revalidation, use a clean checkout and run:
 
-Review all diffs and staged files for secrets, rerun all Python/unit/parser/Compose,
-Node, browser/accessibility and production-dependency checks, then make one focused
-commit with configured identity and no co-author trailer. Push to the existing upstream.
-Do not deploy, create approval markers, expose ports, apply SQL, modify a tailnet,
-format media, restore data, or perform any destructive action.
+```sh
+python3 scripts/release_verify.py --full --require-clean --require-upstream-sync \
+  --output build/release-verification.json
+```
+
+Passing output remains repository-only NO-GO evidence until the manual target matrix is
+completed and independently reviewed. Future delivery units must retain focused commits,
+configured Git identity, no co-author trailers, secret review and upstream push.

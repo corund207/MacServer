@@ -47,3 +47,7 @@ target drive qualification and a real restore rehearsal.
 Phase 6: [authorized repository security audit](security/SECURITY-AUDIT.md), offline
 regression checks, and private-admin port-policy hardening. The verdict remains NO-GO
 for production or public exposure until the documented runtime blockers are closed.
+
+Phase 7: [final verification and requirement traceability](docs/FINAL-VERIFICATION.md)
+plus a consolidated machine-readable verifier. The seven-phase repository plan is
+complete; physical deployment and production approval are explicitly separate work.

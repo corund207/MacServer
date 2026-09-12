@@ -1,5 +1,10 @@
 # Architecture handoff
 
+Phase 7 closes the repository plan with a consolidated no-secret verification manifest
+and requirement traceability. All source-only checks may pass while the manifest remains
+NO-GO with target/public evidence false. This prevents CI, a clean tree or synthetic
+browser success from being mistaken for installed-host, RLS, ingress or recovery proof.
+
 Phase 6 audited the inert repository and preserved a NO-GO runtime verdict. An offline
 posture check now asserts that Compose remains internal/no-published-port/digest-pinned,
 CI actions and permissions remain narrow, tracked secret-like paths are absent, private
