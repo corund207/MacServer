@@ -16,9 +16,10 @@ def main():
     if versions["deployment_enabled"] is not False:
         raise ValueError("Phase 1 must remain disabled until live deployment gates are implemented")
     required = ["context/PHASE-1-STATUS.md", "context/PHASE-4-STATUS.md",
+                "context/PHASE-5-STATUS.md", "context/PHASE-6-STATUS.md",
                 "context/ARCHITECTURE.md", "context/NEXT-PHASE.md", "PRODUCT.md",
                 "docs/INSTALL.md", "docs/DEVELOPMENT.md", "docs/UPDATE-ROLLBACK.md",
-                "docs/DASHBOARD.md", "docs/BACKUP-RESTORE.md",
+                "docs/DASHBOARD.md", "docs/BACKUP-RESTORE.md", "security/SECURITY-AUDIT.md",
                 "docs/adr/0001-staged-foundation.md", "security/THREAT-MODEL.md"]
     for name in required:
         if not (ROOT / name).read_text().strip():

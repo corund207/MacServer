@@ -2,9 +2,9 @@
   "groups": {"group:appliance-admins": ["operator@example.com"]},
   "tagOwners": {"tag:macserver": ["group:appliance-admins"]},
   "grants": [
-    {"src": ["group:appliance-admins"], "dst": ["tag:macserver"], "ip": ["tcp:22", "tcp:443"]}
+    {"src": ["group:appliance-admins"], "dst": ["tag:macserver"], "ip": ["tcp:22", "tcp:8443"]}
   ],
   "tests": [
-    {"src": "operator@example.com", "accept": ["tag:macserver:22", "tag:macserver:443"], "deny": ["tag:macserver:5432", "tag:macserver:8000"]}
+    {"src": "operator@example.com", "accept": ["tag:macserver:22", "tag:macserver:8443"], "deny": ["tag:macserver:443", "tag:macserver:5432", "tag:macserver:7460", "tag:macserver:8000"]}
   ]
 }

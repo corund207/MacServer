@@ -96,11 +96,12 @@ admins requires an operator-reviewed private array of per-user verifiers (maximu
 32); never share one token across users. Restart to apply revocation/rotation.
 
 Allow only the administrator group to reach the appliance on TCP 8443 in a reviewed
-tailnet policy. The existing Phase 1 policy mentions 443 and is not the admin app's
-8443 rule: explicitly reconcile that difference, inspect additive broad grants and
-test allow/deny cases in the policy editor. Do not apply a replacement tailnet policy
-from this guide. Require direct Tailscale connections. Do not use Serve, Funnel,
-subnet proxies, ingress tunnels, router forwarding or public reverse proxies.
+tailnet policy. The repository example now aligns its host-input and tailnet rules on
+8443, but additive broad grants can still defeat that boundary; inspect the entire
+effective policy and test allow/deny cases in the policy editor. Do not apply a
+replacement tailnet policy from this guide. Require direct Tailscale connections. Do
+not use Serve, Funnel, subnet proxies, ingress tunnels, router forwarding or public
+reverse proxies.
 
 Keep `DEPLOYMENT-APPROVED` absent until the appliance is qualified and the following
 checks pass in an isolated Debian 13 rehearsal, then on only the approved target:

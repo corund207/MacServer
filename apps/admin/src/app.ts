@@ -71,7 +71,7 @@ export function createApp(options: Options) {
     let tailscale: object = { state: 'Unavailable', addresses: [] };
     try { tailscale = await options.tailscale(); } catch { /* UI reports unavailable, never healthy. */ }
     return { metrics: await telemetry.read(), tailscale, filesEnabled: !!options.files,
-      alerts: ['Encrypted backup and restore verification is pending (Phase 5).', 'Service health, database access and privileged operations are not connected.'],
+      alerts: ['Encrypted backup is repository-ready but not target-qualified.', 'Service health, database access and privileged operations are not connected.'],
       services: ['PostgreSQL', 'Auth', 'PostgREST', 'Envoy', 'Functions', 'Storage', 'Realtime', 'Studio'].map(name => ({ name, state: 'Unavailable', detail: 'No read-only collector configured' })),
       capabilities: { fileRead: !!options.files, fileWrite: false, sql: false, backup: false, restore: false, update: false, restart: false } };
   });

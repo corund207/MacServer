@@ -86,8 +86,9 @@ of these features. A browser terminal is intentionally excluded; use SSH keys.
 Before deployment: actual Debian 13/T2 qualification, authenticated runtime package
 provenance, certificate trust/renewal, clock, daemon/user permissions, service
 sandbox/cgroup/BPF and Docker/firewall/tailnet policy verification, approved/denied
-user/device tests, restart/rollback and recovery. The existing policy's 443 grant
-does not cover admin 8443; operator must reconcile and validate, not expose it.
+user/device tests, restart/rollback and recovery. Phase 6 later aligned the candidate
+host/tailnet rules to 8443; the complete effective target policy still requires
+additive-policy and exposure validation.
 
 Risks: daemon control knowledge may lag revocation; local root/daemon are trusted;
 app compromise can read all OS-allowed curated exports; live files can change while

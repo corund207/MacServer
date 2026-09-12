@@ -1,5 +1,13 @@
 # Architecture handoff
 
+Phase 6 audited the inert repository and preserved a NO-GO runtime verdict. An offline
+posture check now asserts that Compose remains internal/no-published-port/digest-pinned,
+CI actions and permissions remain narrow, tracked secret-like paths are absent, private
+admin and loopback dashboard boundaries remain intact, and RLS/backup refusal fixtures
+do not drift. Candidate host and tailnet rules are aligned to private admin TCP 8443
+plus SSH 22; 443, PostgreSQL, dashboard and API ports have explicit tailnet deny cases.
+These are source assertions, not effective-firewall or additive-policy evidence.
+
 Phase 5 adds an inert encrypted-backup candidate. A fixed-command root process makes
 PostgreSQL logical exports into private internal-SSD staging, then restic snapshots
 those exports with `/srv/macserver/storage`, `/etc/macserver`, and deployed infra to a

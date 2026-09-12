@@ -43,3 +43,7 @@ Phase 5: [encrypted backup and isolated restore](docs/BACKUP-RESTORE.md) with ex
 removable-drive identity gates, logical PostgreSQL exports, Storage/configuration
 coverage, retention and integrity checks. It remains an undeployed candidate pending
 target drive qualification and a real restore rehearsal.
+
+Phase 6: [authorized repository security audit](security/SECURITY-AUDIT.md), offline
+regression checks, and private-admin port-policy hardening. The verdict remains NO-GO
+for production or public exposure until the documented runtime blockers are closed.
