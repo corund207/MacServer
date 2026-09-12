@@ -1,6 +1,6 @@
 # MacServer Agent Instructions
 
-MacServer is a security-first self-hosted backend appliance for a 2019 Intel MacBook Air. Read the phase prompts in `/home/corund/Progects/VEXVortex` when needed, plus every nested `AGENTS.md` before changing a subtree.
+MacServer is a security-first self-hosted backend appliance for a 2019 Intel MacBook Air. Treat this repository as self-contained: use its local prompts and context, and read every nested `AGENTS.md` before changing a subtree. Do not depend on or modify another project repository.
 
 Use Debian 13 stable, pinned Docker Compose services, self-hosted Supabase-compatible services, Tailscale-only administration, SSH keys only, no router port forwarding, and encrypted rotating backups to the 250 GB flash drive. Public traffic may reach only explicitly required HTTPS application routes through an outbound-only tunnel. Never expose PostgreSQL, Studio, Docker, SSH, metrics, or the admin app publicly.
 

@@ -1,5 +1,9 @@
 # Architecture handoff
 
+MacServer is an independent repository and product boundary. Local specifications,
+agent instructions, source, deployment candidates, evidence, and operations docs must
+not depend on or modify another project workspace.
+
 The root README is the concise operational entry point for the architecture. Its
 ordered setup path preserves the same trust boundaries and NO-GO state: Tailscale-only
 administration, internal-only data services, encrypted live/backup storage, optional

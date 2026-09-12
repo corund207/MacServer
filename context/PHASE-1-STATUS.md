@@ -3,9 +3,9 @@
 2026-09-06 — offline foundation completed; target installation and production
 readiness NOT claimed. Delivery is blocked only at push by absent Git remote.
 
-The resumed task read all MacServer prompts, README, context and nested agent
-instructions. The VEXVortex main prompt matches the local copy. No Git metadata
-existed; there were no branches, upstream, tracked diff or history to preserve.
+The resumed task read all local MacServer prompts, README, context and nested agent
+instructions. The project specification is kept inside this repository. No Git
+metadata existed; there were no branches, upstream, tracked diff or history to preserve.
 Initialized main using the existing configured Git identity. Preserved the initial
 scaffold and completed it as one focused foundation delivery unit.
 

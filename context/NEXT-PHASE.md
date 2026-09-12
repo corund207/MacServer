@@ -5,6 +5,8 @@ phase and no deployment was performed. Start any future task by reading
 PHASE-7-STATUS, `docs/FINAL-VERIFICATION.md`, and `security/SECURITY-AUDIT.md`.
 The root `README.md` now gives the concise end-to-end setup order and routes every
 target-changing operation to the detailed operator runbooks.
+All future work must remain within the MacServer repository boundary; no other product
+repository is an instruction source or implementation dependency.
 
 The next legitimate work is target qualification, which requires the user to identify
 and authorize the exact MacBook appliance and any test endpoints. Gather the missing

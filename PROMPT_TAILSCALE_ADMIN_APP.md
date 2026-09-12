@@ -1,6 +1,6 @@
-# Prompt 2 — VEXVortex Tailscale-Only Admin App
+# Prompt 2 — MacServer Tailscale-Only Admin App
 
-You are GPT-6 Astra. Build a polished, secure private control-plane web application in the VEXVortex monorepo. It manages one Debian 13 MacBook backend appliance and is reachable only over Tailscale. This is an administrative app, not a public Supabase client.
+You are GPT-6 Astra. Build a polished, secure private control-plane web application in the MacServer monorepo. It manages one Debian 13 MacBook backend appliance and is reachable only over Tailscale. This is an administrative app, not a public Supabase client.
 
 ## Scope
 

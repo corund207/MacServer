@@ -31,6 +31,11 @@ For this documentation delivery, the structural validator, 31 Python tests, secu
 posture, deterministic Compose check, and all three disposable systemd parser groups
 pass. No appliance, service, tailnet, database, backup medium, or secret was contacted.
 
+MacServer is now explicitly self-contained. Its local prompts and agent instructions
+use the MacServer name and no longer direct work to, assess, or depend on another
+project repository. This is a documentation and coordination boundary only; no runtime
+or deployment state changed.
+
 ## Completion meaning
 
 Repository-complete means the review artifacts, inert candidates, safe tooling,
