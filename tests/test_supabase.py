@@ -36,6 +36,8 @@ class SupabaseSafetyTests(unittest.TestCase):
             self.assertTrue(svc['profiles'])
             self.assertNotIn('docker.sock', json.dumps(svc))
         self.assertEqual(rendered['services']['rest']['environment']['PGRST_DB_SCHEMAS'], 'api')
+        self.assertIn('/srv/macserver/storage:/var/lib/storage', rendered['services']['storage']['volumes'])
+        self.assertIn('/srv/macserver/storage:/var/lib/storage:ro', rendered['services']['imgproxy']['volumes'])
         fn = rendered['services']['functions']['environment']
         for name in ('JWT_SECRET', 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_DB_URL', 'SUPABASE_SECRET_KEYS'):
             self.assertNotIn(name, fn)

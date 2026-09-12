@@ -39,8 +39,10 @@ Do not display expanded Compose output: it contains secrets.
 Every service is profile-gated on one internal Docker network; no published ports,
 Docker socket, host networking or privileged container. Database volumes are named
 volumes on the Docker data root, which must be placed on the encrypted internal SSD.
-No change to Docker's data root is automated. All configuration mounts are read-only;
-Storage's imgproxy mount is also read-only. Upstream service users/capabilities are
+Storage objects use the explicit `/srv/macserver/storage` bind mount so they can be
+included in the encrypted backup allowlist; provision it with the image's required
+ownership before startup. No change to Docker's data root is automated. All
+configuration mounts are read-only; Storage's imgproxy mount is also read-only. Upstream service users/capabilities are
 retained except for `no-new-privileges`; blanket capability drops need image-specific
 startup tests, especially for PostgreSQL initialization.
 

@@ -1,0 +1,10 @@
+{
+  "restic": {
+    "version": "0.19.1",
+    "url": "https://github.com/restic/restic/releases/download/v0.19.1/restic_0.19.1_linux_amd64.bz2",
+    "sha256": "f415415624dcc452f2a02b8c33641791a8c6d6d3b65bbb3543fcf9a25151585c",
+    "installed_path": "/opt/macserver-runtime/restic-v0.19.1/restic",
+    "verified": "2026-09-11: checksum, version, and backup/check/forget/restore help inspected"
+  },
+  "postgres_restore_image": "supabase/postgres:17.6.1.136@sha256:5a4314708484bec672de2c09653a5c01fb1c84a998564ac231b0325e2238ed5b"
+}

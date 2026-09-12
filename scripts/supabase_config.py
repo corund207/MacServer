@@ -41,7 +41,7 @@ def render():
         for volume in svc.get('volumes', []):
             source, target, *options = volume.split(':')
             if source == './volumes/db/data': source = 'db-data'
-            elif source == './volumes/storage': source = 'storage-data'
+            elif source == './volumes/storage': source = '/srv/macserver/storage'
             elif source == './volumes/snippets': source = 'snippets'
             elif source == './volumes/functions': source = './functions'
             elif source.startswith('./volumes/'): source = './upstream/' + source[2:]
@@ -71,7 +71,7 @@ def render():
                     value = value.replace('${' + secret + '}', '${' + secret + ':?required}')
                 svc['environment'][key] = value
     config['networks'] = {'default': {'internal': True}}
-    config['volumes'] = {k: {} for k in ['db-data', 'db-config', 'storage-data', 'deno-cache', 'snippets']}
+    config['volumes'] = {k: {} for k in ['db-data', 'db-config', 'deno-cache', 'snippets']}
     return config
 
 

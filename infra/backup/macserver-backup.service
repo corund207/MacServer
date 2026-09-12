@@ -1,0 +1,36 @@
+[Unit]
+Description=MacServer encrypted removable-drive backup
+Documentation=file:/opt/macserver/docs/BACKUP-RESTORE.md
+After=docker.service
+ConditionPathExists=/etc/macserver-backup/DEPLOYMENT-APPROVED
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+LoadCredential=restic-password:/etc/macserver-backup/restic-password
+ExecStart=/usr/bin/python3 /opt/macserver/scripts/backup.py --config /etc/macserver-backup/config.json backup
+UMask=0077
+StateDirectory=macserver-backup
+StateDirectoryMode=0750
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+ReadOnlyPaths=/srv/macserver /etc/macserver /opt/macserver
+ReadWritePaths=/mnt/macserver-backup /var/lib/macserver-backup
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+TimeoutStartSec=3h
+StandardOutput=journal
+StandardError=journal

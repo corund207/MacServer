@@ -1,0 +1,24 @@
+{
+  "format": 1,
+  "mountpoint": "/mnt/macserver-backup",
+  "filesystem_uuid": "REPLACE_WITH_EXACT_FILESYSTEM_UUID",
+  "repository_directory": "restic-repository",
+  "minimum_device_bytes": 214748364800,
+  "maximum_device_bytes": 322122547200,
+  "minimum_free_bytes": 21474836480,
+  "compose_file": "/opt/macserver/infra/supabase/compose.json",
+  "compose_env_file": "/etc/macserver/supabase.env",
+  "staging_parent": "/var/lib/macserver-backup/staging",
+  "restore_parent": "/var/lib/macserver-backup/restores",
+  "status_file": "/var/lib/macserver-backup/status.json",
+  "sources": [
+    "/srv/macserver/storage",
+    "/etc/macserver",
+    "/opt/macserver/infra"
+  ],
+  "retention": {
+    "daily": 7,
+    "weekly": 5,
+    "monthly": 12
+  }
+}

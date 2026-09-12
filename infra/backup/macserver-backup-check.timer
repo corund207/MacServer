@@ -1,0 +1,12 @@
+[Unit]
+Description=Verify the MacServer encrypted repository weekly
+ConditionPathExists=/etc/macserver-backup/DEPLOYMENT-APPROVED
+
+[Timer]
+OnCalendar=Sun *-*-* 04:30:00
+RandomizedDelaySec=20m
+Persistent=true
+Unit=macserver-backup-check.service
+
+[Install]
+WantedBy=timers.target

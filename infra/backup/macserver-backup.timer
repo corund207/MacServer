@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the MacServer encrypted backup daily
+ConditionPathExists=/etc/macserver-backup/DEPLOYMENT-APPROVED
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+RandomizedDelaySec=20m
+Persistent=true
+Unit=macserver-backup.service
+
+[Install]
+WantedBy=timers.target

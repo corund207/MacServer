@@ -8,13 +8,15 @@ has been authorized/listed for live security probing. No live exposure certifica
 | LAN attacker | Default-deny host input, OpenSSH keys over Tailscale; verify listeners and selected Docker backend forwarding from an authorized test client |
 | Tailnet compromise | MFA, narrow grants and app authorization; deny non-admin test identity and keep DB/Studio ports inaccessible |
 | Malicious public client | Public ingress disabled; later exact route allowlist, scoped credentials, rate/body/time limits, audit, RLS negative cases |
-| Lost appliance/drive | Encrypted live storage and backup encryption plus independent escrow; recovery and physical-unlock test outstanding |
-| Compromised container | Later pinned images, least privilege, isolated networks, no Docker socket in web apps; not implemented yet |
+| Lost appliance/drive | Encrypted live storage plus pinned restic workflow and independent escrow; physical-drive and off-host recovery tests outstanding |
+| Substituted/tampered backup drive | Exact mountpoint, UUID, private sentinel, removable/capacity/mount-option gates and authenticated repository check; a privileged attacker can still replace config plus media |
+| Corrupt/inconsistent backup | Logical dump and object snapshot, hashes, repository subset checks, isolated restore drill; concurrent Storage writes need a future verified maintenance/drain gate |
+| Compromised container | Pinned image digests, internal service network, no Docker socket in web apps; target capabilities and runtime behavior remain unqualified |
 | Supply-chain/source substitution | Review source and pinned dependencies; stage refuses symlinks and special files; manifest is integrity bookkeeping, not signature authentication |
 | Lockout/power loss | Local console, proven config restoration, thermal/boot qualification; no remote unattended unlock promise |
 
-Blocking deployment findings: hardware unqualified; package/service pins unresolved;
-Docker firewall integration untested; backups/restores absent; no real tailnet
+Blocking deployment findings: hardware unqualified; authenticated package install unresolved;
+Docker firewall integration untested; physical/off-host restore unproved; no real tailnet
 policy tested. These have high impact only if the inert scaffold is deployed as if
 complete. Remediation and safe commands are in docs/INSTALL.md and
 UPDATE-ROLLBACK.md. Retest in an isolated VM, then only on the designated appliance.

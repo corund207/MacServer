@@ -38,3 +38,8 @@ recovery guide](docs/DASHBOARD.md), and [verified scope](context/PHASE-4-STATUS.
 The loopback display and bounded collector are tested with synthetic evidence; the
 candidate Chromium version is below the recorded security floor, so target deployment
 remains blocked pending a Debian security update and hardware/session qualification.
+
+Phase 5: [encrypted backup and isolated restore](docs/BACKUP-RESTORE.md) with exact
+removable-drive identity gates, logical PostgreSQL exports, Storage/configuration
+coverage, retention and integrity checks. It remains an undeployed candidate pending
+target drive qualification and a real restore rehearsal.

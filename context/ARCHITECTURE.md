@@ -1,5 +1,21 @@
 # Architecture handoff
 
+Phase 5 adds an inert encrypted-backup candidate. A fixed-command root process makes
+PostgreSQL logical exports into private internal-SSD staging, then restic snapshots
+those exports with `/srv/macserver/storage`, `/etc/macserver`, and deployed infra to a
+removable repository. Writes require an exact mountpoint, filesystem UUID, private
+sentinel, supported filesystem/mount flags, unique removable 200–300 GiB device and
+free-space gate. The independently escrowed restic password arrives through a systemd
+credential. An absent/substituted drive fails visibly without stopping live services.
+
+Daily snapshot and weekly subset-check units remain inert behind an untracked approval
+marker. Retention pruning and restore drills require the freshly observed UUID. Drills
+restore to a new path, verify dump hashes and load a pinned PostgreSQL container with no
+network and tmpfs data; no live restore or volume deletion exists. Storage now uses an
+explicit encrypted-SSD bind path so object files are in the backup boundary. A future
+ingress maintenance/drain mechanism is still required for cross-database/object
+consistency, and a second off-host repository plus real recovery test remain open.
+
 Phase 4 adds a locally verified, loopback-only fullscreen status display. It has no
 credentials or mutations. A separate fixed-command collector writes a bounded atomic
 snapshot; the dashboard combines that with direct host observations and marks missing
@@ -28,7 +44,8 @@ filesystem protection, private-network/resource limits and an absent approval
 marker. Node runtime metadata, operator/rollback guide, threat model and pinned CI
 are included. Parser stubs verify syntax only; actual Debian sandbox, TLS/renewal,
 Tailscale permissions/policy/firewall and all recovery gates remain outstanding.
-Phase 4 was not started. Scope and conditional future handoff are in NEXT-PHASE.md.
+Phase 4 is repository-complete but undeployed. Scope and conditional future handoff are
+in its status and NEXT-PHASE.md.
 
 Phase 1 offline foundation and Phase 2 offline data-service configuration exist;
 the appliance is not installed. User authorized local commits without a remote.
@@ -49,7 +66,7 @@ migration rehearsals. They do not replace real per-app authorization tests.
 Future application clients -> outbound tunnel -> HTTPS route allowlist
   -> scoped application authorization / limits -> data services + RLS
 Future administrators -> Tailscale -> OpenSSH keys / authorized private admin app
-Internal SSD -> future verified encrypted backup -> removable 250 GB flash drive
+Internal SSD -> candidate encrypted backup -> removable 250 GB flash drive
 Local console -> loopback-only read-only operations dashboard
 ```
 
@@ -69,11 +86,11 @@ and SSH templates remain unapplied.
 
 Open: T2 hardware support; Docker backend integration; application
 inventory and isolation model; domain/tunnel provider; route and credential design;
-backup capacity and off-device destination; recovery-time requirements. No real
+off-device destination; recovery-time requirements. No real
 identity, domain, device UUID or secret belongs in tracked configuration.
 
 Phase mapping is in PHASE-PLAN.md. Phase 2 handles data services/migration tooling;
-Phase 3 admin; Phase 4 dashboard (repository-complete); Phase 5 backup/recovery; Phase 6 audit; Phase 7
+Phase 3 admin; Phase 4 dashboard; Phase 5 backup/recovery (repository-complete); Phase 6 audit; Phase 7
 readiness. Production deployment is gated on working recovery and exposure tests,
 regardless of which phase produces the code.
 
