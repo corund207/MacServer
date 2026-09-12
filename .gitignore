@@ -20,6 +20,7 @@ apps/admin/playwright-report/
 apps/dashboard/test-results/
 apps/dashboard/playwright-report/
 .impeccable/review/
+.impeccable/critique/
 .venv/
 .DS_Store
 
