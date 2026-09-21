@@ -28,6 +28,13 @@ hashes. Never pipe downloaded scripts into a shell. Review updates, regenerate
 locks deliberately, run audits/tests, and retain the previous release.
 Pins establish artifact identity; they are not vulnerability scans.
 
+The ingress sidecar adds official Node `24.20.0-alpine` and Cloudflare cloudflared
+`2026.9.1`. Their Linux amd64 manifests were fetched from Docker Hub's registry
+API before adding the exact SHA-256 references to `infra/ingress/compose.json`.
+No image was pulled or run during local implementation. The gateway has no npm
+dependencies and runs read-only with all capabilities dropped. Scan those exact
+images and review vendor advisories during target qualification.
+
 ## GitHub Pages
 
 Official GitHub actions are pinned to full commit IDs. Only the deploy job receives

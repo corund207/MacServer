@@ -28,6 +28,7 @@ def command_matrix(full=False):
     ]
     if full:
         commands.extend([
+            ("ingress-node", [shutil.which("node") or "/usr/bin/node", "--test", "apps/ingress/test/gateway.test.mjs"], ROOT),
             ("admin-node", [NPM, "test"], ROOT / "apps/admin"),
             ("admin-browser", [NPM, "run", "test:browser"], ROOT / "apps/admin"),
             ("dashboard-node", [NPM, "test"], ROOT / "apps/dashboard"),

@@ -22,7 +22,8 @@ Start on the Mac with Debian 13 installed. This checks readiness; it does not
 install services. Follow the guide for hardware checks, setup, and recovery.
 
 **Status:** source tooling is available; the physical MacBook has not been qualified.
-Public app ingress and real project access tests must pass before production data.
+[Public HTTPS setup](docs/PUBLIC-APPS.md) is available; real project access tests
+must pass before production data.
 One stack shares Auth and keys; use separate stacks for unrelated trust domains.
 
 [Development](docs/DEVELOPMENT.md) · [Backups](docs/BACKUP-RESTORE.md) ·

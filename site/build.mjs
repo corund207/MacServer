@@ -18,7 +18,7 @@ for (const weight of [400, 500, 600, 700]) {
 }
 await cp(resolve(here, 'node_modules/@fontsource/outfit/LICENSE'), resolve(out, 'assets/OUTFIT-LICENSE.txt'));
 await writeFile(resolve(out, 'assets/GSAP-LICENSE.txt'), 'GSAP 3.15.0 — Copyright GreenSock. Standard no-charge license: https://gsap.com/standard-license/\n');
-const guides = ['GETTING-STARTED', 'INSTALL', 'DEPLOYMENT', 'DATA-SERVICES', 'MIGRATION', 'BACKUP-RESTORE', 'ADMIN', 'ADMIN-IDENTITY', 'DASHBOARD', 'UPDATE-ROLLBACK', 'FINAL-VERIFICATION', 'DEVELOPMENT'];
+const guides = ['GETTING-STARTED', 'PUBLIC-APPS', 'DOWNLOAD-REVIEW', 'INSTALL', 'DEPLOYMENT', 'DATA-SERVICES', 'MIGRATION', 'BACKUP-RESTORE', 'ADMIN', 'ADMIN-IDENTITY', 'DASHBOARD', 'UPDATE-ROLLBACK', 'FINAL-VERIFICATION', 'DEVELOPMENT'];
 const template = await readFile(resolve(here, 'guide.html'), 'utf8');
 for (const name of guides) {
   const source = await readFile(resolve(root, 'docs', `${name}.md`), 'utf8');

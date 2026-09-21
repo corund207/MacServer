@@ -1,0 +1,38 @@
+{
+  "name": "macserver-ingress",
+  "services": {
+    "gateway": {
+      "image": "node:24.20.0-alpine@sha256:4caaaf42195bcd6f6f3559a413b20cb8f8ad089e231ee874cf7701643966689f",
+      "platform": "linux/amd64",
+      "user": "65532:65532",
+      "command": ["node", "/app/src/main.mjs"],
+      "volumes": ["/opt/macserver/apps/ingress:/app:ro", "/etc/macserver/ingress.json:/run/secrets/ingress.json:ro"],
+      "networks": ["data", "edge"],
+      "read_only": true,
+      "cap_drop": ["ALL"],
+      "security_opt": ["no-new-privileges:true"],
+      "mem_limit": "192m",
+      "pids_limit": 64,
+      "restart": "unless-stopped",
+      "healthcheck": {"test": ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"], "interval": "15s", "timeout": "5s", "retries": 3},
+      "logging": {"driver": "local", "options": {"max-size": "10m", "max-file": "3"}}
+    },
+    "tunnel": {
+      "image": "cloudflare/cloudflared:2026.9.1@sha256:d68fa057087c359c79a255570e891215877ce48aa48ba6f28aac90d8077acbc3",
+      "platform": "linux/amd64",
+      "user": "65532:65532",
+      "command": ["tunnel", "--no-autoupdate", "run", "--token-file", "/run/secrets/tunnel-token"],
+      "volumes": ["/etc/macserver/tunnel-token:/run/secrets/tunnel-token:ro"],
+      "networks": ["edge"],
+      "depends_on": {"gateway": {"condition": "service_healthy"}},
+      "read_only": true,
+      "cap_drop": ["ALL"],
+      "security_opt": ["no-new-privileges:true"],
+      "mem_limit": "192m",
+      "pids_limit": 64,
+      "restart": "unless-stopped",
+      "logging": {"driver": "local", "options": {"max-size": "10m", "max-file": "3"}}
+    }
+  },
+  "networks": {"data": {"external": true, "name": "macserver-data_default"}, "edge": {}}
+}

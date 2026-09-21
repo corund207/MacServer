@@ -1,0 +1,24 @@
+[Unit]
+Description=MacServer scoped public application gateway
+After=macserver-data.service network-online.target
+Requires=macserver-data.service
+Wants=network-online.target
+ConditionPathExists=/etc/macserver/PUBLIC-APPROVED
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/docker compose -f /opt/macserver/infra/ingress/compose.json up -d --wait --wait-timeout 120
+ExecStop=/usr/bin/docker compose -f /opt/macserver/infra/ingress/compose.json stop
+TimeoutStartSec=5m
+TimeoutStopSec=2m
+UMask=0077
+NoNewPrivileges=true
+ProtectHome=true
+ProtectSystem=strict
+ReadOnlyPaths=/opt/macserver /etc/macserver
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

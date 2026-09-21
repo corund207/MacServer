@@ -353,11 +353,11 @@ until the guide's real target tests pass; a marker is a guard, not proof.
 
 ## 11. Public application traffic
 
-Public ingress is not implemented. Keep it disabled until the exact domain,
-applications, HTTPS routes, authorization rules, credential scopes, rate limits,
-audit events, abuse controls, and RLS tests are reviewed. When implemented, expose
-only the approved application routes through an outbound-only tunnel. Never attach
-the whole Envoy gateway or any management surface to that tunnel.
+Follow [Connect a public app](PUBLIC-APPS.md) to generate a project bundle and set
+up the scoped gateway with Cloudflare Tunnel. Database CRUD and password-based Auth
+are supported. Storage, Realtime, Functions, public signup, OAuth and RPC are not
+exposed. Keep ingress disabled until the exact domain, routes, authorization rules,
+and real RLS tests pass. Never attach Envoy or management services to the tunnel.
 
 Origin, Referer, User-Agent, and client IP are context, not authentication.
 

@@ -26,6 +26,10 @@ def main():
         shutil.copyfile(ROOT / "infra/deploy/macserver-data.service", target)
         subprocess.run(["systemd-analyze", "verify", "--man=no", "--generators=no",
                         f"--root={root}", str(target)], check=True)
+        ingress = units / "macserver-ingress.service"
+        shutil.copyfile(ROOT / "infra/ingress/macserver-ingress.service", ingress)
+        subprocess.run(["systemd-analyze", "verify", "--man=no", "--generators=no",
+                        f"--root={root}", str(ingress)], check=True)
     print("PASS: deployment unit parser with disposable stubs; not runtime qualification")
 
 

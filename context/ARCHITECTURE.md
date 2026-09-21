@@ -1,5 +1,14 @@
 # Architecture handoff
 
+Phase 11 adds optional public ingress in a separate macserver-ingress Compose
+project. Cloudflared has only edge-network access; the dependency-free Node gateway
+joins edge plus macserver-data_default and routes directly to Auth/PostgREST.
+There are no host ports or routes to Envoy/Studio. Explicit table/method scopes,
+Auth-verified user tokens, api schema, RLS, bounded requests and redacted events
+form the public boundary. Public keys select scope; they are not app identity.
+The project generator prepares a new private config/client/schema bundle only.
+Activation still needs target evidence; see docs/PUBLIC-APPS.md for supported scope.
+
 Phase 10 adds a separately built public documentation site. Scrollable code samples
 are keyboard focusable across browsers. Its only deployed artifact is build/site;
 it contains no appliance connection, credentials, or live

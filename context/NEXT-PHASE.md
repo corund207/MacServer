@@ -1,5 +1,10 @@
 # Target commissioning handoff
 
+Phase 11 delivers source-tested Cloudflare/public gateway setup and project
+scaffolding. Next complete the private console's project connection experience,
+then commission the actual target using docs/PUBLIC-APPS.md and the hardware gates.
+No production app schema, domain, tunnel credential, or target evidence exists here.
+
 Phase 10 adds a branded GitHub Pages installation site and short README. The public
 site's Linux browser checks also require explicit code-sample keyboard focus. The
 HTTPS app workflow requested by the user is next; no appliance is authorized or
