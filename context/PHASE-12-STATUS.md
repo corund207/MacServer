@@ -23,3 +23,7 @@ fonts were copied from the already-reviewed locked package with its OFL license.
 
 No live appliance, status collector, credential or database was configured.
 Target installation still follows ADMIN.md and PUBLIC-APPS.md.
+
+Linux browser review found transient low contrast when navigation backgrounds
+animated between dark and light themes. Background changes are now immediate;
+hover movement remains animated. Accessibility assertions remain enabled.
