@@ -31,3 +31,9 @@ python3 scripts/release_verify.py --full --require-clean --require-upstream-sync
 Passing output remains repository-only NO-GO evidence until the manual target matrix is
 completed and independently reviewed. Future delivery units must retain focused commits,
 configured Git identity, no co-author trailers, secret review and upstream push.
+
+## Phase 9 installation corrections
+
+Canonical GitHub origin and Python CLI invocation now match the actual checkout.
+Full source verification is documented; runtime and public exposure remain gated.
+The requested next delivery adds a branded installation site and public-app setup.

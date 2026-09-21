@@ -98,7 +98,7 @@ def text_findings(root):
 
 
 def tracked_secret_findings(root):
-    result = subprocess.run(["/usr/bin/git", "ls-files", "-z"], cwd=root,
+    result = subprocess.run(["git", "ls-files", "-z"], cwd=root,
                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                             timeout=10, check=False)
     if result.returncode:

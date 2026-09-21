@@ -21,7 +21,7 @@ RUNTIME_ENV = Path("/etc/macserver/runtime.env")
 APPROVAL = Path("/etc/macserver/DEPLOYMENT-APPROVED")
 BACKUP_STATUS = Path("/var/lib/macserver-backup/status.json")
 UPDATE_APPROVAL = Path("/etc/macserver/update-approval.json")
-EXPECTED_REMOTE = "https://github.com/jonahchang207/MacServer.git"
+EXPECTED_REMOTE = "https://github.com/corund207/MacServer.git"
 REQUIRED_CHECKS = {
     "debian13Amd64", "t2Hardware", "encryptedInternalStorage", "consoleRecovery",
     "tailscaleOnlyAdministration", "keyOnlySsh", "hostFirewallNegativeTest",

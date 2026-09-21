@@ -129,3 +129,9 @@ regardless of which phase produces the code.
 Verified read-only Phase 3 delivery is at ca8e0f2; the implementing task is idle.
 At 78% five-hour usage, Phase 4 remains unstarted. This scheduling checkpoint
 changes no architecture, deployment state, deferred capability or recovery gate.
+
+## Phase 9 installation corrections
+
+Canonical GitHub origin and Python CLI invocation now match the actual checkout.
+Full source verification is documented; runtime and public exposure remain gated.
+The requested next delivery adds a branded installation site and public-app setup.

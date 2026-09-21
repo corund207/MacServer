@@ -81,7 +81,7 @@ lid behavior, and another console login before continuing.
 Clone the repository as the ordinary operator, not as root:
 
 ```sh
-git clone https://github.com/jonahchang207/MacServer.git
+git clone https://github.com/corund207/MacServer.git
 cd MacServer
 python3 scripts/bootstrap.py preflight --state-parent /srv
 python3 scripts/validate.py

@@ -13,7 +13,7 @@ the full commit printed by Git; the installer refuses dirty or non-upstream HEAD
 ```sh
 cd "$HOME/MacServer"
 git pull --ff-only
-python3 scripts/release_verify.py --require-clean --require-upstream-sync \
+python3 scripts/release_verify.py --full --require-clean --require-upstream-sync \
   --output build/release-verification.json
 git rev-parse HEAD
 ```
@@ -52,7 +52,7 @@ does not delete anything. Review the full commit again immediately before runnin
 git rev-parse HEAD
 sudo python3 scripts/appliance.py commission --source "$PWD" \
   --confirm-commit FULL_40_CHARACTER_COMMIT
-sudo /opt/macserver/scripts/appliance.py status
+sudo python3 /opt/macserver/scripts/appliance.py status
 ```
 
 Expected: `PASS: commissioned private MacServer release ...`, followed by JSON service
@@ -78,15 +78,15 @@ migrations or deletes volumes.
 ```sh
 cd "$HOME/MacServer"
 git pull --ff-only
-python3 scripts/release_verify.py --require-clean --require-upstream-sync \
+python3 scripts/release_verify.py --full --require-clean --require-upstream-sync \
   --output build/release-verification.json
 git rev-parse HEAD
 # Update /etc/macserver/qualification.json for this exact commit and current evidence.
 # In /etc/macserver/update-approval.json, record current/target commits and current UTC
 # time, then set its booleans true only after maintenance and compatibility review.
-sudo /opt/macserver/scripts/appliance.py update --source "$PWD" \
+sudo python3 /opt/macserver/scripts/appliance.py update --source "$PWD" \
   --confirm-commit FULL_40_CHARACTER_COMMIT
-sudo /opt/macserver/scripts/appliance.py status
+sudo python3 /opt/macserver/scripts/appliance.py status
 ```
 
 The updater copies tracked files into `/opt/macserver-releases/<commit>`, pulls the
@@ -101,9 +101,9 @@ Rollback is disruptive and requires a current healthy backup/restore drill. Conf
 both installed commit IDs and compatibility before running:
 
 ```sh
-sudo /opt/macserver/scripts/appliance.py rollback \
+sudo python3 /opt/macserver/scripts/appliance.py rollback \
   --to PREVIOUS_FULL_COMMIT --confirm-current CURRENT_FULL_COMMIT
-sudo /opt/macserver/scripts/appliance.py status
+sudo python3 /opt/macserver/scripts/appliance.py status
 ```
 
 The tool only switches between already-installed immutable releases. If restart fails,

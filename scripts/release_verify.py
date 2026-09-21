@@ -37,7 +37,7 @@ def command_matrix(full=False):
 
 
 def git_value(*arguments):
-    result = subprocess.run(["/usr/bin/git", *arguments], cwd=ROOT, stdout=subprocess.PIPE,
+    result = subprocess.run(["git", *arguments], cwd=ROOT, stdout=subprocess.PIPE,
                             stderr=subprocess.DEVNULL, timeout=10, check=False, text=True)
     if result.returncode:
         raise RuntimeError("Git metadata unavailable")

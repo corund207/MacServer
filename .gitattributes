@@ -1,1 +1,5 @@
-# Vendored source is checked by the same whitespace rules as local source.
+# Preserve reviewed source hashes and Linux script line endings on every checkout.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.woff2 binary

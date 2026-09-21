@@ -10,19 +10,27 @@ Do not change the configured Git identity or add co-author trailers. Review
 `git diff --cached` for secrets before committing. Every delivery unit must be
 pushed to its configured upstream. Do not force push or rewrite history.
 
-This workspace had no Git metadata. Phase 1 initialized branch `main` and inherited
-the existing Git identity. No remote URL was provided. The operator must supply
-the real GitHub OWNER/REPOSITORY and create/identify that repository first. For an
-EMPTY repository, replace the placeholder and run:
+The canonical repository is `https://github.com/corund207/MacServer.git`.
+Use the configured identity and authenticate Git transport with `gh auth setup-git`.
+Never rewrite an existing author's identity. A clone of `main` already tracks origin.
+
+## Full verification
+
+On Debian 13, install the exact Node runtime recorded in
+`infra/admin/runtime.lock.json` after verifying its official checksum. In both
+`apps/admin` and `apps/dashboard`, run `npm ci --ignore-scripts`, `npm audit`,
+and `npx --no-install playwright install chromium`. Package versions and integrity
+hashes are committed in each lockfile; review changes before installation.
+Then, from the repository root:
 
 ```sh
-git remote add origin git@github.com:OWNER/REPOSITORY.git
-git push --set-upstream origin main
+python3 scripts/release_verify.py --full --require-clean --require-upstream-sync
 ```
 
-If it already has commits, fetch and review its history before integration; do not
-force push the local root commit. If the chosen upstream branch differs from main,
-resolve that choice explicitly before pushing. Never put tokens in a remote URL.
+Expected: every source check passes, while the target verdict remains NO-GO until
+hardware qualification. Linux permissions, procfs, systemd, and browser fixtures
+require Linux; native Windows is suitable for editing and structural checks only.
+Git enforces LF line endings so vendored SHA-256 checks remain portable.
 
 Version policy: Debian major 13; security updates reviewed through Debian channels;
 Docker/service upgrades require exact package versions, upstream commit and image
