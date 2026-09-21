@@ -1,11 +1,37 @@
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 let csrf = '', expires = 0, filePath = '', filesEnabled = false, lastSample = 0, busy = false;
 const notice = (text: string) => { el('notice').textContent = text; };
+el('project-form').addEventListener('submit', event => {
+  event.preventDefault();
+  const name = el<HTMLInputElement>('project-name').value;
+  const table = el<HTMLInputElement>('project-table').value;
+  const apiUrl = el<HTMLInputElement>('project-api').value;
+  const origin = el<HTMLInputElement>('project-origin').value;
+  const validName = (value: string) => /^[a-z][a-z0-9_]{0,62}$/.test(value) && !['rpc', 'admin'].includes(value);
+  const validOrigin = (value: string) => {
+    try { const url = new URL(value); return url.protocol === 'https:' && value === 'https://' + url.hostname && /^[a-z0-9.-]+$/.test(url.hostname) && url.hostname.includes('.'); }
+    catch { return false; }
+  };
+  if (!validName(name) || !validName(table) || !validOrigin(apiUrl) || !validOrigin(origin)) {
+    el('project-error').textContent = 'Use lowercase project/table names and HTTPS origins without paths, credentials, or ports.';
+    el('project-result').hidden = true; return;
+  }
+  el('project-error').textContent = '';
+  el('project-command').textContent = `python3 scripts/project.py --name ${name} --table ${table} \\\n  --api-url ${apiUrl} --origin ${origin} \\\n  --output "$HOME/.macserver-private/${name}"`;
+  el('project-result').hidden = false;
+  el('copy-project').textContent = 'Copy command';
+});
+el('copy-project').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(el('project-command').textContent || ''); el('copy-project').textContent = 'Copied'; }
+  catch { el('copy-project').textContent = 'Select command to copy'; }
+});
 const element = (tag: string, text: string, className = '') => { const node = document.createElement(tag); node.textContent = text; node.className = className; return node; };
 function signedOut() {
   csrf = ''; expires = 0; el('workspace').hidden = true; el('login').hidden = false;
   el('logout').hidden = true; el('refresh').hidden = true;
   for (const id of ['metric-cards', 'metric-rows', 'audit-rows', 'file-rows', 'service-list', 'service-summary', 'cpu-chart', 'memory-chart']) el(id).replaceChildren();
+  el<HTMLFormElement>('project-form').reset(); el('project-result').hidden = true;
+  el('project-command').textContent = ''; el('project-error').textContent = '';
 }
 async function api(path: string, body?: object) {
   const response = await fetch(path, { credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(10_000), ...(body ? { method: 'POST', headers: { 'content-type': 'application/json', 'x-admin-request': '1', 'x-csrf-token': csrf }, body: JSON.stringify(body) } : {}) });
@@ -36,6 +62,8 @@ function render(data: any) {
     const card = element('article', '', 'metric-card'); card.append(element('p', name), element('strong', value), element('small', detail)); cards.append(card);
   }
   el('alerts').replaceChildren(...data.alerts.map((s: string) => element('li', s)));
+  el('collector-status').textContent = data.collectorAt ? `Observed ${new Date(data.collectorAt).toLocaleTimeString()}. Missing services are not assumed healthy.` : 'No fresh collector observation. Check the collector and its permissions.';
+  el('backup-observation').textContent = data.backup?.lastSuccess ? `Last recorded backup: ${new Date(data.backup.lastSuccess).toLocaleString()} (${data.backup.state}).` : 'No fresh backup observation is available.';
   for (const id of ['service-list', 'service-summary']) {
     el(id).replaceChildren(...data.services.map((s: any) => { const box = element('div', '', 'service'), text = element('div', s.name); text.append(element('small', s.detail)); box.append(text, element('span', s.state)); return box; }));
   }
@@ -73,7 +101,7 @@ async function files() {
   if (!result.entries.length) rows('file-rows', []);
 }
 async function view() {
-  const name = location.hash.slice(1), target = document.querySelector<HTMLElement>(`.view[id="${['overview','services','metrics','network','backups','files','database','updates','audit','configuration'].includes(name) ? name : 'overview'}"]`)!;
+  const name = location.hash.slice(1), target = document.querySelector<HTMLElement>(`.view[id="${['overview','connect','services','metrics','network','backups','files','database','updates','audit','configuration'].includes(name) ? name : 'overview'}"]`)!;
   document.querySelectorAll<HTMLElement>('.view').forEach(v => { v.hidden = v !== target; });
   document.querySelectorAll('nav a').forEach(a => { if (a.getAttribute('href') === '#' + target.id) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
   el('page-title').textContent = target.id === 'overview' ? 'Overview' : target.querySelector('h2')!.textContent;

@@ -1,9 +1,11 @@
 # Private administration operator guide
 
-The delivered Phase 3 slice is read-only and tested using isolated fixtures. It
-does not implement the entire admin prompt. No target installation, production
-access, SQL, appliance service startup or network change occurred. The full set
-of available/unavailable capabilities is in [phase status](../context/PHASE-3-STATUS.md).
+The private console provides host observations, optional fresh service/backup status,
+curated files, audit history, and a project connection assistant. The assistant
+generates a reviewed setup command locally; it never executes a browser terminal
+or provisions a database. Privileged controls remain unavailable in this console.
+No target installation or production access is implied by source/browser tests.
+See [current UI status](../context/PHASE-12-STATUS.md).
 Read [identity contract](ADMIN-IDENTITY.md) and [threat model](../security/ADMIN-THREAT-MODEL.md).
 
 ## Reproduce offline verification
@@ -34,7 +36,36 @@ is ignored; do not publish it as real appliance health evidence.
 The CI job uses a commit-pinned setup-node action, exact Node 26.8.1, locked npm
 install, both suites and dependency audit. It may install browser system packages
 inside the disposable CI runner. No deployment secrets, credentials or service
-commands are present. Hosted CI itself has not run because no remote is configured.
+commands are present. Hosted CI runs on the configured GitHub repository.
+
+## Project connections and live observations
+
+Open **Connect a project**, enter a lowercase project/table name and the exact
+HTTPS API URL and app origin, then choose **Prepare connection**. Copy the command
+to a key-only SSH session on the qualified appliance. It generates a new private
+bundle; follow [Public apps](PUBLIC-APPS.md) to review and activate it. Form values
+are not sent to the server or saved in browser storage, and sign-out clears them.
+
+To enable service and backup observations after qualifying the existing collector:
+
+```sh
+sudo usermod -a -G macserver-dashboard macserver-admin
+```
+
+Add `ADMIN_COLLECTOR_ENABLED=true` to the private `/etc/macserver-admin/admin.env`,
+then restart only the admin service. The dashboard group must already exist and
+must grant read-only access to `/run/macserver/status.json`; never add Docker,
+sudo or journal groups. The reader only accepts a bounded root-owned regular file,
+rejects symlinks and evidence older than 60 seconds, and returns allowlisted fields.
+Missing or stale evidence is unavailable. A backup observation does not certify
+a successful restore. Remove that setting and restart to disable the integration.
+
+The collector reads the root-only Compose environment without printing it and
+handles array or newline-delimited Docker JSON. Its output never includes those
+credentials. Review effective directory/group permissions on the actual target.
+
+Brand fonts are local, license-included assets. No CDN or analytics is used by the
+private console. `npm run test:ui` runs additional synthetic loopback browser checks.
 
 ## Private deployment candidate — not applied
 

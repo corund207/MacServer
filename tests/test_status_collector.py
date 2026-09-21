@@ -9,6 +9,13 @@ collector = module("collect_status")
 
 
 class StatusCollectorTests(unittest.TestCase):
+    def test_compose_json_array_and_json_lines_are_supported(self):
+        row = {"Service": "db", "State": "running", "Health": "healthy"}
+        self.assertEqual(collector.parse_docker_output(json.dumps([row])), [row])
+        self.assertEqual(collector.parse_docker_output(json.dumps(row)), [row])
+        self.assertEqual(collector.parse_docker_output(json.dumps(row) + "\n" + json.dumps(row)), [row, row])
+        self.assertEqual(collector.parse_docker_output(""), [])
+
     def test_snapshot_maps_bounded_health_without_secrets(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

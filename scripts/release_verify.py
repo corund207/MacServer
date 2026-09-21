@@ -31,6 +31,7 @@ def command_matrix(full=False):
             ("ingress-node", [shutil.which("node") or "/usr/bin/node", "--test", "apps/ingress/test/gateway.test.mjs"], ROOT),
             ("admin-node", [NPM, "test"], ROOT / "apps/admin"),
             ("admin-browser", [NPM, "run", "test:browser"], ROOT / "apps/admin"),
+            ("admin-workspace", [NPM, "run", "test:ui"], ROOT / "apps/admin"),
             ("dashboard-node", [NPM, "test"], ROOT / "apps/dashboard"),
             ("dashboard-browser", [NPM, "run", "test:browser"], ROOT / "apps/dashboard"),
         ])

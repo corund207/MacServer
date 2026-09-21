@@ -5,14 +5,17 @@ import { Limiter, Sessions, verify, type Credential } from './security.js';
 import type { Audit } from './audit.js';
 import type { Files } from './files.js';
 import { Telemetry } from './telemetry.js';
+import type { CollectorStatus } from './collector.js';
 
 type Options = {
   origin: string; credentials: Credential[]; identity: (ip: string) => Promise<Identity>;
   audit: Pick<Audit, 'record' | 'list'>; files?: Files; tls?: { key: Buffer; cert: Buffer };
   tailscale: () => Promise<{ state: string; addresses: string[] }>;
   now?: () => number;
+  collector?: () => Promise<CollectorStatus>;
 };
 const sessionCookie = '__Host-macserver';
+const fonts = ['outfit-latin-400-normal.woff2', 'outfit-latin-500-normal.woff2', 'outfit-latin-600-normal.woff2'];
 function cookie(raw = '') { return raw.split(';').map(s => s.trim()).find(s => s.startsWith(sessionCookie + '='))?.slice(sessionCookie.length + 1) ?? ''; }
 const fields = (body: unknown, keys: string[]) => !!body && typeof body === 'object' && !Array.isArray(body) && Object.keys(body).every(k => keys.includes(k));
 export function createApp(options: Options) {
@@ -21,7 +24,7 @@ export function createApp(options: Options) {
   const telemetry = new Telemetry(); let activeLogins = 0;
   const identities = new WeakMap<object, Identity>();
   app.addHook('onRequest', async (req, reply) => {
-    reply.headers({ 'content-security-policy': "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'", 'x-content-type-options': 'nosniff', 'x-frame-options': 'DENY', 'referrer-policy': 'no-referrer', 'permissions-policy': 'camera=(), microphone=(), geolocation=()', 'strict-transport-security': 'max-age=31536000', 'cache-control': 'no-store', 'cross-origin-resource-policy': 'same-origin' });
+    reply.headers({ 'content-security-policy': "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'", 'x-content-type-options': 'nosniff', 'x-frame-options': 'DENY', 'referrer-policy': 'no-referrer', 'permissions-policy': 'camera=(), microphone=(), geolocation=()', 'strict-transport-security': 'max-age=31536000', 'cache-control': 'no-store', 'cross-origin-resource-policy': 'same-origin' });
     if (req.headers.host !== new URL(options.origin).host) return reply.code(421).send({ error: 'Unexpected host' });
     if (!global.allow('all') || !requests.allow(req.ip)) return reply.code(429).send({ error: 'Request limit reached' });
     if (Object.keys(req.headers).some(h => h.startsWith('x-forwarded-') || h.startsWith('tailscale-') || h === 'forwarded')) return reply.code(403).send({ error: 'Proxy context denied' });
@@ -32,7 +35,7 @@ export function createApp(options: Options) {
     } catch { return reply.code(403).send({ error: 'Verified Tailscale identity required' }); }
     if (!['GET', 'HEAD'].includes(req.method) && (req.headers.origin !== options.origin || req.headers['content-type'] !== 'application/json' || req.headers['x-admin-request'] !== '1')) return reply.code(403).send({ error: 'Request verification failed' });
     const path = req.url.split('?')[0];
-    if (['/', '/app.js', '/style.css', '/api/login'].includes(path)) return;
+    if (['/', '/app.js', '/style.css', '/api/login', ...fonts.map(name => '/fonts/' + name)].includes(path)) return;
     const session = sessions.get(cookie(req.headers.cookie), identities.get(req)!);
     if (!session) return reply.code(401).send({ error: 'Sign in required' });
     if (!['GET', 'HEAD'].includes(req.method) && req.headers['x-csrf-token'] !== session.csrf) return reply.code(403).send({ error: 'Request verification failed' });
@@ -45,6 +48,7 @@ export function createApp(options: Options) {
   app.get('/', async (_req, reply) => reply.type('text/html').send(await readFile(new URL('../../public/index.html', import.meta.url), 'utf8')));
   app.get('/style.css', async (_req, reply) => reply.type('text/css').send(await readFile(new URL('../../public/style.css', import.meta.url), 'utf8')));
   app.get('/app.js', async (_req, reply) => reply.type('text/javascript').send(await readFile(new URL('../public/app.js', import.meta.url), 'utf8')));
+  for (const name of fonts) app.get('/fonts/' + name, async (_req, reply) => reply.type('font/woff2').send(await readFile(new URL('../../public/fonts/' + name, import.meta.url))));
   app.post('/api/login', async (req, reply) => {
     const identity = identities.get(req)!, body = req.body as { secret?: unknown; confirm?: unknown };
     if (!fields(body, ['secret', 'confirm']) || body.confirm !== true || typeof body.secret !== 'string' || !/^[a-zA-Z0-9_-]{43}$/.test(body.secret)) return reply.code(400).send({ error: 'Invalid sign-in request' });
@@ -70,9 +74,13 @@ export function createApp(options: Options) {
   app.get('/api/overview', async () => {
     let tailscale: object = { state: 'Unavailable', addresses: [] };
     try { tailscale = await options.tailscale(); } catch { /* UI reports unavailable, never healthy. */ }
+    let observation: CollectorStatus | undefined;
+    try { observation = await options.collector?.(); } catch { /* Stale/missing evidence is unavailable. */ }
     return { metrics: await telemetry.read(), tailscale, filesEnabled: !!options.files,
-      alerts: ['Encrypted backup is repository-ready but not target-qualified.', 'Service health, database access and privileged operations are not connected.'],
-      services: ['PostgreSQL', 'Auth', 'PostgREST', 'Envoy', 'Functions', 'Storage', 'Realtime', 'Studio'].map(name => ({ name, state: 'Unavailable', detail: 'No read-only collector configured' })),
+      alerts: observation ? ['Restore qualification is separate from backup status.', ...observation.services.filter(s => s.state === 'failed').map(s => `${s.name} needs attention.`)] : ['Connect the read-only collector to see service and backup status.', 'Complete an isolated restore drill before production data.'],
+      collectorAt: observation?.observedAt ?? null,
+      backup: observation?.backup ?? { state: 'unavailable', lastSuccess: null },
+      services: observation?.services ?? ['PostgreSQL', 'Auth', 'PostgREST', 'Envoy', 'Functions', 'Storage', 'Realtime', 'Studio'].map(name => ({ name, state: 'Unavailable', detail: 'No fresh collector observation' })),
       capabilities: { fileRead: !!options.files, fileWrite: false, sql: false, backup: false, restore: false, update: false, restart: false } };
   });
   app.get('/api/audit', async req => {

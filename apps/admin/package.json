@@ -6,6 +6,7 @@
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.browser.json",
     "test": "npm run build && node --test build/test/*.test.js",
     "test:browser": "npm run build && playwright test",
+    "test:ui": "npm run build && playwright test --config playwright.ui.config.mjs",
     "start": "node build/src/main.js",
     "provision": "node build/src/provision.js"
   },

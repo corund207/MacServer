@@ -1,5 +1,11 @@
 # Architecture handoff
 
+Phase 12 connects the private admin to optional bounded, fresh collector evidence.
+The fixed root-owned status file is a read-only boundary, not a privileged helper.
+The project connection assistant generates a command locally and preserves every
+Tailscale/user/device/token/session check. Original branding and local fonts load
+through explicit static routes after Tailscale identity checks.
+
 Phase 11 adds optional public ingress in a separate macserver-ingress Compose
 project. Cloudflared has only edge-network access; the dependency-free Node gateway
 joins edge plus macserver-data_default and routes directly to Auth/PostgREST.

@@ -37,13 +37,25 @@ def command(argv, timeout=8):
                             env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C.UTF-8"})
     if result.returncode or len(result.stdout) > MAX_INPUT:
         raise RuntimeError("collector command unavailable")
+    if argv[0].endswith("docker"):
+        return parse_docker_output(result.stdout)
     return json.loads(result.stdout)
+
+
+def parse_docker_output(raw):
+    if not raw.strip():
+        return []
+    try:
+        value = json.loads(raw)
+        return value if isinstance(value, list) else [value]
+    except json.JSONDecodeError:
+        return [json.loads(line) for line in raw.splitlines() if line.strip()]
 
 
 def docker_services(compose, runner=command):
     fallback = [{"name": name, "state": "unavailable", "detail": "No container observation"} for name in SERVICES]
     try:
-        rows = runner(["/usr/bin/docker", "compose", "-f", compose, "--profile", "*", "ps", "--all", "--format", "json"])
+        rows = runner(["/usr/bin/docker", "compose", "--env-file", "/etc/macserver/supabase.env", "-f", compose, "--profile", "*", "ps", "--all", "--format", "json"])
         if not isinstance(rows, list):
             return fallback
         indexed = {str(row.get("Service", "")): row for row in rows if isinstance(row, dict)}

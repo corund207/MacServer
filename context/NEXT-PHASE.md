@@ -1,5 +1,10 @@
 # Target commissioning handoff
 
+Phase 12 completes the branded connection assistant and optional collector reader.
+Remaining work is real target qualification and application-specific configuration,
+not an assertion that source tests prove production reliability. Use the published
+installation guide, then PUBLIC-APPS.md with your actual domain and Cloudflare token.
+
 Phase 11 delivers source-tested Cloudflare/public gateway setup and project
 scaffolding. Next complete the private console's project connection experience,
 then commission the actual target using docs/PUBLIC-APPS.md and the hardware gates.
