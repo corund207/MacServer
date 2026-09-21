@@ -1,5 +1,9 @@
 # Target commissioning handoff
 
+Phase 13 supplies private initial user creation and isolated SQL CI. Real application
+schemas, user migration, domain configuration and target commissioning remain the
+operator-specific steps. The example project schema is not VEXVortex's real schema.
+
 Phase 12 completes the branded connection assistant and optional collector reader.
 Remaining work is real target qualification and application-specific configuration,
 not an assertion that source tests prove production reliability. Use the published

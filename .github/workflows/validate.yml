@@ -3,6 +3,22 @@ on: [push, pull_request]
 permissions:
   contents: read
 jobs:
+  project-sql:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: docker run --detach --network none --name macserver-schema-test --env POSTGRES_HOST_AUTH_METHOD=trust postgres:17.9-alpine@sha256:e19c5d72436d4d2f54d00c789775095d02a5dfb1c0f7ea5a243230b1bb46c2bb
+      - name: Wait for isolated fixture
+        run: |
+          for attempt in $(seq 1 30); do
+            if docker exec macserver-schema-test pg_isready -U postgres; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - run: python3 scripts/test_project_sql.py
   ingress:
     runs-on: ubuntu-24.04
     timeout-minutes: 5

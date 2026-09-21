@@ -35,6 +35,11 @@ No image was pulled or run during local implementation. The gateway has no npm
 dependencies and runs read-only with all capabilities dropped. Scan those exact
 images and review vendor advisories during target qualification.
 
+Schema CI uses the official PostgreSQL `17.9-alpine` Linux amd64 image at the
+manifest digest recorded in `.github/workflows/validate.yml`, resolved from the
+official registry before use. It runs in the disposable GitHub runner with
+`--network none`, no host ports or host data mounts, and synthetic users only.
+
 ## GitHub Pages
 
 Official GitHub actions are pinned to full commit IDs. Only the deploy job receives

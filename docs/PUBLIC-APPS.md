@@ -54,9 +54,37 @@ Apply `supabase/migrations/20260907091838_establish_api_boundary.sql` once befor
 the generated schema. Run psql with `ON_ERROR_STOP=1`; never continue after an error.
 The example is a starting schema, not VEXVortex's real data model.
 
-Provision test users privately through your reviewed Auth administration workflow.
-Keep service-role credentials server-side. Existing managed users can instead be
-migrated following [Migration](MIGRATION.md). Public signup is deliberately absent.
+For a brand-new rehearsal stack, the exact schema import commands are:
+
+```sh
+sudo docker compose --env-file /etc/macserver/supabase.env \
+  -f /opt/macserver/infra/supabase/compose.json exec -T db \
+  psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
+  < supabase/migrations/20260907091838_establish_api_boundary.sql
+sudo docker compose --env-file /etc/macserver/supabase.env \
+  -f /opt/macserver/infra/supabase/compose.json exec -T db \
+  psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
+  < "$HOME/.macserver-private/vexvortex/schema.sql"
+```
+
+Run the boundary migration only once for this stack. Stop on any error. These
+commands create database objects and must follow your migration review/confirmation.
+Do not run them against an existing populated deployment as a shortcut.
+
+After pulling the reviewed ingress images below, create two test users privately:
+
+```sh
+sudo python3 /opt/macserver/scripts/auth_user.py
+```
+
+Run once per user. It prompts for email and a hidden, confirmed password, then
+creates an email-confirmed Auth user without sending mail. A temporary read-only
+container joins only the internal data network. The service credential and password
+travel over stdin, never command arguments or environment variables, and are not
+printed. It refuses to pull an uninstalled image. An existing user is not updated.
+Share initial credentials privately. This is a small-deployment provisioning flow,
+not a public signup/password-recovery system.
+Existing managed users can instead be migrated following [Migration](MIGRATION.md).
 
 ## Configure Cloudflare Tunnel
 

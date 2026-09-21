@@ -1,5 +1,10 @@
 # Architecture handoff
 
+Phase 13 adds a root-run private Auth provisioning command. It creates new users
+through Auth's internal API using a reviewed ephemeral Node runtime and stdin-only
+credentials, rather than exposing Auth administration or hand-writing password rows.
+Isolated SQL CI verifies the generated owner-policy example against PostgreSQL.
+
 Phase 12 connects the private admin to optional bounded, fresh collector evidence.
 The fixed root-owned status file is a read-only boundary, not a privileged helper.
 The project connection assistant generates a command locally and preserves every
