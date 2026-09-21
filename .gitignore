@@ -23,6 +23,8 @@ apps/dashboard/playwright-report/
 .impeccable/critique/
 .venv/
 .DS_Store
+site/test-results/
+site/playwright-report/
 
 # Private migration exports and local Supabase CLI state
 migration-exports/

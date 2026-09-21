@@ -1,5 +1,9 @@
 # Target commissioning handoff
 
+Phase 10 adds a branded GitHub Pages installation site and short README. The public
+HTTPS app workflow requested by the user is next; no appliance is authorized or
+reachable in this workspace. Preserve the source/target evidence distinction.
+
 Eight repository phases are delivered and no target deployment was performed. Start
 target work with `context/PHASE-8-STATUS.md`, `docs/DEPLOYMENT.md`,
 `docs/FINAL-VERIFICATION.md`, and `security/SECURITY-AUDIT.md`.
