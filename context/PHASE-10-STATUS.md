@@ -15,3 +15,6 @@ Existing Linux CI passed phase 9. Pages deploys only the static build artifact.
 
 No appliance deployment or real project qualification is implied by the example
 workspace. Public application routing is the next delivery unit.
+
+Linux Chromium found that the horizontally scrollable code sample needed explicit
+keyboard focus. Added tabindex rather than disabling the accessibility assertion.

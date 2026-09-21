@@ -1,3 +1,4 @@
+document.querySelector('.code-window pre').tabIndex = 0;
 const reduced = matchMedia('(prefers-reduced-motion: reduce)');
 let motion;
 const motionButton = document.querySelector('.motion-toggle');

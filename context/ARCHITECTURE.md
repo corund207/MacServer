@@ -1,7 +1,8 @@
 # Architecture handoff
 
-Phase 10 adds a separately built public documentation site. Its only deployed
-artifact is build/site; it contains no appliance connection, credentials, or live
+Phase 10 adds a separately built public documentation site. Scrollable code samples
+are keyboard focusable across browsers. Its only deployed artifact is build/site;
+it contains no appliance connection, credentials, or live
 status. Original branding, local fonts and GSAP are shared visual foundations.
 The short README links to the full operator guide and preserves qualification gates.
 
