@@ -1,58 +1,59 @@
-# Target commissioning handoff
+# Commissioning handoff
 
-Phase 13 supplies private initial user creation and isolated SQL CI. Real application
-schemas, user migration, domain configuration and target commissioning remain the
-operator-specific steps. The example project schema is not VEXVortex's real schema.
+The requested source work is delivered in phases 9–13: installation corrections,
+MacServer branding, a short README, GitHub Pages documentation, a scoped public
+gateway, project bundles, private initial-user provisioning, and a branded private
+console with optional live collector observations.
 
-Phase 12 completes the branded connection assistant and optional collector reader.
-Remaining work is real target qualification and application-specific configuration,
-not an assertion that source tests prove production reliability. Use the published
-installation guide, then PUBLIC-APPS.md with your actual domain and Cloudflare token.
+Installation site: https://corund207.github.io/MacServer/
 
-Phase 11 delivers source-tested Cloudflare/public gateway setup and project
-scaffolding. Next complete the private console's project connection experience,
-then commission the actual target using docs/PUBLIC-APPS.md and the hardware gates.
-No production app schema, domain, tunnel credential, or target evidence exists here.
+## What is ready
 
-Phase 10 adds a branded GitHub Pages installation site and short README. The public
-site's Linux browser checks also require explicit code-sample keyboard focus. The
-HTTPS app workflow requested by the user is next; no appliance is authorized or
-reachable in this workspace. Preserve the source/target evidence distinction.
+- `docs/GETTING-STARTED.md`: complete ordered installation instructions.
+- `docs/PUBLIC-APPS.md`: Cloudflare Tunnel, project schema/client generation,
+  private user provisioning, exact supported routes, acceptance checks and shutdown.
+- `docs/ADMIN.md`: private console and optional collector integration.
+- `docs/DOWNLOAD-REVIEW.md`: reviewed sources, pins and download boundaries.
+- CI: structural/security checks, Linux units/Compose, Python tests, public gateway
+  negatives, real isolated PostgreSQL RLS tests, private console/TLS/browser tests,
+  dashboard tests, and responsive/accessibility checks for the installation site.
 
-Eight repository phases are delivered and no target deployment was performed. Start
-target work with `context/PHASE-8-STATUS.md`, `docs/DEPLOYMENT.md`,
-`docs/FINAL-VERIFICATION.md`, and `security/SECURITY-AUDIT.md`.
-The root `README.md` now gives the concise end-to-end setup order and routes every
-target-changing operation to the detailed operator runbooks.
-All future work must remain within the MacServer repository boundary; no other product
-repository is an instruction source or implementation dependency.
+All delivery commits use the verified corund207 GitHub identity and authenticated
+Git transport. No co-author trailers or rewritten history.
 
-The next legitimate work is target commissioning, which requires the user to identify
-and authorize the exact MacBook appliance and any test endpoints. Gather the missing
-choices first: recovery objectives and media/off-host destination; application/domain/
-route inventory; app credential scopes; managed Supabase schema and RLS cases; tailnet
-identities/policy; and acceptable maintenance windows. Keep production data and public
-exposure disabled until every blocking finding has evidence.
+## What must happen on the appliance
 
-Follow the ordered checklist in FINAL-VERIFICATION. Use only the designated appliance
-and explicitly listed endpoints; never scan the broader LAN. Preserve local console and
-rollback access. Any OS/disk formatting, volume deletion, production restore, migration,
-credential rotation or policy replacement needs immediate explicit confirmation and a
-tested backup/rollback path. Public management remains forbidden.
+1. Identify and authorize the exact MacBook and endpoints. Qualify Debian 13/T2,
+   encryption, cooling, power-loss recovery, console and private networking.
+2. Commission the private stack using `docs/DEPLOYMENT.md`.
+3. Establish rotating encrypted backups and complete an isolated real restore.
+4. Review the real VEXVortex schema and ownership rules. The generated example is
+   not a substitute for production migration or real application authorization tests.
+5. Supply the actual domain and Cloudflare tunnel credential privately. Enable only
+   approved HTTPS app routes after two-user negative tests and exposure checks.
+6. Install the optional private console using its reviewed build artifact and
+   dedicated user. Verify direct Tailscale identity, TLS, session and collector access.
 
-For source-only revalidation, use a clean checkout and run:
+No appliance was contacted, disk formatted, real account created, or production
+data imported. Public management remains forbidden. Public gateway scope currently
+covers approved table CRUD and password/refresh Auth; Storage, Realtime, Functions,
+signup, OAuth, password reset, joins and RPC remain denied. Related apps share
+Auth; unrelated trust domains need separate stacks.
+
+Full-disk encryption currently needs local unlock after a cold boot.
+Destructive operations retain immediate explicit confirmation and tested rollback.
+
+## Revalidate source
+
+On Linux with the reviewed development dependencies:
 
 ```sh
-python3 scripts/release_verify.py --full --require-clean --require-upstream-sync \
-  --output build/release-verification.json
+python3 scripts/release_verify.py --full --require-clean --require-upstream-sync
+cd site
+npm ci --ignore-scripts
+npm run build
+npm test
 ```
 
-Passing output remains repository-only NO-GO evidence until the manual target matrix is
-completed and independently reviewed. Future delivery units must retain focused commits,
-configured Git identity, no co-author trailers, secret review and upstream push.
-
-## Phase 9 installation corrections
-
-Canonical GitHub origin and Python CLI invocation now match the actual checkout.
-Full source verification is documented; runtime and public exposure remain gated.
-The requested next delivery adds a branded installation site and public-app setup.
+The release verifier intentionally retains a repository-only NO-GO verdict.
+Only completed target evidence can establish production readiness.

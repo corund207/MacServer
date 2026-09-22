@@ -15,3 +15,7 @@ denial, and anonymous denial. It is fixture evidence, not production app validat
 
 No user was created and no SQL was applied on an appliance. CI runtime is isolated
 with --network none and uses only synthetic rows; the official image is pinned.
+
+Hosted project-sql CI passed against the generated schema and real PostgreSQL.
+The current architecture/handoff now replace stale phase-era next-step language;
+the README and installation/deployment guides link the delivered public workflow.

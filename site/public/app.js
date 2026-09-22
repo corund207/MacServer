@@ -34,7 +34,7 @@ for (const button of document.querySelectorAll('.step > button')) {
   });
 }
 const examples = [
-  { file: 'client.ts', caption: 'Use your approved HTTPS endpoint and client-safe anon key.', code: "import { createClient } from '@supabase/supabase-js'\n\nconst supabase = createClient(\n  'https://api.example.test',\n  'YOUR_CLIENT_SAFE_ANON_KEY',\n  { db: { schema: 'api' } }\n)" },
+  { file: 'client.ts', caption: 'Use your approved HTTPS endpoint and scoped key from your project bundle.', code: "import { createClient } from '@supabase/supabase-js'\n\nconst supabase = createClient(\n  'https://api.example.test',\n  'YOUR_SCOPED_APP_KEY',\n  { db: { schema: 'api' } }\n)" },
   { file: 'projects.ts', caption: 'Create your table, grants, and ownership policies before querying.', code: "const { data, error } = await supabase\n  .from('projects')\n  .select('id, name')\n\nif (error) throw error\n\n// RLS decides which rows this user can access.\nconsole.log(data)" },
   { file: 'sign-in.ts', caption: 'Use Auth sessions for users. Never trust a browser app label as identity.', code: "const { data, error } = await supabase.auth\n  .signInWithPassword({\n    email: form.email,\n    password: form.password\n  })\n\nif (error) throw error\n// The client sends the user token on later requests." }
 ];

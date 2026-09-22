@@ -1,8 +1,9 @@
 # Staged installation and qualification
 
-Phase 1 does not install an OS, packages, services, firewall rules or secrets on
-the appliance. Run the repository tools without sudo. Python 3.11 or newer is
-needed for development; Debian 13's Python 3.13 is the intended target.
+Start with [Install MacServer](GETTING-STARTED.md) for the full sequence. This
+reference covers host qualification and inert configuration candidates. These
+steps do not automatically install an OS or apply host settings. Run the offline
+repository tools without sudo. Debian 13's Python 3.13 is the intended target.
 
 1. Identify the MacBook and its disks locally. Verify a separate, restorable copy
    of existing data and a working recovery boot before considering installation.
@@ -99,8 +100,9 @@ use moving tags. No curl-to-shell setup is allowed.
 
 ## Local secret bootstrap
 
-Only the future backup password is implemented; this is not a data-service env
-file generator. Use a NEW directory below an existing private operator directory:
+This command generates the backup password. The separate data-service environment
+generator is documented in GETTING-STARTED.md. Use a NEW directory below an
+existing private operator directory:
 
 ```sh
 python3 scripts/init_secrets.py --directory "$HOME/.macserver-backup-secrets"

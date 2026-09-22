@@ -24,6 +24,7 @@ install services. Follow the guide for hardware checks, setup, and recovery.
 **Status:** source tooling is available; the physical MacBook has not been qualified.
 [Public HTTPS setup](docs/PUBLIC-APPS.md) is available; real project access tests
 must pass before production data.
+The public gateway supports table CRUD and password Auth; see its guide for limits.
 One stack shares Auth and keys; use separate stacks for unrelated trust domains.
 
 [Development](docs/DEVELOPMENT.md) · [Backups](docs/BACKUP-RESTORE.md) ·

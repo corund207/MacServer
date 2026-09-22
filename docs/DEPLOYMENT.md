@@ -2,8 +2,9 @@
 
 The repository now has a fail-closed deployment path for an empty, private MacServer
 stack. It does not format disks, install Debian/packages, alter the firewall, create
-secrets, import data, expose ports, or approve production. Complete the README through
-Docker qualification first. Run commands only on the designated MacBook.
+secrets, import data, expose ports, or approve production. Complete the
+[installation guide](GETTING-STARTED.md) through Docker qualification first.
+Run commands only on the designated MacBook.
 
 ## Prepare private configuration
 
@@ -18,7 +19,7 @@ python3 scripts/release_verify.py --full --require-clean --require-upstream-sync
 git rev-parse HEAD
 ```
 
-Generate Supabase secrets as described in the README. Then install them and the
+Generate Supabase secrets as described in the installation guide. Then install them and the
 runtime profile without printing their contents:
 
 ```sh
@@ -64,7 +65,8 @@ never delete volumes to retry.
 
 Commissioning is approval for an empty private rehearsal only. Before production data,
 complete encrypted backup initialization and restore, real RLS/application tests, and
-migration rehearsal. Public application ingress is still a separate blocked feature.
+migration rehearsal. [Public application setup](PUBLIC-APPS.md) is separate and
+must pass its route/RLS/backup checks before activation.
 
 ## Update from GitHub
 
