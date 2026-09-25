@@ -31,7 +31,8 @@ def create(name, table, api_url, site_url, output):
     output.mkdir(mode=0o700)
     key = "ms_pub_" + secrets.token_urlsafe(32)
     config = {"format": 1, "apps": [{"id": name, "key": key, "origins": [site_url],
-              "tables": {table: ["GET", "HEAD", "POST", "PATCH", "DELETE"]}, "requestsPerMinute": 120}]}
+              "tables": {table: ["GET", "HEAD", "POST", "PATCH", "DELETE"]}, "requestsPerMinute": 600,
+              "clientRequestsPerMinute": 60}]}
     sql = f"""-- Review before applying to a NEW project. This performs no destructive SQL.
 -- Prerequisite: apply the repository's establish_api_boundary migration first.
 BEGIN;

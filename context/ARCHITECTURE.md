@@ -37,8 +37,8 @@ A publishable app key selects explicit table/method scopes; upserts that merge r
 need the table's PATCH scope. It is not proof of app identity. Data requests also need an Auth-verified user token; RLS authorizes
 rows. Origin, Referer, User-Agent and IP never replace authentication.
 The gateway limits bodies, responses, time, concurrent requests and request budgets,
-and records redacted events. Auth budgets are per client (Cloudflare's client address,
-throttling only, never logged) under a total ceiling. RPC, joins, anonymous data, signup, OAuth, Storage,
+and records redacted events. Every budget and the in-flight cap are counted per client
+(Cloudflare's client address, throttling only, never logged) before the shared ceiling. RPC, joins, anonymous data, signup, OAuth, Storage,
 Realtime and Functions are not exposed. Access-token revocation follows expiry.
 
 Initial users can be created by a root-run private CLI calling Auth through an

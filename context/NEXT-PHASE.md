@@ -43,11 +43,9 @@ Auth; unrelated trust domains need separate stacks.
 Full-disk encryption currently needs local unlock after a cold boot.
 Destructive operations retain immediate explicit confirmation and tested rollback.
 
-Residual availability risk: Auth routes allow 20 requests/min per client and 300/min
-in total. A flood from many addresses can still reach the total limit and block sign-in.
-Configure a Cloudflare edge rate-limiting rule for `/auth/v1/token` when enabling
-public routes. The per-app data budget is still shared by everyone using that app's
-public key.
+Residual availability risk: every gateway limit is counted per client before its shared
+total, but a flood from many addresses can still reach the totals. Configure Cloudflare
+edge rate limiting when enabling public routes. Limits: docs/PUBLIC-APPS.md.
 
 ## Revalidate source
 

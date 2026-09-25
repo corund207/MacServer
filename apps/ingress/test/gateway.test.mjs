@@ -105,6 +105,40 @@ test('one client cannot exhaust sign-in for others, and the total still applies'
   assert.equal((await signIn('198.51.100.9')).status, 429);
   assert.ok(!JSON.stringify(f.events).includes('198.51.100'));
 });
+test('per-client budgets keep one source from exhausting shared capacity', async t => {
+  const f = await fixture(t, { clientPerMinute: 3 });
+  const from = ip => fetch(f.url + '/missing', { headers: { ...headers(), 'cf-connecting-ip': ip } });
+  for (let i = 0; i < 3; i++) assert.equal((await from('203.0.113.9')).status, 404);
+  assert.equal((await from('203.0.113.9')).status, 429);
+  assert.equal((await from('198.51.100.7')).status, 404);
+  assert.throws(() => validateConfig({ format: 1, apps: [{ ...app, clientRequestsPerMinute: app.requestsPerMinute + 1 }] }));
+  const shared = { ...app, clientRequestsPerMinute: 2 };
+  const gateway = createGateway({ format: 1, apps: [shared] }, { audit: () => {}, fetcher: async url => new Response(JSON.stringify(url.endsWith('/user') ? { id: user } : [])) });
+  gateway.listen(0, '127.0.0.1'); await once(gateway, 'listening');
+  t.after(() => { gateway.closeAllConnections(); gateway.close(); });
+  const read = ip => fetch('http://127.0.0.1:' + gateway.address().port + '/rest/v1/items', { headers: { ...headers(), 'cf-connecting-ip': ip } });
+  assert.equal((await read('203.0.113.9')).status, 200);
+  assert.equal((await read('203.0.113.9')).status, 200);
+  assert.equal((await read('203.0.113.9')).status, 429);
+  assert.equal((await read('198.51.100.7')).status, 200);
+});
+test('one client cannot hold every in-flight slot', async t => {
+  let release; const held = new Promise(resolve => { release = resolve; });
+  const f = await fixture(t, { clientConcurrency: 1, fetcher: async url => {
+    if (url.endsWith('/user')) return new Response(JSON.stringify({ id: user }));
+    await held; return new Response('[]');
+  } });
+  const read = ip => fetch(f.url + '/rest/v1/items', { headers: { ...headers(), 'cf-connecting-ip': ip } });
+  const slow = read('203.0.113.9');
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal((await read('203.0.113.9')).status, 429);
+  const other = read('198.51.100.7');
+  await new Promise(resolve => setTimeout(resolve, 50));
+  release();
+  assert.equal((await slow).status, 200);
+  assert.equal((await other).status, 200);
+  assert.equal((await read('203.0.113.9')).status, 200);
+});
 test('app limits, audit failure and backend failures fail closed', async t => {
   const f = await fixture(t);
   for (let i = 0; i < app.requestsPerMinute; i++) await fetch(f.url + '/missing', { headers: headers() });

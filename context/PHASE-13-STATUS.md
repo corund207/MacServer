@@ -46,3 +46,13 @@ address is used only for throttling. It never authorizes a request and is never
 logged or forwarded. Gateway tests cover key parsing, cross-client isolation, the
 total ceiling and audit redaction. Residual risk: a flood from many addresses; use
 Cloudflare edge rate limiting.
+
+## Per-client gateway limits — 2026-09-25
+
+The remaining shared gateway limits are now also counted per client, using the same
+`CF-Connecting-IP` key (throttling only). All requests: 240/min per client before the
+3,000/min total. In flight: 8 per client, 32 in total. Each app: optional
+`clientRequestsPerMinute` (default min(60, `requestsPerMinute`)) before the app total.
+New bundles use 600 total and 60 per client. Tests cover each limit and fail against
+the previous gateway. docs/PUBLIC-APPS.md documents the limits and the shared-address
+trade-off.

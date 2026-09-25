@@ -87,6 +87,27 @@ Share initial credentials privately. This is a small-deployment provisioning flo
 not a public signup/password-recovery system.
 Existing managed users can instead be migrated following [Migration](MIGRATION.md).
 
+## Request limits
+
+The gateway counts requests per client first, so one source cannot use up the shared
+limits. A client is the address in Cloudflare's `CF-Connecting-IP` header; IPv6 is
+grouped by /64. The address is used only for throttling. It never authorizes a
+request, and it is never logged or forwarded. Requests without the header share one
+"unattributed" client.
+
+| Limit | Per client | Shared total |
+| --- | --- | --- |
+| All requests, before the app key is checked | 240 a minute | 3,000 a minute |
+| Requests in flight at once | 8 | 32 |
+| Requests for one app | `clientRequestsPerMinute` (default: 60, or `requestsPerMinute` if lower) | `requestsPerMinute` |
+| Sign-in, refresh, user and logout | 20 a minute | 300 a minute |
+
+New bundles set `requestsPerMinute` to 600 and `clientRequestsPerMinute` to 60.
+`clientRequestsPerMinute` must not exceed `requestsPerMinute`. Many users behind one
+address, such as an office network or a mobile carrier, share one client budget;
+raise `clientRequestsPerMinute` if they hit it. A flood from many addresses can still
+reach the shared totals; Cloudflare edge rules are the defence for that.
+
 ## Configure Cloudflare Tunnel
 
 1. In Cloudflare Zero Trust, create a remotely managed Cloudflare Tunnel for this
@@ -94,12 +115,8 @@ Existing managed users can instead be migrated following [Migration](MIGRATION.m
 2. Add exactly your approved API hostname, with service `http://gateway:8080`.
    Do not add wildcard hostnames, private network routes, SSH, Studio or Envoy.
 3. Enforce HTTPS at Cloudflare, configure appropriate edge abuse controls, and
-   review request logging for privacy. The local gateway also enforces request,
-   body, response, concurrency and authentication budgets. Auth routes allow 20
-   requests per minute per client (IPv6 grouped by /64) and 300 in total. The client
-   comes from Cloudflare's `CF-Connecting-IP` header. It is used only for throttling,
-   never logged or used to authorize. A flood from many addresses can still reach
-   the total limit, so add a Cloudflare rate-limiting rule for `/auth/v1/token`.
+   review request logging for privacy. Add a Cloudflare rate-limiting rule for
+   `/auth/v1/token`; the gateway's own limits are listed under Request limits.
 4. Transfer the tunnel token privately into a new file outside Git. Never put it
    on the command line or paste it into logs. The container reads a token file.
 5. Install private configuration on the target:

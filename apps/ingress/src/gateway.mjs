@@ -21,6 +21,7 @@ export function validateConfig(value) {
       if (!NAME.test(table) || ['rpc', 'admin'].includes(table) || !Array.isArray(methods) || !methods.length || methods.some(m => !METHODS.includes(m))) throw Error('Invalid table scope');
     }
     if (!Number.isInteger(app.requestsPerMinute) || app.requestsPerMinute < 1 || app.requestsPerMinute > 1000) throw Error('Invalid rate limit');
+    if (app.clientRequestsPerMinute !== undefined && (!Number.isInteger(app.clientRequestsPerMinute) || app.clientRequestsPerMinute < 1 || app.clientRequestsPerMinute > app.requestsPerMinute)) throw Error('Invalid client rate limit');
   }
   return value;
 }
@@ -110,14 +111,18 @@ async function responseBytes(response, max) {
 export function createGateway(config, { fetcher = fetch, audit = event => {
   if (process.stdout.writableLength > 65536) throw Error('Audit backpressure');
   process.stdout.write(JSON.stringify(event) + '\n');
-}, now = Date.now, authURL = 'http://auth:9999', restURL = 'http://rest:3000', authPerClient = 20, authTotal = 300 } = {}) {
+}, now = Date.now, authURL = 'http://auth:9999', restURL = 'http://rest:3000', authPerClient = 20, authTotal = 300, clientPerMinute = 240, clientConcurrency = 8 } = {}) {
   validateConfig(config);
   const apps = new Map(config.apps.map(app => [createHash('sha256').update(app.key).digest('hex'), app]));
   const budgets = new Map(config.apps.map(app => [app.id, new Budget(app.requestsPerMinute, now)]));
-  const global = new Budget(3000, now), authBudget = new Budget(authTotal, now), clientAuth = new ClientBudgets(authPerClient, now);
+  // Each app's total is shared capacity; a per-client share keeps one source from using all of it.
+  const appClients = new Map(config.apps.map(app => [app.id, new ClientBudgets(app.clientRequestsPerMinute ?? Math.min(60, app.requestsPerMinute), now)]));
+  const global = new Budget(3000, now), clients = new ClientBudgets(clientPerMinute, now);
+  const authBudget = new Budget(authTotal, now), clientAuth = new ClientBudgets(authPerClient, now);
+  const inflight = new Map();
   let active = 0;
   const server = createServer({ maxHeaderSize: 16384, requestTimeout: 15000, headersTimeout: 10000, keepAliveTimeout: 5000 }, async (req, res) => {
-    const id = randomUUID(); let app, route;
+    const id = randomUUID(); let app, route, client;
     const finish = (status, message) => {
       try { audit({ at: new Date(now()).toISOString(), id, app: app?.id || null, route: route?.id || 'denied', status }); }
       catch { status = 503; message = 'Audit unavailable'; }
@@ -125,7 +130,9 @@ export function createGateway(config, { fetcher = fetch, audit = event => {
       res.end(JSON.stringify({ error: message, requestId: id }));
     };
     if (req.url === '/healthz' && req.method === 'GET' && ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress)) return res.writeHead(200).end('ok');
-    if (!global.take() || active >= 32) return finish(429, 'Request budget exceeded');
+    client = clientKey(req.headers['cf-connecting-ip']);
+    // Per-client limits run first so one source cannot spend the shared ceilings.
+    if (!clients.take(client) || (inflight.get(client) ?? 0) >= clientConcurrency || !global.take() || active >= 32) return finish(429, 'Request budget exceeded');
     const origin = req.headers.origin;
     // CORS is browser policy only. Preflight carries no credential and grants no data access.
     if (req.method === 'OPTIONS') {
@@ -141,13 +148,13 @@ export function createGateway(config, { fetcher = fetch, audit = event => {
     if (!app) return finish(401, 'App credential denied');
     if (origin && !app.origins.includes(origin)) return finish(403, 'Origin not allowed');
     if (origin) { res.setHeader('access-control-allow-origin', origin); res.setHeader('vary', 'Origin'); res.setHeader('access-control-expose-headers', 'Content-Range, X-Request-Id'); }
-    if (!budgets.get(app.id).take()) return finish(429, 'App request budget exceeded');
+    if (!appClients.get(app.id).take(client) || !budgets.get(app.id).take()) return finish(429, 'App request budget exceeded');
     route = routeFor(req.url, req.method, app);
     if (!route) return finish(404, 'Route not available');
     if (['accept-profile', 'content-profile'].some(h => req.headers[h] && req.headers[h] !== 'api')) return finish(403, 'Schema not allowed');
     // One source cannot exhaust sign-in for everyone; the total still bounds Auth work.
-    if (route.kind === 'auth' && (!clientAuth.take(clientKey(req.headers['cf-connecting-ip'])) || !authBudget.take())) return finish(429, 'Authentication request budget exceeded');
-    active++;
+    if (route.kind === 'auth' && (!clientAuth.take(client) || !authBudget.take())) return finish(429, 'Authentication request budget exceeded');
+    active++; inflight.set(client, (inflight.get(client) ?? 0) + 1);
     const controller = new AbortController();
     const timeout = setTimeout(() => { controller.abort(); if (!res.writableEnded) res.destroy(); req.destroy(); }, 15000);
     res.on('close', () => { if (!res.writableEnded) controller.abort(); });
@@ -190,7 +197,11 @@ export function createGateway(config, { fetcher = fetch, audit = event => {
       if (upstream.headers.has('content-range')) outgoing['content-range'] = upstream.headers.get('content-range');
       res.writeHead(upstream.status, outgoing); res.end(bytes);
     } catch (error) { if (!res.headersSent && !res.destroyed) finish(error.status || 502, 'Request unavailable'); }
-    finally { clearTimeout(timeout); active--; }
+    finally {
+      clearTimeout(timeout); active--;
+      const remaining = inflight.get(client) - 1;
+      if (remaining > 0) inflight.set(client, remaining); else inflight.delete(client);
+    }
   });
   server.maxConnections = 128;
   server.on('upgrade', (_req, socket) => socket.destroy());
