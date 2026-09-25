@@ -67,6 +67,20 @@ test('schema overrides and unsupported body types are rejected', async t => {
   assert.equal((await fetch(f.url + '/rest/v1/items', { method: 'POST', headers: { ...headers(), 'content-type': 'text/plain' }, body: '{}' })).status, 415);
   assert.equal((await fetch(f.url + '/rest/v1/items', { method: 'POST', headers: headers(), body: 'bad json' })).status, 400);
 });
+test('upsert merge cannot widen an insert-only table scope', async t => {
+  const insertOnly = { ...app, tables: { items: ['GET', 'POST'] } };
+  assert.equal(routeFor('/rest/v1/items?on_conflict=id', 'POST', insertOnly), null);
+  assert.ok(routeFor('/rest/v1/items?on_conflict=id', 'POST', app));
+  const calls = [];
+  const gateway = createGateway({ format: 1, apps: [insertOnly] }, { audit: () => {},
+    fetcher: async (url) => { calls.push(url); return new Response(JSON.stringify(url.endsWith('/user') ? { id: user } : [])); } });
+  gateway.listen(0, '127.0.0.1'); await once(gateway, 'listening');
+  t.after(() => { gateway.closeAllConnections(); gateway.close(); });
+  const url = 'http://127.0.0.1:' + gateway.address().port + '/rest/v1/items';
+  assert.equal((await fetch(url, { method: 'POST', headers: { ...headers(), prefer: 'resolution=merge-duplicates' }, body: '{}' })).status, 403);
+  assert.ok(!calls.some(call => call.startsWith('http://rest:3000')));
+  assert.equal((await fetch(url, { method: 'POST', headers: { ...headers(), prefer: 'resolution=ignore-duplicates' }, body: '{}' })).status, 200);
+});
 test('password and refresh exchanges are explicitly allowed but never admin or signup', async t => {
   const f = await fixture(t);
   for (const grant of ['password', 'refresh_token']) {

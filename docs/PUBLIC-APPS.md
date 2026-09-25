@@ -14,6 +14,7 @@ qualified Mac, working backups, a Cloudflare-managed domain, and real RLS tests.
 | --- | --- |
 | Sign in with password; refresh session; sign out; get user | Supported |
 | Select, insert, update, delete on approved `api` tables | Supported with user session and RLS |
+| Upsert (`on_conflict`, `resolution=merge-duplicates`) | Only where the table also allows `PATCH` |
 | Multiple related apps | Separate scoped keys and table allowlists; shared Auth |
 | Anonymous database access, signup, password reset, OAuth | Denied by default |
 | Storage, Realtime, Functions, RPC, joins/embedded resources | Not exposed in this release |

@@ -33,7 +33,7 @@ function claims(token) {
     return value;
   } catch { return null; }
 }
-function queryAllowed(search) {
+function queryAllowed(search, canUpdate) {
   if (search.length > 4096) return false;
   const seen = new Set();
   for (const [key, value] of new URLSearchParams(search)) {
@@ -42,7 +42,7 @@ function queryAllowed(search) {
     if (key === 'select' && !/^[a-zA-Z0-9_,*]+$/.test(value)) return false;
     else if (key === 'order' && !/^[a-zA-Z0-9_,.]+$/.test(value)) return false;
     else if (['limit', 'offset'].includes(key) && (!/^\d{1,6}$/.test(value) || (key === 'limit' && Number(value) > 1000))) return false;
-    else if (key === 'on_conflict' && !/^[a-zA-Z0-9_,]+$/.test(value)) return false;
+    else if (key === 'on_conflict' && (!canUpdate || !/^[a-zA-Z0-9_,]+$/.test(value))) return false;
     else if (!['select', 'order', 'limit', 'offset', 'on_conflict'].includes(key) &&
       (!NAME.test(key) || !/^(eq|neq|gt|gte|lt|lte|like|ilike|is|in)\./.test(value))) return false;
   }
@@ -54,7 +54,7 @@ export function routeFor(raw, method, app) {
   if (queryParts.length > 1 || /[%\\\x00-\x20]/.test(path)) return null;
   const search = queryParts.length ? '?' + queryParts[0] : '';
   const table = /^\/rest\/v1\/([a-z][a-z0-9_]{0,62})$/.exec(path)?.[1];
-  if (table && Object.hasOwn(app.tables, table) && app.tables[table].includes(method) && queryAllowed(search)) return { kind: 'data', id: 'table', path: '/' + table + search };
+  if (table && Object.hasOwn(app.tables, table) && app.tables[table].includes(method) && queryAllowed(search, app.tables[table].includes('PATCH'))) return { kind: 'data', id: 'table', path: '/' + table + search, update: app.tables[table].includes('PATCH') };
   if (method === 'POST' && path === '/auth/v1/token' && /^\?grant_type=(password|refresh_token)$/.test(search)) return { kind: 'auth', id: 'token', path: '/token' + search };
   if (!search && method === 'GET' && path === '/auth/v1/user') return { kind: 'auth', id: 'user', path: '/user', session: true };
   if (!search && method === 'POST' && path === '/auth/v1/logout') return { kind: 'auth', id: 'logout', path: '/logout', session: true };
@@ -139,6 +139,8 @@ export function createGateway(config, { fetcher = fetch, audit = event => {
       if (req.headers.prefer) {
         const preferences = req.headers.prefer.split(',').map(s => s.trim());
         if (preferences.some(p => !['return=representation', 'return=minimal', 'count=exact', 'count=planned', 'count=estimated', 'resolution=merge-duplicates', 'resolution=ignore-duplicates'].includes(p))) return finish(400, 'Preference not supported');
+        // Upsert merge performs UPDATE; it must not widen an insert-only table scope.
+        if (preferences.includes('resolution=merge-duplicates') && !route.update) return finish(403, 'Method not allowed');
         headers.prefer = preferences.join(',');
       }
       let body;
