@@ -95,7 +95,11 @@ Existing managed users can instead be migrated following [Migration](MIGRATION.m
    Do not add wildcard hostnames, private network routes, SSH, Studio or Envoy.
 3. Enforce HTTPS at Cloudflare, configure appropriate edge abuse controls, and
    review request logging for privacy. The local gateway also enforces request,
-   body, response, concurrency and authentication budgets.
+   body, response, concurrency and authentication budgets. Auth routes allow 20
+   requests per minute per client (IPv6 grouped by /64) and 300 in total. The client
+   comes from Cloudflare's `CF-Connecting-IP` header. It is used only for throttling,
+   never logged or used to authorize. A flood from many addresses can still reach
+   the total limit, so add a Cloudflare rate-limiting rule for `/auth/v1/token`.
 4. Transfer the tunnel token privately into a new file outside Git. Never put it
    on the command line or paste it into logs. The container reads a token file.
 5. Install private configuration on the target:

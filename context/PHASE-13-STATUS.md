@@ -34,3 +34,15 @@ A source review found and fixed three defects, each with regression tests:
 
 No appliance was contacted. Tests ran locally for the ingress (Node) and appliance
 (Python) code. Collector tests need Linux-only `os` flags, so hosted CI covers them.
+
+## Per-client Auth budgets — 2026-09-25
+
+The shared 60/min public Auth budget let any holder of the public app key block
+sign-in for everyone. Auth routes now take a per-client budget of 20/min, keyed on
+Cloudflare's `CF-Connecting-IP` (IPv6 grouped by /64; a missing or malformed value
+uses one shared "unattributed" bucket), under a total ceiling of 300/min. Tracking
+covers at most 4,096 clients, and new clients are refused while all are active. The
+address is used only for throttling. It never authorizes a request and is never
+logged or forwarded. Gateway tests cover key parsing, cross-client isolation, the
+total ceiling and audit redaction. Residual risk: a flood from many addresses; use
+Cloudflare edge rate limiting.

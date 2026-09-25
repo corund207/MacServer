@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { createGateway, routeFor, validateConfig } from '../src/gateway.mjs';
+import { clientKey, createGateway, routeFor, validateConfig } from '../src/gateway.mjs';
 
 const user = '11111111-1111-4111-8111-111111111111';
 const app = { id: 'vexvortex', key: 'ms_pub_' + 'a'.repeat(43), origins: ['https://app.example.test'], tables: { items: ['GET', 'POST', 'PATCH', 'DELETE'] }, requestsPerMinute: 100 };
@@ -87,6 +87,23 @@ test('password and refresh exchanges are explicitly allowed but never admin or s
     assert.equal((await fetch(f.url + '/auth/v1/token?grant_type=' + grant, { method: 'POST', headers: { apikey: app.key, 'content-type': 'application/json' }, body: '{}' })).status, 200);
   }
   assert.equal((await fetch(f.url + '/auth/v1/signup', { method: 'POST', headers: headers(), body: '{}' })).status, 404);
+});
+test('client keys group IPv6 by /64 and never trust malformed values', () => {
+  assert.equal(clientKey('203.0.113.9'), '203.0.113.9');
+  assert.equal(clientKey('2001:db8:1:2:3:4:5:6'), clientKey('2001:DB8:1:2::9'));
+  assert.notEqual(clientKey('2001:db8:1:2::1'), clientKey('2001:db8:1:3::1'));
+  assert.equal(clientKey('::ffff:198.51.100.7'), '198.51.100.7');
+  for (const value of [undefined, '', 'unknown', '203.0.113.9, 198.51.100.7', 'fe80::1%eth0', ['203.0.113.9']]) assert.equal(clientKey(value), 'unattributed');
+});
+test('one client cannot exhaust sign-in for others, and the total still applies', async t => {
+  const f = await fixture(t, { authPerClient: 3, authTotal: 5 });
+  const signIn = ip => fetch(f.url + '/auth/v1/token?grant_type=password', { method: 'POST', headers: { apikey: app.key, 'content-type': 'application/json', 'cf-connecting-ip': ip }, body: '{}' });
+  for (let i = 0; i < 3; i++) assert.equal((await signIn('203.0.113.9')).status, 200);
+  assert.equal((await signIn('203.0.113.9')).status, 429);
+  assert.equal((await signIn('198.51.100.7')).status, 200);
+  assert.equal((await signIn('198.51.100.8')).status, 200);
+  assert.equal((await signIn('198.51.100.9')).status, 429);
+  assert.ok(!JSON.stringify(f.events).includes('198.51.100'));
 });
 test('app limits, audit failure and backend failures fail closed', async t => {
   const f = await fixture(t);

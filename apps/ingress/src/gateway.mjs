@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import { createHash, randomUUID } from 'node:crypto';
+import { isIP } from 'node:net';
 
 const NAME = /^[a-z][a-z0-9_]{0,62}$/;
 const METHODS = ['GET', 'HEAD', 'POST', 'PATCH', 'DELETE'];
@@ -61,9 +62,36 @@ export function routeFor(raw, method, app) {
   return null;
 }
 
+// Throttling key only; never authorization. Cloudflare sets this header at the edge,
+// replacing any client-supplied value. IPv6 clients are grouped by /64 prefix.
+export function clientKey(value) {
+  if (typeof value !== 'string') return 'unattributed';
+  const address = value.trim().toLowerCase();
+  if (isIP(address) === 4) return address;
+  if (isIP(address) !== 6 || address.includes('%')) return 'unattributed';
+  const mapped = address.slice(address.lastIndexOf(':') + 1);
+  if (isIP(mapped) === 4) return mapped;
+  const [head, tail] = address.split('::'), left = head ? head.split(':') : [], right = tail ? tail.split(':') : [];
+  const groups = tail === undefined ? left : [...left, ...Array(8 - left.length - right.length).fill('0'), ...right];
+  return groups.slice(0, 4).map(group => group.replace(/^0+(?=.)/, '')).join(':') + '::/64';
+}
+
 class Budget {
   constructor(limit, now) { this.limit = limit; this.now = now; this.start = 0; this.count = 0; }
   take() { const now = this.now(); if (now - this.start >= 60000) { this.start = now; this.count = 0; } return ++this.count <= this.limit; }
+}
+class ClientBudgets {
+  constructor(limit, now, capacity = 4096) { this.limit = limit; this.now = now; this.capacity = capacity; this.budgets = new Map(); }
+  take(key) {
+    let budget = this.budgets.get(key);
+    if (!budget) {
+      if (this.budgets.size >= this.capacity) for (const [k, b] of this.budgets) if (this.now() - b.start >= 60000) this.budgets.delete(k);
+      // Bounded memory: when every tracked client is active, new clients fail closed.
+      if (this.budgets.size >= this.capacity) return false;
+      this.budgets.set(key, budget = new Budget(this.limit, this.now));
+    }
+    return budget.take();
+  }
 }
 async function readBody(req, max) {
   if (Number(req.headers['content-length'] || 0) > max) throw Object.assign(Error(), { status: 413 });
@@ -82,11 +110,11 @@ async function responseBytes(response, max) {
 export function createGateway(config, { fetcher = fetch, audit = event => {
   if (process.stdout.writableLength > 65536) throw Error('Audit backpressure');
   process.stdout.write(JSON.stringify(event) + '\n');
-}, now = Date.now, authURL = 'http://auth:9999', restURL = 'http://rest:3000' } = {}) {
+}, now = Date.now, authURL = 'http://auth:9999', restURL = 'http://rest:3000', authPerClient = 20, authTotal = 300 } = {}) {
   validateConfig(config);
   const apps = new Map(config.apps.map(app => [createHash('sha256').update(app.key).digest('hex'), app]));
   const budgets = new Map(config.apps.map(app => [app.id, new Budget(app.requestsPerMinute, now)]));
-  const global = new Budget(3000, now), authBudget = new Budget(60, now);
+  const global = new Budget(3000, now), authBudget = new Budget(authTotal, now), clientAuth = new ClientBudgets(authPerClient, now);
   let active = 0;
   const server = createServer({ maxHeaderSize: 16384, requestTimeout: 15000, headersTimeout: 10000, keepAliveTimeout: 5000 }, async (req, res) => {
     const id = randomUUID(); let app, route;
@@ -117,7 +145,8 @@ export function createGateway(config, { fetcher = fetch, audit = event => {
     route = routeFor(req.url, req.method, app);
     if (!route) return finish(404, 'Route not available');
     if (['accept-profile', 'content-profile'].some(h => req.headers[h] && req.headers[h] !== 'api')) return finish(403, 'Schema not allowed');
-    if (route.kind === 'auth' && !authBudget.take()) return finish(429, 'Authentication request budget exceeded');
+    // One source cannot exhaust sign-in for everyone; the total still bounds Auth work.
+    if (route.kind === 'auth' && (!clientAuth.take(clientKey(req.headers['cf-connecting-ip'])) || !authBudget.take())) return finish(429, 'Authentication request budget exceeded');
     active++;
     const controller = new AbortController();
     const timeout = setTimeout(() => { controller.abort(); if (!res.writableEnded) res.destroy(); req.destroy(); }, 15000);
