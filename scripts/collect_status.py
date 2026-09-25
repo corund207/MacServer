@@ -78,6 +78,8 @@ def docker_services(compose, runner=command):
 def tailscale(runner=command):
     try:
         value = runner(["/usr/bin/tailscale", "status", "--json"])
+        if not isinstance(value, dict):
+            raise ValueError("unexpected tailscale status")
         running = value.get("BackendState") == "Running"
         addresses = value.get("TailscaleIPs")
         healthy = running and isinstance(addresses, list) and bool(addresses)
@@ -90,6 +92,8 @@ def tailscale(runner=command):
 def external_status(path, kind):
     try:
         value = safe_json(path)
+        if value is None:
+            raise ValueError(f"missing {kind} evidence")
         allowed = {"healthy", "degraded", "failed", "unavailable"}
         state = value.get("state") if value.get("state") in allowed else "unavailable"
         detail = value.get("detail") if isinstance(value.get("detail"), str) else f"Invalid {kind} detail"

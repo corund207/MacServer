@@ -51,3 +51,11 @@ class StatusCollectorTests(unittest.TestCase):
             raise RuntimeError("synthetic")
         self.assertTrue(all(row["state"] == "unavailable" for row in collector.docker_services("/safe", fail)))
         self.assertEqual(collector.tailscale(fail)["state"], "unavailable")
+
+    def test_non_object_inputs_become_unavailable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            listing = Path(directory) / "list.json"
+            listing.write_text("[]")
+            self.assertEqual(collector.external_status(str(listing), "backup")["state"], "unavailable")
+            self.assertEqual(collector.external_status(str(listing), "request")["perMinute"], None)
+        self.assertEqual(collector.tailscale(lambda _argv: [])["state"], "unavailable")
