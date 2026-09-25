@@ -33,8 +33,8 @@ Cloudflared joins only the edge network. The dependency-free Node gateway joins
 edge plus data and uses fixed Auth/PostgREST destinations. It has no signing,
 database or service-role credential and no route to Envoy, Studio or administration.
 
-A publishable app key selects explicit table/method scopes. It is not proof of
-app identity. Data requests also need an Auth-verified user token; RLS authorizes
+A publishable app key selects explicit table/method scopes; upserts that merge rows
+need the table's PATCH scope. It is not proof of app identity. Data requests also need an Auth-verified user token; RLS authorizes
 rows. Origin, Referer, User-Agent and IP never replace authentication.
 The gateway limits bodies, responses, time, concurrent requests and request budgets,
 and records redacted events. RPC, joins, anonymous data, signup, OAuth, Storage,

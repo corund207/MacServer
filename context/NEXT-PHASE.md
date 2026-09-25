@@ -43,6 +43,11 @@ Auth; unrelated trust domains need separate stacks.
 Full-disk encryption currently needs local unlock after a cold boot.
 Destructive operations retain immediate explicit confirmation and tested rollback.
 
+Open review follow-up (not implemented; needs a design decision): the public
+gateway's Auth budget (60/min) is shared by all callers. Anyone with the public app
+key can use it up and block sign-in for everyone. Consider per-client buckets keyed
+on the tunnel-provided client address, used only for throttling, never for authorization.
+
 ## Revalidate source
 
 On Linux with the reviewed development dependencies:
