@@ -29,7 +29,7 @@ const element = (tag: string, text: string, className = '') => { const node = do
 function signedOut() {
   csrf = ''; expires = 0; el('workspace').hidden = true; el('login').hidden = false;
   el('logout').hidden = true; el('refresh').hidden = true;
-  for (const id of ['metric-cards', 'metric-rows', 'audit-rows', 'file-rows', 'service-list', 'service-summary', 'cpu-chart', 'memory-chart']) el(id).replaceChildren();
+  for (const id of ['metric-cards', 'metric-rows', 'audit-rows', 'file-rows', 'service-list', 'service-summary', 'service-counts', 'cpu-chart', 'memory-chart']) el(id).replaceChildren();
   el<HTMLFormElement>('project-form').reset(); el('project-result').hidden = true;
   el('project-command').textContent = ''; el('project-error').textContent = '';
 }
@@ -58,15 +58,24 @@ function render(data: any) {
   const m = data.metrics; lastSample = Date.parse(m.at); filesEnabled = data.filesEnabled;
   const cards = el('metric-cards'); cards.replaceChildren();
   const diskUsed = m.disk ? 100 * (1 - m.disk.available / m.disk.total) : null;
-  for (const [name, value, detail] of [['CPU utilization', percent(m.cpu), 'Between observed samples'], ['Allocated memory', percent(m.memory), `${bytes(m.memoryTotal)} total · includes cache`], ['Root filesystem', m.disk ? percent(diskUsed) : 'Unavailable', m.disk ? `${bytes(m.disk.available)} available` : 'No filesystem reading'], ['Host uptime', `${Math.floor(m.uptime / 3600)}h ${Math.floor(m.uptime % 3600 / 60)}m`, 'Temperature unavailable']]) {
-    const card = element('article', '', 'metric-card'); card.append(element('p', name), element('strong', value), element('small', detail)); cards.append(card);
+  const metrics: [string, string, string, number | null][] = [['CPU utilization', percent(m.cpu), 'Between observed samples', m.cpu], ['Allocated memory', percent(m.memory), `${bytes(m.memoryTotal)} total · includes cache`, m.memory], ['Root filesystem', m.disk ? percent(diskUsed) : 'Unavailable', m.disk ? `${bytes(m.disk.available)} available` : 'No filesystem reading', diskUsed], ['Host uptime', `${Math.floor(m.uptime / 3600)}h ${Math.floor(m.uptime % 3600 / 60)}m`, 'Temperature unavailable', null]];
+  for (const [name, value, detail, level] of metrics) {
+    const card = element('article', '', 'metric-card'); card.append(element('p', name), element('strong', value), element('small', detail));
+    if (level !== null) {
+      // Decorative gauge; the percentage text above is the accessible value.
+      const meter = element('span', '', level >= 85 ? 'meter high' : 'meter'), fill = document.createElement('span');
+      meter.setAttribute('aria-hidden', 'true'); fill.style.width = `${Math.min(100, Math.max(0, level))}%`; meter.append(fill); card.append(meter);
+    }
+    cards.append(card);
   }
   el('alerts').replaceChildren(...data.alerts.map((s: string) => element('li', s)));
   el('collector-status').textContent = data.collectorAt ? `Observed ${new Date(data.collectorAt).toLocaleTimeString()}. Missing services are not assumed healthy.` : 'No fresh collector observation. Check the collector and its permissions.';
   el('backup-observation').textContent = data.backup?.lastSuccess ? `Last recorded backup: ${new Date(data.backup.lastSuccess).toLocaleString()} (${data.backup.state}).` : 'No fresh backup observation is available.';
   for (const id of ['service-list', 'service-summary']) {
-    el(id).replaceChildren(...data.services.map((s: any) => { const box = element('div', '', 'service'), text = element('div', s.name); text.append(element('small', s.detail)); box.append(text, element('span', s.state)); return box; }));
+    el(id).replaceChildren(...data.services.map((s: any) => { const box = element('div', '', 'service'), text = element('div', s.name); box.dataset.state = String(s.state).toLowerCase(); text.append(element('small', s.detail)); box.append(text, element('span', s.state)); return box; }));
   }
+  const counts = new Map<string, number>(); for (const s of data.services) counts.set(String(s.state).toLowerCase(), (counts.get(String(s.state).toLowerCase()) ?? 0) + 1);
+  el('service-counts').textContent = [...counts].map(([state, count]) => `${count} ${state}`).join(' · ');
   el('metric-source').textContent = m.source;
   rows('metric-rows', [...m.history].reverse().slice(0, 20).map((v: any) => [new Date(v.at).toLocaleTimeString(), percent(v.cpu), percent(v.memory), v.rx === null ? 'Collecting…' : `${bytes(v.rx)}/s`, v.tx === null ? 'Collecting…' : `${bytes(v.tx)}/s`]));
   chart('cpu-chart', m.history, 'cpu'); chart('memory-chart', m.history, 'memory');
@@ -105,6 +114,8 @@ async function view() {
   document.querySelectorAll<HTMLElement>('.view').forEach(v => { v.hidden = v !== target; });
   document.querySelectorAll('nav a').forEach(a => { if (a.getAttribute('href') === '#' + target.id) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
   el('page-title').textContent = target.id === 'overview' ? 'Overview' : target.querySelector('h2')!.textContent;
+  // Views swap in place; undo the browser's anchor jump so the sticky header never covers the heading.
+  window.scrollTo({ top: 0 });
   if (!csrf) return;
   if (target.id === 'audit') await audit(); if (target.id === 'files') await files();
 }

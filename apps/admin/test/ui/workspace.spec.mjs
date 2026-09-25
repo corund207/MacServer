@@ -49,7 +49,7 @@ for (const width of [390, 1440]) {
         await page.evaluate(() => document.fonts.ready);
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
         expect((await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations).toEqual([]);
-        if (view === 'connect' && theme === 'dark') await page.screenshot({ path: `../../build/admin-${width}.png`, fullPage: true });
+        if (view === 'connect' && theme === 'dark') await page.screenshot({ path: `test-results/admin-${width}.png`, fullPage: true });
       }
     }
   });
