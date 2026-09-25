@@ -5,7 +5,8 @@ import { marked } from 'marked';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '..');
-const out = resolve(root, 'build/site');
+// SITE_OUT lets a local build avoid a locked build/ folder; CI and Pages use the default.
+const out = resolve(process.env.SITE_OUT ?? resolve(root, 'build/site'));
 await mkdir(out, { recursive: true });
 await cp(resolve(here, 'public'), out, { recursive: true });
 await mkdir(resolve(out, 'assets'), { recursive: true });
@@ -32,4 +33,4 @@ for (const name of guides) {
   await writeFile(resolve(out, `${name.toLowerCase()}.html`), template.replaceAll('{{TITLE}}', title).replace('{{CONTENT}}', html));
 }
 await writeFile(resolve(out, '.nojekyll'), '');
-console.log('Built static installation site in build/site. No secrets or appliance state included.');
+console.log(`Built static installation site in ${out}. No secrets or appliance state included.`);

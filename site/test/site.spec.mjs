@@ -1,6 +1,10 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { readdir, readFile } from 'node:fs/promises';
+import { resolve, sep } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+const out = process.env.SITE_OUT ? resolve(process.env.SITE_OUT) : fileURLToPath(new URL('../../build/site', import.meta.url));
 
 test('navigation, examples, accordion, and motion controls work', async ({ page }) => {
   const errors = []; page.on('pageerror', error => errors.push(error.message));
@@ -23,11 +27,11 @@ for (const width of [390, 768, 1440]) {
     const lines = await page.locator('h1').evaluate(el => el.clientHeight / parseFloat(getComputedStyle(el).lineHeight));
     expect(lines).toBeLessThan(3.1);
     expect((await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations).toEqual([]);
-    await page.screenshot({ path: `../build/site-${width}.png`, fullPage: true });
+    await page.screenshot({ path: resolve(out, '..', `site-${width}.png`), fullPage: true });
   });
 }
 test('all local guides and assets resolve; installation guide is accessible', async ({ page, request }) => {
-  const root = new URL('../../build/site/', import.meta.url);
+  const root = pathToFileURL(out + sep);
   for (const name of (await readdir(root)).filter(name => name.endsWith('.html'))) {
     const html = await readFile(new URL(name, root), 'utf8');
     for (const match of html.matchAll(/(?:href|src)="([^"#]+)"/g)) {

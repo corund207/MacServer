@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
-const root = resolve(import.meta.dirname, '../build/site');
+const root = resolve(process.env.SITE_OUT ?? resolve(import.meta.dirname, '../build/site'));
 const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.woff2': 'font/woff2' };
 createServer(async (req, res) => {
   try {

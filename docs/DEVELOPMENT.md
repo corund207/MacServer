@@ -36,3 +36,17 @@ Version policy: Debian major 13; security updates reviewed through Debian channe
 Docker/service upgrades require exact package versions, upstream commit and image
 digests recorded together with validation. No service is deployable with null pins.
 CI validates offline structure, not OS behavior, Tailscale semantics or exposure.
+
+## Documentation site
+
+```sh
+cd site
+npm ci --ignore-scripts
+npm run build
+npm test
+```
+
+The site builds into `build/site`. If that folder is locked on a local machine (for
+example, created by another account or blocked by Windows Controlled Folder Access),
+set `SITE_OUT` to another ignored or temporary folder for both commands, such as
+`SITE_OUT=/tmp/macserver-site/site`. CI and GitHub Pages use the default path.
