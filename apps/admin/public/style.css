@@ -52,7 +52,7 @@ code{font-size:.9em;overflow-wrap:anywhere}
 
 /* Controls */
 button,input,textarea,select{font:inherit;color:var(--text)}
-button{min-height:40px;padding:8px 14px;border-radius:var(--r-control);border:1px solid var(--line-strong);background:var(--panel-2);font-weight:500;font-size:14px;cursor:pointer;transition:background-color .2s var(--ease),border-color .2s var(--ease),transform .2s var(--ease)}
+button{min-height:40px;padding:8px 14px;border-radius:var(--r-control);border:1px solid var(--line-strong);background:var(--panel-2);font-weight:500;font-size:14px;cursor:pointer;transition:border-color .2s var(--ease),transform .2s var(--ease)}
 button:hover:not(:disabled){background:var(--sunken);border-color:var(--faint);transform:translateY(-1px)}
 button:active:not(:disabled){transform:translateY(0) scale(.98)}
 button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
@@ -83,7 +83,7 @@ label{display:block;font-size:13px;font-weight:500;margin:16px 0 6px}
 nav{display:flex;flex-direction:column;gap:2px}
 .nav-group{font-size:11px;font-weight:500;letter-spacing:.06em;color:var(--faint);margin:16px 12px 6px}
 .nav-group:first-child{margin-top:4px}
-nav a{position:relative;padding:8px 12px;border-radius:var(--r-control);color:var(--muted);text-decoration:none;font-size:14px;transition:background-color .2s var(--ease),color .2s var(--ease)}
+nav a{position:relative;padding:8px 12px;border-radius:var(--r-control);color:var(--muted);text-decoration:none;font-size:14px}
 nav a:hover{background:var(--panel);color:var(--text)}
 nav a[aria-current]{background:var(--panel-2);color:var(--text);font-weight:500}
 nav a[aria-current]::before{content:"";position:absolute;left:0;top:9px;bottom:9px;width:2px;border-radius:2px;background:var(--accent)}
@@ -98,8 +98,9 @@ main{min-width:0;width:100%;max-width:1320px;margin:0 auto;padding:0 40px 28px}
 .context-line{display:flex;flex-wrap:wrap;align-items:center;gap:12px;font-size:13px;color:var(--muted);padding:18px 0 24px;font-variant-numeric:tabular-nums}
 
 /* Views */
+/* Transform only: text keeps full contrast at every animation frame. */
 .view{animation:rise .42s var(--ease) both}
-@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes rise{from{transform:translateY(8px)}to{transform:none}}
 .hero{margin:6px 0 22px}
 .hero h2{font-size:34px;letter-spacing:-.03em;margin-bottom:6px}
 .hero p{margin:0;max-width:60ch}

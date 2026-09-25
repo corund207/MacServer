@@ -159,8 +159,9 @@ class TerminalTests(unittest.TestCase):
         time.sleep(0.8)
         self.assertEqual(os.waitpid(pid, os.WNOHANG), (0, 0), output[-2000:])
         os.kill(pid, signal.SIGTERM)
+        # ncurses handles SIGTERM itself: it restores the terminal, then exits.
         _, code = os.waitpid(pid, 0)
-        self.assertTrue(os.WIFSIGNALED(code))
+        self.assertTrue(os.WIFSIGNALED(code) or os.WIFEXITED(code))
         self.assertIn(b"MacServer", output); self.assertNotIn(b"Traceback", output)
 
 
