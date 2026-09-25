@@ -1,6 +1,6 @@
 # Development and delivery
 
-Use a short-lived `infra/<feature>`, `admin/<feature>`, `dashboard/<feature>` or
+Use a short-lived `infra/<feature>`, `admin/<feature>`, `console/<feature>` or
 `security/<review>` branch for subsequent work. Main contains reviewed source,
 not deployed host state. Run the offline validator and unit tests before a focused
 imperative commit. CI uses a commit-pinned checkout action, read-only contents
@@ -17,10 +17,12 @@ Never rewrite an existing author's identity. A clone of `main` already tracks or
 ## Full verification
 
 On Debian 13, install the exact Node runtime recorded in
-`infra/admin/runtime.lock.json` after verifying its official checksum. In both
-`apps/admin` and `apps/dashboard`, run `npm ci --ignore-scripts`, `npm audit`,
-and `npx --no-install playwright install chromium`. Package versions and integrity
-hashes are committed in each lockfile; review changes before installation.
+`infra/admin/runtime.lock.json` after verifying its official checksum. In
+`apps/admin`, run `npm ci --ignore-scripts`, `npm audit`, and
+`npx --no-install playwright install chromium`. Package versions and integrity
+hashes are committed in the lockfile; review changes before installation. The console
+display in `apps/console` has no dependencies; `python3 -m unittest discover -s tests`
+covers it, including a curses smoke test on Linux.
 Then, from the repository root:
 
 ```sh

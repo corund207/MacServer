@@ -56,3 +56,20 @@ The remaining shared gateway limits are now also counted per client, using the s
 New bundles use 600 total and 60 per client. Tests cover each limit and fail against
 the previous gateway. docs/PUBLIC-APPS.md documents the limits and the shared-address
 trade-off.
+
+## Admin redesign and terminal console display — 2026-09-25
+
+The private admin console was restyled within BRAND.md: grouped navigation, sticky
+top bar, gauge meters, colour-coded service states with counts, a split sign-in panel,
+and refined dark and light themes. Every ID, label, route and security behaviour is
+unchanged. The admin UI tests, including axe checks of all 11 views in both themes,
+pass locally. The TLS browser suite and file-mode unit tests need Linux, so CI runs them.
+
+The Chromium kiosk and loopback web dashboard were removed. The always-on screen is now
+`apps/console/macserver_top.py`, a stdlib curses display on tty1 run by
+`macserver-console.service`: AF_UNIX only, IPAddressDeny=any, no capabilities, ignores
+the keyboard, sanitises status text before it reaches the tty, and has VT-font glyph
+fallbacks. This resolves the security audit's High kiosk-browser finding by removal.
+tests/test_console.py covers sampling, evidence validation, verdicts, rendering at
+80x24 to 213x67, and a Linux pty smoke test. Target console font, tty1 takeover and
+reboot behaviour still need appliance qualification (docs/DASHBOARD.md).

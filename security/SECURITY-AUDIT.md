@@ -9,7 +9,7 @@ unit/browser tests, dependency audit output and offline negative assertions.
 ## Executive summary
 
 The checked-in system is default-deny in its current inert state: Supabase publishes
-no ports, its Docker network is internal, the dashboard is loopback-only, the admin app
+no ports, its Docker network is internal, the console display has no network access, the admin app
 requires direct Tailscale peer verification plus an independent credential, privileged
 admin routes return 501, images/actions/runtimes are pinned, and no secret-like file is
 tracked. The audit corrected a private-admin port mismatch between the 8443 service and
@@ -18,8 +18,7 @@ candidate host/tailnet rules.
 Recommendation: **NO-GO for production data or any public exposure**. This is mostly a
 qualification verdict, not evidence of an exploitable running service. There is no
 public ingress authorization/rate-limit route layer, no real application/RLS evidence,
-no target Docker/firewall/Tailscale proof, no physical restore, and the observed kiosk
-browser remains below its security floor. Deploying around those gates would create
+no target Docker/firewall/Tailscale proof, and no physical restore. Deploying around those gates would create
 high-impact paths to data or administration.
 
 ## Architecture and attack surface
@@ -33,7 +32,7 @@ Public client --X-- [no approved tunnel / route allowlist / app credential layer
 
 Admin tailnet device -> Tailscale -> host input 8443 -> private HTTPS admin
                                     host input 22   -> key-only OpenSSH
-Local console -> loopback 7460 -> read-only dashboard <- bounded status file
+Mac screen tty1 <- offline read-only console display <- bounded status file
 Root-only collector -> Docker/Tailscale fixed reads ---------^
 Root-only backup -> logical DB export + Storage/config -> encrypted removable restic
 ```
@@ -116,7 +115,11 @@ into new isolated volumes and run RLS/application parity tests. Safe procedure i
 `docs/BACKUP-RESTORE.md`. Residual risk: one local drive shares theft/fire/operator-error
 risk and restic integrity does not make a cross-resource online snapshot atomic.
 
-### High — kiosk browser is below the recorded security floor (8.1)
+### Resolved 2026-09-25 — kiosk browser was below the recorded security floor (8.1)
+
+Status: resolved by removal. The Chromium kiosk and loopback web dashboard were replaced by
+an offline terminal display on tty1 (`apps/console`, `macserver-console.service`): no browser,
+no listener, no network address family and no keyboard input. The original finding follows.
 
 Evidence: Phase 4 observed Debian Chromium 152.0.7977.82 while the recorded minimum was
 153.0.8010.36 due to known fixed-upstream issues. Exploit precondition: enabling the
@@ -196,7 +199,6 @@ python3 scripts/validate.py
 python3 scripts/supabase_config.py
 python3 -m unittest discover -s tests -v
 (cd apps/admin && npm ci --ignore-scripts && npm test && npm run test:browser && npm audit --omit=dev)
-(cd apps/dashboard && npm ci --ignore-scripts && npm test && npm run test:browser && npm audit --omit=dev)
 ```
 
 Before changing the verdict, additionally require evidence for:
@@ -205,7 +207,7 @@ Before changing the verdict, additionally require evidence for:
 - effective SSH, listeners, firewall plus Docker forwarding, AppArmor/systemd and an
   unauthorized LAN/tailnet negative client;
 - every selected container's health, UID/capabilities/mounts/resources and reboot;
-- real admin allow/deny/revocation/TLS and kiosk security-floor/crash recovery;
+- real admin allow/deny/revocation/TLS and console display tty/crash/reboot recovery;
 - per-app public route/credential/limit/CORS tests and management-route denials;
 - full schema/grant/function/extension/RLS/Storage/Realtime audit and two-user negatives;
 - absent-drive alert, real backup, removal/power interruption, isolated/off-host restore,

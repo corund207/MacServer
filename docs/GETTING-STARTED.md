@@ -15,7 +15,7 @@ encrypted, and no database or management service is exposed to the public Intern
 
 ```text
 Administrator -- Tailscale --> key-only SSH / private admin app
-Local display -- loopback  --> read-only status dashboard
+Mac's screen  -- tty1      --> read-only console display (no network)
 Applications  -- approved route and credentials --> Supabase services
 Internal SSD  -- encrypted --> Docker state, database, Storage, configuration
 USB drives    -- encrypted --> rotating restic backups and restore drills
@@ -338,15 +338,15 @@ domains need separate stacks.
 The exact export/import cautions, SQL order, Storage procedure, tests, cutover, and
 rollback are in [migration](MIGRATION.md).
 
-## 10. Qualify private admin and the local dashboard
+## 10. Qualify private admin and the console display
 
 These interfaces are optional and remain inert until their target checks pass.
 
 - The [private admin guide](ADMIN.md) covers the dedicated unprivileged user,
   pinned Node runtime, Tailscale HTTPS certificate, per-user app token, TCP 8443
   policy, audit storage, and rollback. It is read-only and has no browser terminal.
-- The [dashboard guide](DASHBOARD.md) covers its loopback-only service, bounded
-  collector, kiosk session, stale-data behavior, browser floor, and recovery.
+- The [console display guide](DASHBOARD.md) covers the btop-style terminal display
+  on `tty1`, its bounded collector, console font, stale-data behavior, and recovery.
 
 Never make either interface public. Do not create a `DEPLOYMENT-APPROVED` marker
 until the guide's real target tests pass; a marker is a guard, not proof.
@@ -374,7 +374,7 @@ MacServer is ready for production data only when all of these are true:
   and a measured isolated restore passed.
 - The real migration rehearsal, app authorization, RLS, Storage, and function tests
   passed with no blocking findings.
-- Private admin/dashboard checks passed if those components are enabled.
+- Private admin and console display checks passed if those components are enabled.
 - Only explicitly approved public HTTPS application routes exist; every management
   and database route remains unreachable publicly.
 - A failed update and compatible rollback were rehearsed.
@@ -391,7 +391,7 @@ NO-GO. Missing evidence means NO-GO.
 | Docker and Supabase-compatible services | [Data services](DATA-SERVICES.md) |
 | Managed Supabase migration | [Migration](MIGRATION.md) |
 | Private admin and identity | [Admin](ADMIN.md) · [Identity](ADMIN-IDENTITY.md) |
-| Local status display | [Dashboard](DASHBOARD.md) |
+| Local status display | [Console display](DASHBOARD.md) |
 | Encrypted backup and recovery | [Backup and restore](BACKUP-RESTORE.md) |
 | Maintenance and rollback | [Update and rollback](UPDATE-ROLLBACK.md) |
 | Commission, update, and release rollback | [Deployment](DEPLOYMENT.md) |

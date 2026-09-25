@@ -16,7 +16,7 @@ Installation site: https://corund207.github.io/MacServer/
 - `docs/DOWNLOAD-REVIEW.md`: reviewed sources, pins and download boundaries.
 - CI: structural/security checks, Linux units/Compose, Python tests, public gateway
   negatives, real isolated PostgreSQL RLS tests, private console/TLS/browser tests,
-  dashboard tests, and responsive/accessibility checks for the installation site.
+  console display tests, and responsive/accessibility checks for the installation site.
 
 All delivery commits use the verified corund207 GitHub identity and authenticated
 Git transport. No co-author trailers or rewritten history.

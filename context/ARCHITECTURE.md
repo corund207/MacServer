@@ -57,7 +57,9 @@ a local connection-command assistant. Privileged browser operations are disabled
 An optional fixed-file reader consumes root-owned, bounded collector snapshots;
 stale or missing evidence is unavailable. The reader has no Docker socket.
 The separate root collector performs fixed Docker/Tailscale queries and writes
-a curated snapshot. The local dashboard remains loopback-only.
+a curated snapshot. The Mac's own screen runs a btop-style terminal display on tty1
+(`apps/console`): read-only, keyboard-ignoring, with no network address family and
+no Docker, database or secret access. It replaced the Chromium kiosk and web dashboard.
 
 Local Outfit fonts, an original mark, forest/lime colors, and accessible dark/light
 themes form the brand. Public documentation is a separate static GitHub Pages
@@ -81,7 +83,8 @@ artifacts must follow their separate deployment guide.
 
 CI covers structural posture, generated Compose, Linux units, gateway denial cases,
 schema execution and two-user RLS in an isolated PostgreSQL fixture, private admin
-security/TLS/browser flows, collector behavior, dashboard behavior, and site
+security/TLS/browser flows, collector behavior, console display rendering and a Linux
+curses smoke test, and site
 responsive/accessibility checks. Images, npm dependencies and actions are pinned;
 download review records provenance and audit limits.
 

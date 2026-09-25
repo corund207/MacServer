@@ -36,7 +36,7 @@ def compose_findings(config):
 
 def text_findings(root):
     findings = []
-    read = lambda name: (root / name).read_text()
+    read = lambda name: (root / name).read_text(encoding="utf-8")
     ssh = read("infra/host/sshd.conf")
     for directive in ("PermitRootLogin no", "PasswordAuthentication no",
                       "KbdInteractiveAuthentication no", "AuthenticationMethods publickey",
@@ -58,9 +58,14 @@ def text_findings(root):
                       "IPAddressDeny=any", "InaccessiblePaths=-/run/docker.sock"):
         if directive not in admin:
             findings.append(f"admin unit lacks {directive}")
-    dashboard = read("infra/dashboard/macserver-dashboard.service")
-    if "MACSERVER_DASHBOARD_BIND=127.0.0.1" not in dashboard or "IPAddressAllow=localhost" not in dashboard:
-        findings.append("dashboard unit is not loopback constrained")
+    console = read("infra/dashboard/macserver-console.service")
+    for value in ("RestrictAddressFamilies=AF_UNIX\n", "IPAddressDeny=any", "--kiosk", "User=macserver-dashboard",
+                  "NoNewPrivileges=true", "CapabilityBoundingSet=\n", "TTYPath=/dev/tty1"):
+        if value not in console:
+            findings.append(f"console unit lacks {value.strip()}")
+    display = read("apps/console/macserver_top.py")
+    if any(word in display for word in ("import socket", "subprocess", "urllib", "http.client")):
+        findings.append("console display gained a network or command path")
     app = read("apps/admin/src/app.ts")
     if "trustProxy: false" not in app or "Proxy context denied" not in app or "return reply.code(501)" not in app:
         findings.append("admin app proxy or disabled-operation boundary drifted")

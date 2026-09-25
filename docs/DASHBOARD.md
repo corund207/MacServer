@@ -1,62 +1,111 @@
-# Local dashboard deployment and recovery
+# Local console display
 
-The dashboard is a read-only local-console display. Its HTTP listener must remain
-on `127.0.0.1:7460`; it has no remote route, credentials, mutation endpoint, Docker
-socket, database connection, or access to secret files. A separate root collector
-runs fixed read-only CLI commands and writes a bounded `0640` snapshot to
-`/run/macserver/status.json`. Missing or older-than-60-second evidence is visible.
+The MacBook's own screen shows a read-only, btop-style terminal display on `tty1`:
+an overall verdict, CPU history with per-core meters, memory, disk, power, network,
+service health, alerts, and Tailscale, backup and request state. It replaces the earlier
+Chromium kiosk, so the appliance needs no browser, display manager or graphical session.
 
-## Target prerequisites and approval
+The display (`apps/console/macserver_top.py`) is standard-library Python. It reads
+`/proc`, `/sys` and the collector's bounded snapshot at `/run/macserver/status.json`.
+It opens no network socket, runs no commands, writes no files and, in kiosk mode,
+ignores every key, including `q` and Ctrl+C. A separate root collector runs fixed
+read-only Docker and Tailscale queries every 15 seconds. The display never gets
+Docker, database or secret access.
 
-On the Debian 13 target, verify the pinned Node runtime, Docker Compose, Tailscale,
-Chromium package, display manager, graphics acceleration, temperature sensor source,
-and dedicated `macserver-dashboard` user/group. The supplied units are inert until
-an operator creates `/etc/macserver-dashboard/DEPLOYMENT-APPROVED` after those checks.
-Do not create that marker from automation or on this development host.
+## What the screen means
 
-Before installation, copy the candidate units into an isolated Debian 13 VM and run:
+| Verdict | Meaning |
+| --- | --- |
+| NOMINAL | Fresh evidence, and everything observed is healthy. |
+| ATTENTION | Something is degraded, or the snapshot is older than 60 seconds. |
+| ACTION REQUIRED | A verified failure, such as a stopped container. |
+| UNVERIFIED | No valid collector snapshot. Unobserved is never shown as healthy. |
+
+Text from the snapshot is reduced to printable single-width characters before it
+reaches the terminal, so status data cannot send escape codes to the console.
+
+## Prerequisites and approval
+
+On the Debian 13 target, confirm the `python3` package, the dedicated
+`macserver-dashboard` user and group, and a console font with box drawing and block
+elements. For the Retina panel, a large Terminus font keeps the text readable:
 
 ```sh
-systemd-analyze verify infra/dashboard/*.service infra/dashboard/*.timer
-python3 scripts/collect_status.py --compose /absolute/review/compose.json \
-  --backup-status /absolute/review/backup.json \
-  --request-status /absolute/review/requests.json \
-  --output /absolute/private/status.json
-curl --fail --max-time 2 http://127.0.0.1:7460/healthz
-ss -ltnp | grep 127.0.0.1:7460
+sudo sed -i 's/^CODESET=.*/CODESET="Uni2"/; s/^FONTFACE=.*/FONTFACE="Terminus"/; s/^FONTSIZE=.*/FONTSIZE="16x32"/' /etc/default/console-setup
+sudo setupcon --save
 ```
 
-Expected: unit verification has no errors; the snapshot contains only state/detail
-metadata; health returns `{"status":"serving"}`; and no non-loopback dashboard
-listener exists. Inspect the snapshot before letting the display user read it.
-The collector's Docker access is privileged; never reuse it as an HTTP helper.
+This changes only the console font. The units stay inert until an operator creates
+`/etc/macserver-dashboard/DEPLOYMENT-APPROVED` after the checks below. Do not create
+that marker from automation or on a development machine.
 
-Install `macserver-kiosk.service` as a user unit for the dedicated graphical login.
-Its exact session activation differs by display manager and must be tested after a
-reboot. The kiosk profile is local state, not a general browsing profile. Disable
-navigation, remote debugging, sync, extensions, autofill, and external URLs through
-managed Chromium policy on the target; command flags alone are not a security boundary.
+## Preview anywhere
+
+```sh
+python3 apps/console/macserver_top.py --demo              # live curses view, q quits
+python3 apps/console/macserver_top.py --demo --once 160x50  # one plain-text frame
+```
+
+`--demo` uses synthetic data and labels every frame DEMO DATA. Without `--demo`, the
+display reads this machine's `/proc` and the snapshot path given by `--status`.
+
+## Install on the appliance
+
+Validate the units first, in an isolated Debian 13 VM or on the target:
+
+```sh
+python3 scripts/validate_dashboard_units.py
+python3 scripts/collect_status.py --compose /opt/macserver/infra/supabase/compose.json \
+  --output /tmp/macserver-status-review.json
+python3 apps/console/macserver_top.py --status /tmp/macserver-status-review.json --once 160x50
+```
+
+Expected: the unit parser passes, and the frame shows real host readings and the
+collector's service states. Then install and start them. This replaces the login
+prompt on `tty1`; local logins remain available on `tty2` (Ctrl+Alt+F2):
+
+```sh
+sudo install -m 0644 /opt/macserver/infra/dashboard/macserver-status-collector.service \
+  /opt/macserver/infra/dashboard/macserver-status-collector.timer \
+  /opt/macserver/infra/dashboard/macserver-console.service /etc/systemd/system/
+sudo touch /etc/macserver-dashboard/DEPLOYMENT-APPROVED
+sudo systemctl daemon-reload
+sudo systemctl disable --now getty@tty1.service
+sudo systemctl enable --now macserver-status-collector.timer macserver-console.service
+```
+
+On `TERM=linux` the display turns off console blanking and powerdown so the screen
+stays on. Lid, backlight and thermal behaviour still follow `infra/host/logind.conf`
+and the hardware qualification.
 
 ## Recovery tests
 
-With console access, stop the dashboard service. Chromium should retain the last
-screen and show a degraded connection within 15 seconds; systemd should restart the
-service. Kill Chromium and verify its user service restarts. Disconnect networking:
-local host readings continue while Tailscale and request evidence becomes degraded or
-stale. Reboot and verify the collector, dashboard, and graphical-session user service
-recover without making the dashboard remotely reachable. Record timestamps and logs:
+With console access:
+
+1. Stop the collector timer. Within 60 seconds the verdict becomes ATTENTION with
+   "Collector evidence is stale"; host readings keep updating.
+2. Kill the display process. systemd restarts it on `tty1` within a few seconds.
+3. Press keys and Ctrl+C on the Mac's keyboard. Nothing changes.
+4. Disconnect networking. Host readings continue; Tailscale and request evidence
+   degrade.
+5. Reboot. The collector and display return without a login.
 
 ```sh
-systemctl status macserver-dashboard macserver-status-collector.timer
-systemctl --user status macserver-kiosk
-journalctl -u macserver-dashboard -u macserver-status-collector --since -15m
+systemctl status macserver-console macserver-status-collector.timer
+journalctl -u macserver-console -u macserver-status-collector --since -15m
 ```
 
-Rollback: remove the approval marker, stop/disable the three units, restore the saved
-display-manager configuration, and verify port 7460 is closed. Removing the marker or
-units does not delete appliance data. Preserve logs for diagnosis.
+## Rollback
 
-Temperature remains unavailable until the exact hardware sensor and safe read path are
-qualified. Request rates require a separate ingress exporter that writes only bounded
-counts to `/var/lib/macserver-ingress/status.json`. Never give the display raw access
-to gateway logs. Dashboard recovery is not proof of database or backup recovery.
+Non-destructive. It deletes no appliance data:
+
+```sh
+sudo systemctl disable --now macserver-console.service macserver-status-collector.timer
+sudo rm /etc/macserver-dashboard/DEPLOYMENT-APPROVED
+sudo systemctl enable --now getty@tty1.service
+```
+
+Temperature comes from the kernel's `coretemp` or `applesmc` sensors when present.
+Request rates need a separate ingress exporter that writes only bounded counts to
+`/var/lib/macserver-ingress/status.json`; never give the display raw gateway logs.
+A healthy display is not proof of database or backup recovery.

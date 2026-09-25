@@ -28,7 +28,6 @@ state and can change independently:
 
 ```sh
 (cd apps/admin && npm audit --omit=dev)
-(cd apps/dashboard && npm audit --omit=dev)
 ```
 
 ## Main-build requirement traceability
@@ -44,7 +43,7 @@ state and can change independently:
 | 7 | Minimal public HTTPS | No public ingress or listener exists | Blocked on domain/routes/apps/credentials |
 | 8 | Per-app credentials and abuse controls | Design requirements and admin limits only | Public application layer blocked |
 | 9 | Encrypted backup and restore | restic workflow, retention/check/drill, disposable tests | Physical/off-host restore unverified |
-| 10 | Monitoring and local display | Loopback dashboard and fixed-command collector | Target kiosk/browser/hardware unverified |
+| 10 | Monitoring and local display | Offline tty1 console display and fixed-command collector | Target console font/tty/hardware unverified |
 | 11 | Migration tooling | Bundle, catalog/RLS checks and runbook | Real app schema/cutover blocked |
 | 12 | Safe updates | Backup/restore/rollback gates and maintenance requirements | Write-drain mechanism blocked with ingress |
 | 13 | Resilience/security tests | Offline negative, browser, unit and interruption fixtures | Target reboot/network/power/exposure unverified |
@@ -57,7 +56,7 @@ state and can change independently:
   `docs/INSTALL.md`, `infra/host`, `infra/tailscale-policy.example.json`.
 - Supabase, secrets and migration: `infra/supabase`, `scripts/supabase_secrets.py`,
   `scripts/migration_bundle.py`, `scripts/schema_audit.py`, `docs/MIGRATION.md`.
-- Private read-only admin and local dashboard: `apps/admin`, `apps/dashboard`, their
+- Private read-only admin and console display: `apps/admin`, `apps/console`, their
   inert systemd candidates and operator guides. A browser terminal is intentionally absent.
 - Backup/update/recovery: `scripts/backup.py`, `infra/backup`,
   `docs/BACKUP-RESTORE.md`, `docs/UPDATE-ROLLBACK.md`.
@@ -88,7 +87,7 @@ recovery evidence must remain outside Git.
 8. Implement the separately reviewed public ingress, app credentials and real write-
    drain maintenance behavior. Test only explicit routes at low rate; management denial
    is mandatory. No router forwarding.
-9. Update Chromium above its security floor and qualify dashboard/admin TLS, identity,
+9. Qualify admin TLS and identity, and the console display's tty, font,
    crash/network/reboot behavior. Only then consider creating individual approval markers.
 10. Rehearse a failed update and compatible rollback. Rerun the complete checklist and
     issue a new evidence-backed GO/NO-GO decision before production data or exposure.

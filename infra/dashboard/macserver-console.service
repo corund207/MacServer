@@ -1,7 +1,8 @@
 [Unit]
-Description=MacServer loopback-only local dashboard
+Description=MacServer read-only console display on tty1
 Documentation=file:/opt/macserver/docs/DASHBOARD.md
-After=network.target macserver-status-collector.service
+After=systemd-user-sessions.service macserver-status-collector.timer
+Conflicts=getty@tty1.service
 ConditionPathExists=/etc/macserver-dashboard/DEPLOYMENT-APPROVED
 StartLimitIntervalSec=120
 StartLimitBurst=5
@@ -10,15 +11,19 @@ StartLimitBurst=5
 Type=simple
 User=macserver-dashboard
 Group=macserver-dashboard
-WorkingDirectory=/opt/macserver/apps/dashboard
-Environment=NODE_ENV=production
-Environment=MACSERVER_DASHBOARD_BIND=127.0.0.1
-Environment=MACSERVER_DASHBOARD_PORT=7460
-Environment=MACSERVER_STATUS_FILE=/run/macserver/status.json
-ExecStart=/opt/macserver-runtime/node-v26.8.1-linux-x64/bin/node /opt/macserver/apps/dashboard/src/server.mjs
+Environment=TERM=linux
+Environment=LANG=C.UTF-8
+ExecStart=/usr/bin/python3 /opt/macserver/apps/console/macserver_top.py --kiosk --status /run/macserver/status.json
+# systemd opens tty1 before dropping privileges; the display only ever writes to it.
+StandardInput=tty-force
+StandardOutput=tty
+StandardError=journal
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
 Restart=always
-RestartSec=5
-TimeoutStopSec=15
+RestartSec=2
 UMask=0077
 NoNewPrivileges=true
 CapabilityBoundingSet=
@@ -26,7 +31,6 @@ AmbientCapabilities=
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-PrivateDevices=true
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectKernelLogs=true
@@ -39,19 +43,18 @@ RestrictSUIDSGID=true
 LockPersonality=true
 RestrictRealtime=true
 RemoveIPC=true
-RestrictAddressFamilies=AF_INET AF_INET6
+# No network access at all. The host network namespace is kept so /proc/net/dev
+# reports the Mac's real interfaces.
+RestrictAddressFamilies=AF_UNIX
 IPAddressDeny=any
-IPAddressAllow=localhost
 ReadOnlyPaths=/run/macserver
-MemoryMax=256M
-CPUQuota=25%
-TasksMax=48
-LimitNOFILE=512
+MemoryMax=128M
+CPUQuota=15%
+TasksMax=8
+LimitNOFILE=64
 SystemCallArchitectures=native
 SystemCallFilter=@system-service
 SystemCallErrorNumber=EPERM
-StandardOutput=journal
-StandardError=journal
 
 [Install]
 WantedBy=multi-user.target

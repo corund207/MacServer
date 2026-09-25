@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def main():
     for path in list((ROOT / "scripts").glob("*.py")) + list((ROOT / "tests").glob("*.py")):
-        ast.parse(path.read_text(), filename=str(path))
+        ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     for path in (ROOT / "infra").rglob("*.json"):
         json.loads(path.read_text())
     versions = json.loads((ROOT / "infra/versions.json").read_text())

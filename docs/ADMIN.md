@@ -53,7 +53,7 @@ sudo usermod -a -G macserver-dashboard macserver-admin
 ```
 
 Add `ADMIN_COLLECTOR_ENABLED=true` to the private `/etc/macserver-admin/admin.env`,
-then restart only the admin service. The dashboard group must already exist and
+then restart only the admin service. The `macserver-dashboard` group (shared with the console display) must already exist and
 must grant read-only access to `/run/macserver/status.json`; never add Docker,
 sudo or journal groups. The reader only accepts a bounded root-owned regular file,
 rejects symlinks and evidence older than 60 seconds, and returns allowlisted fields.

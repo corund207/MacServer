@@ -32,8 +32,6 @@ def command_matrix(full=False):
             ("admin-node", [NPM, "test"], ROOT / "apps/admin"),
             ("admin-browser", [NPM, "run", "test:browser"], ROOT / "apps/admin"),
             ("admin-workspace", [NPM, "run", "test:ui"], ROOT / "apps/admin"),
-            ("dashboard-node", [NPM, "test"], ROOT / "apps/dashboard"),
-            ("dashboard-browser", [NPM, "run", "test:browser"], ROOT / "apps/dashboard"),
         ])
     return commands
 
