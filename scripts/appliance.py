@@ -34,6 +34,16 @@ class Refusal(Exception):
     pass
 
 
+def utc_timestamp(value, label):
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (AttributeError, TypeError, ValueError) as error:
+        raise Refusal(f"{label} timestamp invalid") from error
+    if parsed.tzinfo is None:
+        raise Refusal(f"{label} timestamp must include a UTC offset")
+    return parsed.timestamp()
+
+
 def run(argv, *, cwd=None, output=True):
     result = subprocess.run(argv, cwd=cwd, stdin=subprocess.DEVNULL,
                             stdout=subprocess.PIPE if output else subprocess.DEVNULL,
@@ -100,15 +110,15 @@ def source_revision(source, expected):
 
 def validate_qualification(value, commit, now=None):
     now = now or datetime.now(timezone.utc)
-    try:
-        checked = datetime.fromisoformat(value["checkedAt"].replace("Z", "+00:00"))
-    except (KeyError, TypeError, ValueError) as error:
-        raise Refusal("qualification timestamp invalid") from error
-    age = now.timestamp() - checked.timestamp()
-    checks = value.get("checks", {})
+    if not isinstance(value, dict):
+        raise Refusal("qualification must be a JSON object")
+    age = now.timestamp() - utc_timestamp(value.get("checkedAt"), "qualification")
+    checks = value.get("checks")
+    # Only literal JSON true counts; strings such as "false" must not pass.
     if (value.get("format") != 1 or value.get("approvedCommit") != commit
-            or not 0 <= age <= 7 * 86400 or set(checks) != REQUIRED_CHECKS
-            or not all(checks.values())):
+            or not 0 <= age <= 7 * 86400 or not isinstance(checks, dict)
+            or set(checks) != REQUIRED_CHECKS
+            or not all(check is True for check in checks.values())):
         raise Refusal("target qualification is incomplete, stale, or for another commit")
     return value
 
@@ -119,11 +129,10 @@ def qualification(path, commit):
 
 def validate_backup(value, now=None):
     now = (now or datetime.now(timezone.utc)).timestamp()
-    try:
-        backup_age = now - datetime.fromisoformat(value["lastSuccess"]).timestamp()
-        drill_age = now - datetime.fromisoformat(value["lastRestoreDrill"]).timestamp()
-    except (KeyError, TypeError, ValueError) as error:
-        raise Refusal("backup evidence is incomplete") from error
+    if not isinstance(value, dict):
+        raise Refusal("backup evidence is incomplete")
+    backup_age = now - utc_timestamp(value.get("lastSuccess"), "backup")
+    drill_age = now - utc_timestamp(value.get("lastRestoreDrill"), "restore drill")
     if value.get("state") != "healthy" or not 0 <= backup_age <= 86400 or not 0 <= drill_age <= 30 * 86400:
         raise Refusal("update requires a healthy backup under 24h and restore drill under 30d")
 
@@ -134,11 +143,9 @@ def backup_ready(path=BACKUP_STATUS):
 
 def validate_update_approval(value, current, target, now=None):
     now = now or datetime.now(timezone.utc)
-    try:
-        checked = datetime.fromisoformat(value["checkedAt"].replace("Z", "+00:00"))
-    except (KeyError, TypeError, ValueError) as error:
-        raise Refusal("update approval timestamp invalid") from error
-    age = now.timestamp() - checked.timestamp()
+    if not isinstance(value, dict):
+        raise Refusal("update approval must be a JSON object")
+    age = now.timestamp() - utc_timestamp(value.get("checkedAt"), "update approval")
     if (value.get("format") != 1 or value.get("currentCommit") != current
             or value.get("targetCommit") != target or value.get("writersDrained") is not True
             or value.get("dataCompatibilityReviewed") is not True or not 0 <= age <= 3600):
@@ -227,6 +234,22 @@ def target_preflight(release, commit, evidence):
     run(compose(release) + ["config", "--quiet"])
 
 
+def release_commit(release):
+    metadata = release / ".macserver-release.json"
+    if release.is_symlink() or not release.is_dir() or metadata.is_symlink() or not metadata.is_file():
+        raise Refusal(f"installed release is unsafe: {release.name}")
+    commit = json.loads(metadata.read_text()).get("commit")
+    if not isinstance(commit, str) or not SHA.fullmatch(commit) or commit != release.name:
+        raise Refusal(f"installed release metadata mismatch: {release.name}")
+    return commit
+
+
+def install_unit(release):
+    shutil.copyfile(release / "infra/deploy/macserver-data.service", UNIT)
+    UNIT.chmod(0o644)
+    run(["/usr/bin/systemctl", "daemon-reload"])
+
+
 def switch_current(target, current=CURRENT):
     link = current.parent / ("." + current.name + ".next")
     try:
@@ -248,8 +271,7 @@ def deploy(source, commit, evidence, update=False, update_approval=UPDATE_APPROV
         if previous is None:
             raise Refusal("update requires an installed release")
         backup_ready()
-        previous_meta = json.loads((previous / ".macserver-release.json").read_text())
-        validate_update_approval(load_json(update_approval, 0), previous_meta["commit"], commit)
+        validate_update_approval(load_json(update_approval, 0), release_commit(previous), commit)
     else:
         if previous is not None:
             raise Refusal("use update for an installed appliance")
@@ -262,10 +284,9 @@ def deploy(source, commit, evidence, update=False, update_approval=UPDATE_APPROV
             storage = Path("/srv/macserver/storage")
             if not storage.is_dir() or any(storage.iterdir()):
                 raise Refusal("commissioning requires an empty Storage directory")
-    shutil.copyfile(release / "infra/deploy/macserver-data.service", UNIT)
-    UNIT.chmod(0o644)
-    run(["/usr/bin/systemctl", "daemon-reload"])
+    # Pull first: a network or registry failure must leave the running unit untouched.
     run(compose(release) + ["pull"], output=False)
+    install_unit(release)
     shutil.copyfile(evidence, APPROVAL); APPROVAL.chmod(0o600)
     try:
         switch_current(release)
@@ -275,9 +296,7 @@ def deploy(source, commit, evidence, update=False, update_approval=UPDATE_APPROV
     except Exception:
         if previous:
             switch_current(previous)
-            shutil.copyfile(previous / "infra/deploy/macserver-data.service", UNIT)
-            UNIT.chmod(0o644)
-            run(["/usr/bin/systemctl", "daemon-reload"])
+            install_unit(previous)
             run(["/usr/bin/systemctl", "restart", "macserver-data.service"])
         else:
             run(["/usr/bin/systemctl", "stop", "macserver-data.service"])
@@ -296,16 +315,18 @@ def rollback(target_commit, confirmed_current):
     if os.geteuid() != 0 or not SHA.fullmatch(target_commit) or not SHA.fullmatch(confirmed_current):
         raise Refusal("rollback requires sudo and two full commit IDs")
     current = CURRENT.resolve(strict=True)
-    meta = json.loads((current / ".macserver-release.json").read_text())
     target = RELEASES / target_commit
-    if meta.get("commit") != confirmed_current or not (target / ".macserver-release.json").is_file():
+    if (target_commit == confirmed_current or release_commit(current) != confirmed_current
+            or release_commit(target) != target_commit):
         raise Refusal("rollback confirmation or installed target mismatch")
     backup_ready()
     try:
         switch_current(target)
+        install_unit(target)
         run(["/usr/bin/systemctl", "restart", "macserver-data.service"])
     except Exception:
         switch_current(current)
+        install_unit(current)
         run(["/usr/bin/systemctl", "restart", "macserver-data.service"])
         raise
     print(f"PASS: rolled back release pointer to {target_commit}; verify data compatibility")

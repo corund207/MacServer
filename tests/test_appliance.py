@@ -21,6 +21,11 @@ class ApplianceTests(unittest.TestCase):
             lambda x: x["checks"].__setitem__("keyOnlySsh", False),
             lambda x: x.__setitem__("approvedCommit", "b" * 40),
             lambda x: x.__setitem__("checkedAt", (now - timedelta(days=8)).isoformat()),
+            lambda x: x["checks"].__setitem__("keyOnlySsh", "false"),
+            lambda x: x["checks"].__setitem__("keyOnlySsh", 1),
+            lambda x: x.__setitem__("checkedAt", "2026-09-12T00:00:00"),
+            lambda x: x.__setitem__("checkedAt", 20260912),
+            lambda x: x.__setitem__("checks", []),
         ):
             candidate = {**value, "checks": dict(value["checks"])}; mutate(candidate)
             with self.assertRaises(appliance.Refusal):
@@ -33,6 +38,19 @@ class ApplianceTests(unittest.TestCase):
         appliance.validate_backup(value, now)
         value["lastSuccess"] = (now - timedelta(days=2)).isoformat()
         with self.assertRaises(appliance.Refusal): appliance.validate_backup(value, now)
+        for invalid in (None, "2026-09-12T00:00:00", []):
+            with self.assertRaises(appliance.Refusal):
+                appliance.validate_backup({**value, "lastSuccess": invalid}, now)
+        with self.assertRaises(appliance.Refusal): appliance.validate_backup([], now)
+
+    def test_release_commit_requires_matching_metadata(self):
+        with tempfile.TemporaryDirectory() as base:
+            release = Path(base) / ("d" * 40); release.mkdir()
+            with self.assertRaises(appliance.Refusal): appliance.release_commit(release)
+            (release / ".macserver-release.json").write_text('{"commit": "' + "e" * 40 + '"}')
+            with self.assertRaises(appliance.Refusal): appliance.release_commit(release)
+            (release / ".macserver-release.json").write_text('{"commit": "' + "d" * 40 + '"}')
+            self.assertEqual(appliance.release_commit(release), "d" * 40)
 
     def test_update_approval_is_short_lived_and_release_specific(self):
         now = datetime(2026, 9, 12, tzinfo=timezone.utc)

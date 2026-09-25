@@ -35,8 +35,9 @@ sudo install -o root -g root -m 0600 infra/deploy/update-approval.example.json \
 ```
 
 Edit the private qualification file as root. Set `approvedCommit` to the exact full
-commit, `checkedAt` to the current UTC timestamp, and each check to `true` only after
-collecting that evidence on this MacBook. The evidence expires after seven days.
+commit, `checkedAt` to the current UTC timestamp with its offset (for example
+`2026-09-25T14:00:00Z`), and each check to JSON `true` only after collecting that
+evidence on this MacBook. Strings such as `"true"` and timestamps without an offset are refused. The evidence expires after seven days.
 Never weaken the checks or commit the completed file.
 
 Review `COMPOSE_PROFILES` in `/etc/macserver/runtime.env`. Start with `core`; add only
@@ -92,7 +93,7 @@ sudo python3 /opt/macserver/scripts/appliance.py status
 ```
 
 The updater copies tracked files into `/opt/macserver-releases/<commit>`, pulls the
-new pinned images before switching `/opt/macserver`, and restarts through the health-
+new pinned images before replacing the unit or switching `/opt/macserver`, and restarts through the health-
 gated unit. If activation fails, it switches the release pointer back and restarts the
 previous release. Database/schema compatibility must still be reviewed: reverting an
 image cannot undo a data migration.
@@ -108,8 +109,9 @@ sudo python3 /opt/macserver/scripts/appliance.py rollback \
 sudo python3 /opt/macserver/scripts/appliance.py status
 ```
 
-The tool only switches between already-installed immutable releases. If restart fails,
-it restores the original pointer. It never restores or overwrites database data. Keep
+The tool only switches between already-installed immutable releases whose metadata
+matches their commit, and installs that release's systemd unit. If restart fails, it
+restores the original pointer and unit. It never restores or overwrites database data. Keep
 maintenance active and follow `UPDATE-ROLLBACK.md` when data compatibility is uncertain.
 
 ## Emergency stop
