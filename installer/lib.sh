@@ -123,8 +123,8 @@ put_file() {
 
 # apt_key NAME URL FINGERPRINT: fetch a signing key, refuse it unless its primary
 # fingerprint matches, and store it as /etc/apt/keyrings/NAME.gpg.
-apt_key() {
-  local name=$1 url=$2 fpr=$3 tmp got
+apt_key() {  # apt_key NAME URL FINGERPRINT [KEYRING_DIR]
+  local name=$1 url=$2 fpr=$3 dir=${4:-/etc/apt/keyrings} tmp got
   tmp=$(mktemp -d)
   curl -fsSL --compressed --proto '=https' --tlsv1.2 "$url" -o "$tmp/key" || { rm -rf "$tmp"; die "could not download the $name signing key"; }
   got=$(gpg --show-keys --with-colons "$tmp/key" 2>/dev/null | awk -F: '/^fpr:/ { print $10; exit }')
@@ -132,9 +132,9 @@ apt_key() {
     rm -rf "$tmp"
     die "$name signing key fingerprint is '$got', expected '$fpr'. Refusing to trust it."
   fi
-  install -d -m 0755 /etc/apt/keyrings
+  install -d -m 0755 "$dir"
   gpg --dearmor < "$tmp/key" > "$tmp/key.gpg" 2>/dev/null || cp "$tmp/key" "$tmp/key.gpg"
-  install -m 0644 "$tmp/key.gpg" "/etc/apt/keyrings/$name.gpg"
+  install -m 0644 "$tmp/key.gpg" "$dir/$name.gpg"
   rm -rf "$tmp"
   ok "$name signing key verified ($fpr)"
 }

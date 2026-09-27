@@ -22,6 +22,10 @@ source "$SRC/installer/lib.sh"
 declare -A A=()      # answers from answers.txt
 AUTO=0
 
+# Only the live USB system may be powered off or have its swap disabled; tests run
+# this script on ordinary Linux machines.
+on_live_usb() { [[ -d /run/live/medium ]]; }
+
 log() { printf '%s %s\n' "$(date +%T)" "$*" >> "$LOG"; }
 
 fail() {
@@ -30,7 +34,8 @@ fail() {
   if (( AUTO )); then
     echo "MACSERVER-SETUP-FAILED: $*"
     tail -n 60 "$LOG"
-    sync; poweroff -f
+    sync; if on_live_usb; then poweroff -f; fi
+    exit 1
   fi
   whiptail --title "$TITLE" --msgbox "Installation failed:\n\n$*\n\nThe full log is in $LOG.\nYou will get a shell to look around; run macserver-setup to start again." 16 72
   exit 1
@@ -41,6 +46,13 @@ trap 'fail "unexpected error on line $LINENO (see $LOG)"' ERR
 
 load_answers() {
   local dev mnt=/run/macserver-answers line
+  if [[ -n ${MACSERVER_ANSWERS:-} ]]; then   # test hook: answers file given directly
+    while IFS= read -r line; do
+      if [[ $line =~ ^([A-Z_]+)=(.*)$ ]]; then A[${BASH_REMATCH[1]}]=${BASH_REMATCH[2]}; fi
+    done < <(tr -d "\r" < "$MACSERVER_ANSWERS")
+    AUTO=1
+    return 0
+  fi
   dev=$(blkid -L MSANSWERS 2>/dev/null || true)
   [[ -n $dev ]] || return 0
   mkdir -p "$mnt"
@@ -279,7 +291,7 @@ in_target() { chroot "$TARGET" /usr/bin/env DEBIAN_FRONTEND=noninteractive LC_AL
 prepare_disk() {
   EFI_PART=$(part "$DISK" 1); BOOT_PART=$(part "$DISK" 2); ROOT_PART=$(part "$DISK" 3)
   progress 2 "Erasing $DISK and creating partitions"
-  swapoff -a || true
+  if on_live_usb; then swapoff -a || true; fi
   umount -R "$TARGET" 2>/dev/null || true
   cryptsetup close cryptroot 2>/dev/null || true
   {
@@ -372,7 +384,7 @@ EOF
   ln -sf "/usr/share/zoneinfo/$TIMEZONE_NEW" "$TARGET/etc/localtime"
   echo "$TIMEZONE_NEW" > "$TARGET/etc/timezone"
   # Big, readable console text on the Retina screen.
-  install -m 0644 "$SRC/iso/live/console-setup" "$TARGET/etc/default/console-setup"
+  install -m 0644 "$SRC/iso/base/live/console-setup" "$TARGET/etc/default/console-setup"
   install -d "$TARGET/etc/initramfs-tools"
   printf 'apple-bce\n' >> "$TARGET/etc/initramfs-tools/modules"
   install -D -m 0644 "$SRC/host/grub-t2.cfg" "$TARGET/etc/default/grub.d/60-macserver-t2.cfg"
@@ -457,7 +469,7 @@ finish() {
   if (( AUTO )); then
     echo "MACSERVER-SETUP-DONE"
     sync
-    if [[ ${A[POWEROFF]:-no} == yes ]]; then poweroff -f; fi
+    if [[ ${A[POWEROFF]:-no} == yes ]]; then on_live_usb && poweroff -f; fi
     return 0
   fi
   whiptail --title "$TITLE" --msgbox "MacServer is installed.

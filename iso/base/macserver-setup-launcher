@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Start the MacServer installer from the sources on the USB stick. The sources sit
+# next to the live system (not inside it), so changing them does not require
+# rebuilding the base image.
+set -euo pipefail
+src=/run/live/medium/macserver
+if [[ -d $src ]]; then
+  rm -rf /opt/macserver-src
+  mkdir -p /opt/macserver-src
+  cp -a "$src/." /opt/macserver-src/
+  chmod 0755 /opt/macserver-src/install.sh /opt/macserver-src/macserver /opt/macserver-src/iso/setup/macserver-setup
+fi
+exec bash /opt/macserver-src/iso/setup/macserver-setup "$@"
