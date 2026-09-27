@@ -112,4 +112,6 @@ ${C_B}MacServer is running.${C_0}
 
 Closing the lid is safe. Leave the charger connected.
 EOF
+  install -d -m 0700 "$MACSERVER_STATE_DIR"
+  touch "$MACSERVER_STATE_DIR/firstboot.done"
 }

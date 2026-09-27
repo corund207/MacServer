@@ -11,13 +11,20 @@ step_tailscale() {
   systemctl enable --now tailscaled >/dev/null
 
   if ! tailscale_running; then
-    local host; host=$(ask "Name for this server on your tailnet" "macserver")
-    cat <<'EOF'
-Tailscale will print a login link. Open it on your phone or computer and sign in
-with the account that owns your tailnet. Tailscale SSH is turned on, so you can
-later run `ssh USER@macserver` from your own devices without copying keys.
+    local host key=$MACSERVER_ETC/tailscale-authkey
+    host=$(ask "Name for this server on your tailnet" "$(conf_get HOSTNAME macserver)")
+    if [[ -s $key ]]; then
+      tailscale up --ssh --hostname="$host" --auth-key="file:$key"
+      shred -u "$key" 2>/dev/null || rm -f "$key"
+    else
+      cat <<'EOF'
+Add this Mac to your Tailscale network: scan the QR code with your phone, or open
+the link on any computer, and sign in with the account that owns your tailnet.
+Tailscale SSH is turned on, so you can then run `ssh USER@macserver` from your
+own devices without copying keys.
 EOF
-    tailscale up --ssh --hostname="$host"
+      tailscale up --ssh --hostname="$host" --qr
+    fi
   else
     tailscale set --ssh
   fi

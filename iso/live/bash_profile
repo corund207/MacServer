@@ -1,0 +1,13 @@
+# MacServer USB installer: start the installer automatically on the main screen.
+# Hands-off installs (kernel option macserver.auto=1) run on the serial console.
+if [[ -z ${MACSERVER_SETUP_STARTED:-} ]]; then
+  export MACSERVER_SETUP_STARTED=1
+  tty_now=$(tty)
+  if grep -qw macserver.auto=1 /proc/cmdline; then want=/dev/ttyS0; else want=/dev/tty1; fi
+  if [[ $tty_now == "$want" ]]; then
+    setupcon 2>/dev/null || true
+    macserver-setup || true
+    echo
+    echo "You are in the MacServer installer shell. Run macserver-setup to start again, or reboot."
+  fi
+fi

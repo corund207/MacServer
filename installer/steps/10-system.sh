@@ -14,7 +14,7 @@ step_preflight() {
     ok "Apple T2 Mac detected ($model)"
   else
     warn "no Apple T2 chip found ($model). The T2 kernel step will be skipped."
-    confirm "Continue anyway?" n || return 1
+    [[ $(conf_get ALLOW_NON_T2) == 1 ]] || confirm "Continue anyway?" n || return 1
   fi
 
   local mem_kb free_gb

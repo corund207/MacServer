@@ -1,0 +1,493 @@
+#!/usr/bin/env bash
+# MacServer disk installer. Runs on the MacServer USB stick (live Debian 13 with the
+# t2linux kernel). It asks a few questions, erases the chosen disk, and installs
+# Debian 13 + the T2 kernel + MacServer. The rest (Tailscale, firewall, Docker,
+# Supabase, admin page) finishes automatically on first boot.
+#
+# Hands-off mode: if a partition labelled MSANSWERS holds answers.txt, every question
+# is answered from it (used by the CI install test). See iso/answers.example.txt.
+set -Eeuo pipefail
+
+SRC=${MACSERVER_SRC:-/opt/macserver-src}
+LOG=/tmp/macserver-setup.log
+TARGET=/mnt/target
+SUITE=trixie
+MIRROR=https://deb.debian.org/debian
+TITLE="MacServer installer"
+MIN_DISK_GB=30
+DNS_FIXED=0
+# shellcheck source=installer/lib.sh
+source "$SRC/installer/lib.sh"
+
+declare -A A=()      # answers from answers.txt
+AUTO=0
+
+log() { printf '%s %s\n' "$(date +%T)" "$*" >> "$LOG"; }
+
+fail() {
+  trap - ERR
+  log "FAILED: $*"
+  if (( AUTO )); then
+    echo "MACSERVER-SETUP-FAILED: $*"
+    tail -n 60 "$LOG"
+    sync; poweroff -f
+  fi
+  whiptail --title "$TITLE" --msgbox "Installation failed:\n\n$*\n\nThe full log is in $LOG.\nYou will get a shell to look around; run macserver-setup to start again." 16 72
+  exit 1
+}
+trap 'fail "unexpected error on line $LINENO (see $LOG)"' ERR
+
+# --- answers and dialogs --------------------------------------------------------------
+
+load_answers() {
+  local dev mnt=/run/macserver-answers line
+  dev=$(blkid -L MSANSWERS 2>/dev/null || true)
+  [[ -n $dev ]] || return 0
+  mkdir -p "$mnt"
+  mount -o ro "$dev" "$mnt" || return 0
+  if [[ -f $mnt/answers.txt ]]; then
+    while IFS= read -r line; do
+      if [[ $line =~ ^([A-Z_]+)=(.*)$ ]]; then A[${BASH_REMATCH[1]}]=${BASH_REMATCH[2]}; fi
+    done < <(tr -d '\r' < "$mnt/answers.txt")
+    AUTO=1
+    echo "Hands-off install: answers.txt found on $dev"
+  fi
+  umount "$mnt"
+}
+
+ui_msg() {  # ui_msg "text" [height]
+  if (( AUTO )); then echo "$1"; return; fi
+  whiptail --title "$TITLE" --msgbox "$1" "${2:-14}" 78
+}
+
+ui_yesno() {  # ui_yesno KEY "question" [default yes|no]
+  if (( AUTO )); then [[ ${A[$1]:-${3:-yes}} == yes ]]; return; fi
+  local flag=()
+  if [[ ${3:-yes} == no ]]; then flag=(--defaultno); fi
+  whiptail --title "$TITLE" "${flag[@]}" --yesno "$2" 16 78
+}
+
+ui_input() {  # ui_input KEY "question" default
+  if (( AUTO )); then printf '%s' "${A[$1]:-$3}"; return; fi
+  whiptail --title "$TITLE" --inputbox "$2" 12 78 "$3" 3>&1 1>&2 2>&3
+}
+
+ui_secret() {  # ui_secret KEY "question": asks twice until both match
+  if (( AUTO )); then printf '%s' "${A[$1]:-}"; return; fi
+  local a b
+  while :; do
+    a=$(whiptail --title "$TITLE" --passwordbox "$2" 12 78 3>&1 1>&2 2>&3)
+    b=$(whiptail --title "$TITLE" --passwordbox "Type it again to confirm." 10 78 3>&1 1>&2 2>&3)
+    if [[ -n $a && $a == "$b" ]]; then printf '%s' "$a"; return; fi
+    whiptail --title "$TITLE" --msgbox "They did not match (or were empty). Try again." 8 60
+  done
+}
+
+progress() {  # progress PERCENT "message"
+  log "== $2"
+  printf '%s[%3d%%]%s %s\n' "$C_B" "$1" "$C_0" "$2"
+}
+
+# --- questions ------------------------------------------------------------------------
+
+welcome() {
+  local model
+  model=$(cat /sys/class/dmi/id/product_name 2>/dev/null || echo unknown)
+  if ! is_t2; then
+    if [[ ${A[ALLOW_NON_T2]:-no} != yes ]] &&
+       ! ui_yesno ALLOW_NON_T2 "This computer ($model) has no Apple T2 chip.\n\nMacServer is built for the 2019 MacBook Air. Continue anyway?" no; then
+      exit 0
+    fi
+  elif [[ $model != MacBookAir8,2 ]]; then
+    ui_msg "This is a $model, not the 2019 MacBook Air (MacBookAir8,2).\nOther T2 Macs usually work, but they are not tested." 10
+  fi
+  ui_msg "Welcome to MacServer.
+
+This turns this Mac into a private server for your apps:
+Debian 13 + T2 drivers + Supabase + Tailscale.
+
+You answer a few questions, then the installer ERASES the internal disk
+(including macOS) and sets everything up. It takes about 20 minutes and
+needs an Internet connection (cable, phone tethering or Wi-Fi)." 16
+}
+
+online() { can_resolve && timeout 15 curl -fsI "$MIRROR/dists/$SUITE/Release" >/dev/null 2>&1; }
+
+use_fixed_dns() {
+  install -d /etc/NetworkManager/conf.d
+  printf '[global-dns-domain-*]\nservers=%s\n' "$(IFS=,; echo "${FALLBACK_DNS[*]}")" > /etc/NetworkManager/conf.d/60-macserver-dns.conf
+  systemctl reload NetworkManager 2>/dev/null || true
+  rm -f /etc/resolv.conf
+  printf 'nameserver %s\n' "${FALLBACK_DNS[@]}" > /etc/resolv.conf
+  DNS_FIXED=1
+  log "switched to fixed DNS"
+}
+
+wifi_firmware_present() { compgen -G '/lib/firmware/brcm/brcmfmac*apple*' >/dev/null; }
+
+reload_wifi() {
+  modprobe -r brcmfmac_wcc 2>/dev/null || true
+  modprobe -r brcmfmac 2>/dev/null || true
+  modprobe brcmfmac 2>/dev/null || true
+  sleep 4
+}
+
+firmware_from_usb() {  # firmware.tar (made on macOS by get-apple-firmware) on any drive
+  local dev mnt=/run/macserver-fw
+  mkdir -p "$mnt"
+  while read -r dev; do
+    mount -o ro "$dev" "$mnt" 2>/dev/null || continue
+    if [[ -f $mnt/firmware.tar ]] && tar -xf "$mnt/firmware.tar" -C /lib/firmware/brcm; then
+      umount "$mnt"; return 0
+    fi
+    umount "$mnt"
+  done < <(lsblk -rpno NAME,FSTYPE | awk '$2 ~ /^(vfat|exfat|ext4|hfsplus)$/ { print $1 }')
+  return 1
+}
+
+setup_network() {
+  local choice
+  systemctl start NetworkManager 2>/dev/null || true
+  while :; do
+    echo "Checking the Internet connection..."
+    for _ in $(seq 20); do online && break; sleep 1; done
+    if online; then log "online"; return 0; fi
+    if can_reach_ip; then
+      use_fixed_dns
+      if online; then return 0; fi
+    fi
+    (( AUTO )) && fail "no Internet connection"
+    choice=$(whiptail --title "$TITLE" --menu "No Internet connection yet.
+
+Plug in a USB-C Ethernet adapter, or connect a phone by USB with tethering on
+(iPhone: Personal Hotspot on, unlock it, tap Trust). Or use Wi-Fi." 20 78 5 \
+      retry "Check again" \
+      wifi "Connect to Wi-Fi" \
+      usbfw "Load Wi-Fi firmware from a USB drive (firmware.tar)" \
+      iphone "Pair an iPhone (if tethering does not start)" \
+      shell "Open a shell (type exit to come back)" 3>&1 1>&2 2>&3) || continue
+    case $choice in
+      wifi)
+        if wifi_firmware_present; then
+          reload_wifi; nmtui-connect || true
+        else
+          whiptail --title "$TITLE" --msgbox "Wi-Fi needs Apple's firmware first. Apple does not allow sharing it, so
+it must come from Apple:
+
+ - Connect by cable or phone first: the installer can then download it, or
+ - On a Mac with macOS, make firmware.tar with t2linux's get-apple-firmware,
+   copy it to a USB drive, plug it in and choose 'Load Wi-Fi firmware'." 16 78
+        fi ;;
+      usbfw)
+        if firmware_from_usb; then reload_wifi; nmtui-connect || true
+        else whiptail --title "$TITLE" --msgbox "No firmware.tar found on any drive." 8 60; fi ;;
+      iphone) idevicepair pair || true; sleep 3 ;;
+      shell) clear; bash -l || true ;;
+      *) ;;
+    esac
+  done
+}
+
+choose_disk() {
+  local live='' src disks=() name size model gb
+  src=$(findmnt -no SOURCE /run/live/medium 2>/dev/null || true)
+  [[ -n $src ]] && live=$(lsblk -no PKNAME "$src" 2>/dev/null | head -1)
+  while read -r name size model; do
+    [[ -n $live && $name == "/dev/$live" ]] && continue
+    disks+=("$name" "$size ${model:-disk}")
+  done < <(lsblk -dpno NAME,SIZE,MODEL -e 7,11 | grep -v '/dev/zram')
+  (( ${#disks[@]} )) || fail "no disk found to install on"
+  if (( AUTO )); then
+    DISK=${A[DISK]:-${disks[0]}}
+  elif (( ${#disks[@]} == 2 )); then
+    DISK=${disks[0]}
+  else
+    DISK=$(whiptail --title "$TITLE" --menu "Install on which disk? It will be ERASED.\n(The Mac's internal SSD is usually /dev/nvme0n1.)" 16 78 6 "${disks[@]}" 3>&1 1>&2 2>&3) || exit 0
+  fi
+  [[ -b $DISK ]] || fail "$DISK is not a disk"
+  gb=$(( $(blockdev --getsize64 "$DISK") / 1000000000 ))
+  (( gb >= MIN_DISK_GB )) || fail "$DISK is only ${gb} GB; at least $MIN_DISK_GB GB is needed"
+}
+
+ask_questions() {
+  HOSTNAME_NEW=$(ui_input HOSTNAME "Name of this server (also its Tailscale name):" macserver)
+  [[ $HOSTNAME_NEW =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]] || fail "'$HOSTNAME_NEW' is not a valid name (lowercase letters, digits, dashes)"
+  USERNAME_NEW=$(ui_input USERNAME "Your username on the server:" admin)
+  [[ $USERNAME_NEW =~ ^[a-z_][a-z0-9_-]{0,30}$ && $USERNAME_NEW != root ]] || fail "'$USERNAME_NEW' is not a valid username"
+  PASSWORD_NEW=$(ui_secret PASSWORD "Password for $USERNAME_NEW (for sudo and local login):")
+  [[ -n $PASSWORD_NEW ]] || fail "a password is required"
+
+  if ui_yesno ENCRYPT "Encrypt the disk? (Recommended)
+
+If the laptop is stolen, nobody can read your database. You type the
+passphrase on the Mac's keyboard every time it starts, including after
+a power cut." yes; then
+    LUKS_PASS=$(ui_secret LUKS_PASSPHRASE "Disk encryption passphrase (8+ characters). If you lose it, the data is gone:")
+    (( ${#LUKS_PASS} >= 8 )) || fail "the passphrase must be at least 8 characters"
+  else
+    LUKS_PASS=''
+  fi
+
+  TIMEZONE_NEW=$(ui_input TIMEZONE "Time zone (for example America/New_York or Europe/London):" "$(cat /etc/timezone 2>/dev/null || echo UTC)")
+  [[ -f /usr/share/zoneinfo/$TIMEZONE_NEW ]] || fail "unknown time zone '$TIMEZONE_NEW'"
+
+  WANT_WIFI=no
+  if is_t2 && ! wifi_firmware_present; then
+    if ui_yesno GET_WIFI_FIRMWARE "Set up the built-in Wi-Fi too?
+
+Apple's Wi-Fi firmware must come from Apple: the installer downloads a macOS
+Recovery image (about 1 GB) and keeps only the Wi-Fi and Bluetooth files.
+Choose No to stay on cable or phone tethering (add Wi-Fi later with
+sudo macserver wifi)." yes; then
+      WANT_WIFI=yes
+    fi
+  fi
+
+  TS_KEY=$(ui_input TS_AUTHKEY "Optional: Tailscale auth key (tskey-auth-...). Leave empty to sign in on first boot by scanning a QR code on the screen:" "")
+  [[ -z $TS_KEY || $TS_KEY =~ ^tskey-[A-Za-z0-9-]+$ ]] || fail "that is not a Tailscale auth key"
+}
+
+confirm_erase() {
+  local summary wifi typed
+  if [[ $WANT_WIFI == yes ]]; then wifi="download firmware from Apple"
+  elif wifi_firmware_present; then wifi="firmware ready"
+  else wifi="not now"; fi
+  summary="Disk:        $DISK  (EVERYTHING ON IT WILL BE ERASED)
+Server name: $HOSTNAME_NEW
+User:        $USERNAME_NEW
+Encryption:  $([[ -n $LUKS_PASS ]] && echo on || echo OFF)
+Time zone:   $TIMEZONE_NEW
+Wi-Fi:       $wifi
+Tailscale:   $([[ -n $TS_KEY ]] && echo "auth key" || echo "QR code on first boot")"
+  if (( AUTO )); then
+    [[ ${A[CONFIRM_ERASE]:-} == "$DISK" ]] || fail "answers.txt must contain CONFIRM_ERASE=$DISK"
+    echo "$summary"
+    return 0
+  fi
+  typed=$(whiptail --title "$TITLE" --inputbox "$summary
+
+Type ERASE to erase the disk and install:" 20 78 "" 3>&1 1>&2 2>&3) || exit 0
+  if [[ $typed != ERASE ]]; then whiptail --msgbox "Nothing was changed." 8 40; exit 0; fi
+}
+
+# --- installation ---------------------------------------------------------------------
+
+part() { if [[ $1 =~ [0-9]$ ]]; then echo "${1}p$2"; else echo "$1$2"; fi; }
+
+in_target() { chroot "$TARGET" /usr/bin/env DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8 "$@"; }
+
+prepare_disk() {
+  EFI_PART=$(part "$DISK" 1); BOOT_PART=$(part "$DISK" 2); ROOT_PART=$(part "$DISK" 3)
+  progress 2 "Erasing $DISK and creating partitions"
+  swapoff -a || true
+  umount -R "$TARGET" 2>/dev/null || true
+  cryptsetup close cryptroot 2>/dev/null || true
+  {
+    wipefs -af "$DISK"
+    sgdisk --zap-all "$DISK"
+    sgdisk -n1:0:+512M -t1:ef00 -c1:EFI -n2:0:+1G -t2:8300 -c2:boot -n3:0:0 -t3:8309 -c3:root "$DISK"
+  } >> "$LOG" 2>&1
+  partprobe "$DISK" 2>/dev/null || true
+  udevadm settle; sleep 2
+  mkfs.vfat -F32 -n EFI "$EFI_PART" >> "$LOG" 2>&1
+  mkfs.ext4 -qF -L boot "$BOOT_PART" >> "$LOG" 2>&1
+
+  if [[ -n $LUKS_PASS ]]; then
+    progress 5 "Encrypting the disk"
+    printf '%s' "$LUKS_PASS" | cryptsetup luksFormat --type luks2 --pbkdf argon2id --batch-mode --key-file - "$ROOT_PART" >> "$LOG" 2>&1
+    printf '%s' "$LUKS_PASS" | cryptsetup open --allow-discards --key-file - "$ROOT_PART" cryptroot >> "$LOG" 2>&1
+    ROOT_DEV=/dev/mapper/cryptroot
+  else
+    sgdisk -t3:8304 "$DISK" >> "$LOG" 2>&1
+    ROOT_DEV=$ROOT_PART
+  fi
+  mkfs.ext4 -qF -L root "$ROOT_DEV" >> "$LOG" 2>&1
+
+  mkdir -p "$TARGET"
+  mount "$ROOT_DEV" "$TARGET"
+  mkdir -p "$TARGET/boot"; mount "$BOOT_PART" "$TARGET/boot"
+  mkdir -p "$TARGET/boot/efi"; mount "$EFI_PART" "$TARGET/boot/efi"
+}
+
+fetch_wifi_firmware() {
+  [[ $WANT_WIFI == yes ]] || return 0
+  progress 8 "Downloading Wi-Fi firmware from Apple (when asked, choose the newest macOS)"
+  # The recovery image is ~2 GB once unpacked, so work on the new disk, not in RAM.
+  install -d -m 0700 "$TARGET/var/tmp/macserver-fw"
+  if HOME=$TARGET/var/tmp/macserver-fw get-apple-firmware get_from_online < /dev/tty && wifi_firmware_present; then
+    log "wifi firmware installed"
+  else
+    echo "The firmware download did not work; continuing without Wi-Fi (add it later: sudo macserver wifi)."
+  fi
+  rm -rf "$TARGET/var/tmp/macserver-fw"
+}
+
+install_debian() {
+  progress 10 "Downloading and installing Debian 13 (the slow part: 5-15 minutes)"
+  debootstrap --arch=amd64 --include=ca-certificates,locales,gnupg "$SUITE" "$TARGET" "$MIRROR" >> "$LOG" 2>&1
+
+  progress 45 "Configuring the system"
+  local m
+  for m in dev dev/pts proc sys sys/firmware/efi/efivars run; do
+    [[ -d /$m ]] || continue
+    mkdir -p "$TARGET/$m"
+    mount --bind "/$m" "$TARGET/$m" 2>/dev/null || true
+  done
+  rm -f "$TARGET/etc/resolv.conf"
+  cp /etc/resolv.conf "$TARGET/etc/resolv.conf"
+
+  echo "$HOSTNAME_NEW" > "$TARGET/etc/hostname"
+  printf '127.0.0.1\tlocalhost\n127.0.1.1\t%s\n::1\t\tlocalhost ip6-localhost ip6-loopback\n' "$HOSTNAME_NEW" > "$TARGET/etc/hosts"
+  {
+    echo "UUID=$(blkid -s UUID -o value "$ROOT_DEV") / ext4 errors=remount-ro,noatime 0 1"
+    echo "UUID=$(blkid -s UUID -o value "$BOOT_PART") /boot ext4 noatime 0 2"
+    echo "UUID=$(blkid -s UUID -o value "$EFI_PART") /boot/efi vfat umask=0077 0 1"
+  } > "$TARGET/etc/fstab"
+  if [[ -n $LUKS_PASS ]]; then
+    echo "cryptroot UUID=$(blkid -s UUID -o value "$ROOT_PART") none luks,discard" > "$TARGET/etc/crypttab"
+  fi
+
+  rm -f "$TARGET/etc/apt/sources.list"
+  cat > "$TARGET/etc/apt/sources.list.d/debian.sources" <<EOF
+Types: deb
+URIs: $MIRROR
+Suites: $SUITE $SUITE-updates
+Components: main contrib non-free-firmware
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+
+Types: deb
+URIs: https://security.debian.org/debian-security
+Suites: $SUITE-security
+Components: main contrib non-free-firmware
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+EOF
+  install -d -m 0755 "$TARGET/etc/apt/keyrings"
+  install -m 0644 /etc/apt/keyrings/t2.gpg "$TARGET/etc/apt/keyrings/t2.gpg"
+  install -m 0644 "$SRC/host/t2.sources" "$TARGET/etc/apt/sources.list.d/t2.sources"
+  install -m 0644 "$SRC/host/t2.pref" "$TARGET/etc/apt/preferences.d/t2.pref"
+
+  sed -i 's/^# *en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' "$TARGET/etc/locale.gen"
+  in_target locale-gen >> "$LOG" 2>&1
+  echo 'LANG=en_US.UTF-8' > "$TARGET/etc/default/locale"
+  ln -sf "/usr/share/zoneinfo/$TIMEZONE_NEW" "$TARGET/etc/localtime"
+  echo "$TIMEZONE_NEW" > "$TARGET/etc/timezone"
+  # Big, readable console text on the Retina screen.
+  install -m 0644 "$SRC/iso/live/console-setup" "$TARGET/etc/default/console-setup"
+  install -d "$TARGET/etc/initramfs-tools"
+  printf 'apple-bce\n' >> "$TARGET/etc/initramfs-tools/modules"
+  install -D -m 0644 "$SRC/host/grub-t2.cfg" "$TARGET/etc/default/grub.d/60-macserver-t2.cfg"
+  printf 'GRUB_TIMEOUT=2\n' > "$TARGET/etc/default/grub.d/50-macserver-timeout.cfg"
+  if [[ -n ${A[EXTRA_CMDLINE]:-} ]]; then
+    # shellcheck disable=SC2016  # GRUB expands $GRUB_CMDLINE_LINUX_DEFAULT, not bash
+    printf 'GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT %s"\n' "${A[EXTRA_CMDLINE]}" > "$TARGET/etc/default/grub.d/90-extra.cfg"
+  fi
+  # Keep GRUB at the removable path (EFI/BOOT/BOOTX64.EFI) that the Mac boots,
+  # and never write to the Mac's NVRAM.
+  in_target debconf-set-selections <<'EOF'
+grub-efi-amd64 grub2/force_efi_extra_removable boolean true
+grub-efi-amd64 grub2/update_nvram boolean false
+EOF
+
+  progress 55 "Installing the T2 kernel and system packages"
+  in_target apt-get update >> "$LOG" 2>&1
+  in_target apt-get install -y -q --no-install-recommends \
+    linux-t2-lts grub-efi-amd64 initramfs-tools cryptsetup cryptsetup-initramfs \
+    systemd-sysv systemd-timesyncd sudo network-manager wpasupplicant iw \
+    console-setup keyboard-configuration kbd zram-tools \
+    curl jq git python3 nftables unattended-upgrades apt-listchanges pciutils usbutils \
+    lm-sensors smartmontools intel-microcode firmware-realtek firmware-linux-free \
+    apple-firmware-script dmg2img usbmuxd less nano bash-completion openssh-client \
+    >> "$LOG" 2>&1
+  in_target apt-get install -y -q t2fanrd >> "$LOG" 2>&1 || log "t2fanrd not available"
+
+  progress 75 "Creating your account"
+  in_target useradd -m -s /bin/bash -G sudo,adm "$USERNAME_NEW"
+  printf '%s:%s\n' "$USERNAME_NEW" "$PASSWORD_NEW" | in_target chpasswd
+  in_target passwd -l root >> "$LOG" 2>&1
+
+  progress 78 "Carrying over network settings"
+  if [[ -d /etc/NetworkManager/system-connections ]]; then
+    install -d -m 0700 "$TARGET/etc/NetworkManager/system-connections"
+    cp -a /etc/NetworkManager/system-connections/. "$TARGET/etc/NetworkManager/system-connections/"
+  fi
+  if (( DNS_FIXED )); then
+    install -D -m 0644 /etc/NetworkManager/conf.d/60-macserver-dns.conf "$TARGET/etc/NetworkManager/conf.d/60-macserver-dns.conf"
+  fi
+  if wifi_firmware_present; then
+    install -d "$TARGET/lib/firmware/brcm"
+    cp -a /lib/firmware/brcm/brcmfmac*apple* "$TARGET/lib/firmware/brcm/"
+  fi
+  rm -f "$TARGET/etc/resolv.conf"
+  ln -s /run/NetworkManager/resolv.conf "$TARGET/etc/resolv.conf"
+
+  progress 82 "Installing MacServer"
+  install -d -m 0755 "$TARGET/opt/macserver-src"
+  cp -a "$SRC/." "$TARGET/opt/macserver-src/"
+  install -d -m 0755 "$TARGET/etc/macserver"
+  {
+    echo "HOSTNAME=$HOSTNAME_NEW"
+    if [[ ${A[ALLOW_NON_T2]:-no} == yes ]]; then echo "ALLOW_NON_T2=1"; fi
+    echo "INSTALLED_BY=usb-installer"
+  } > "$TARGET/etc/macserver/macserver.conf"
+  if [[ -n $TS_KEY ]]; then
+    (umask 077; printf '%s' "$TS_KEY" > "$TARGET/etc/macserver/tailscale-authkey")
+  fi
+  install -m 0644 "$SRC/host/macserver-firstboot.service" "$TARGET/etc/systemd/system/macserver-firstboot.service"
+  in_target systemctl enable macserver-firstboot.service NetworkManager >> "$LOG" 2>&1
+
+  progress 88 "Installing the boot loader"
+  {
+    in_target update-initramfs -u -k all
+    in_target grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=debian \
+      --removable --no-nvram
+    in_target update-grub
+  } >> "$LOG" 2>&1
+  [[ -f $TARGET/boot/efi/EFI/BOOT/BOOTX64.EFI ]] || fail "the boot loader was not installed"
+
+  progress 97 "Finishing"
+  cp "$LOG" "$TARGET/var/log/macserver-setup.log"
+  chmod 0600 "$TARGET/var/log/macserver-setup.log"
+  sync
+  umount -R "$TARGET"
+  if [[ -n $LUKS_PASS ]]; then cryptsetup close cryptroot; fi
+  progress 100 "Done"
+}
+
+finish() {
+  if (( AUTO )); then
+    echo "MACSERVER-SETUP-DONE"
+    sync
+    if [[ ${A[POWEROFF]:-no} == yes ]]; then poweroff -f; fi
+    return 0
+  fi
+  whiptail --title "$TITLE" --msgbox "MacServer is installed.
+
+Remove the USB stick and press Enter to restart.
+
+On first start:
+ 1. Type your disk passphrase (the built-in keyboard works now).
+ 2. Setup finishes by itself (about 15 minutes; it downloads Supabase).
+ 3. A QR code appears: scan it with your phone to add the server to
+    Tailscale$([[ -n $TS_KEY ]] && echo " (skipped: you gave an auth key)").
+ 4. Open https://$HOSTNAME_NEW.<your-tailnet>.ts.net/ on any of your
+    devices. Turn on MagicDNS + HTTPS in Tailscale's DNS settings first." 20 78
+  reboot
+}
+
+main() {
+  [[ $EUID -eq 0 ]] || { echo "run as root"; exit 1; }
+  : > "$LOG"
+  load_answers
+  welcome
+  setup_network
+  choose_disk
+  ask_questions
+  confirm_erase
+  clear 2>/dev/null || true
+  prepare_disk
+  fetch_wifi_firmware
+  install_debian
+  finish
+}
+
+main "$@"

@@ -4,6 +4,8 @@
 #   sudo ./install.sh              run or resume the install
 #   sudo ./install.sh --status     show which steps are done
 #   sudo ./install.sh --redo STEP  run one finished step again
+#   sudo ./install.sh --unattended take every default (used on first boot
+#                                  after the MacServer USB installer)
 #
 # Every step is safe to re-run. Steps that change the kernel, the network,
 # the firewall or public exposure ask first.
@@ -36,7 +38,7 @@ declare -A TITLE=(
   [finish]="Summary"
 )
 
-usage() { sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; }
 
 show_status() {
   local s
@@ -63,6 +65,7 @@ main() {
     --status) show_status; exit 0 ;;
   esac
   [[ $EUID -eq 0 ]] || die "run with sudo: sudo ./install.sh"
+  if [[ ${1:-} == --unattended ]]; then export MACSERVER_UNATTENDED=1; shift; fi
   if [[ ${1:-} == --redo ]]; then
     [[ -n ${2:-} && -n ${TITLE[${2}]:-} ]] || die "unknown step '${2:-}'. Steps: ${STEPS[*]}"
     state_del "$2"; run_step "$2"; exit 0

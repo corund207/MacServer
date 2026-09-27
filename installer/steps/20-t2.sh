@@ -62,6 +62,7 @@ step_reboot() {
   if ! is_t2 || ! dpkg -s linux-t2-lts >/dev/null 2>&1; then ok "no kernel change to activate"; return 0; fi
   if ! running_t2_kernel; then
     say "The T2 kernel is installed but not running yet."
+    if unattended; then say "Rebooting into it; setup continues automatically."; systemctl reboot; return 10; fi
     if confirm "Reboot now? After the reboot, log in and run: sudo ./install.sh" y; then
       systemctl reboot
     fi
@@ -80,6 +81,7 @@ wifi_firmware_present() { compgen -G '/lib/firmware/brcm/brcmfmac*apple*' >/dev/
 
 step_wifi() {
   if ! is_t2; then ok "not a T2 Mac; skipping"; return 0; fi
+  if unattended; then ok "set up by the USB installer (change it later: sudo macserver wifi)"; return 0; fi
   say "A wired connection (USB-C Ethernet) is the most reliable for a server, but Wi-Fi works too."
   confirm "Set up the built-in Wi-Fi?" y || { ok "skipped (run later: sudo macserver wifi)"; return 0; }
   wifi_setup

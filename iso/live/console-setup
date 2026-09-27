@@ -1,0 +1,6 @@
+# Large console font for the MacBook Air's Retina screen.
+ACTIVE_CONSOLES="/dev/tty[1-6]"
+CHARMAP="UTF-8"
+CODESET="guess"
+FONTFACE="Terminus"
+FONTSIZE="16x32"

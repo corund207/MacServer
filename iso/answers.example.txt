@@ -1,0 +1,14 @@
+# Hands-off install answers. Put this file as answers.txt on a FAT drive labelled
+# MSANSWERS, plug it in together with the MacServer USB stick, and boot.
+# THE DISK BELOW IS ERASED WITHOUT ANY QUESTION.
+DISK=/dev/nvme0n1
+CONFIRM_ERASE=/dev/nvme0n1
+HOSTNAME=macserver
+USERNAME=admin
+PASSWORD=change-me
+ENCRYPT=yes
+LUKS_PASSPHRASE=change-me-too
+TIMEZONE=UTC
+GET_WIFI_FIRMWARE=no
+TS_AUTHKEY=
+POWEROFF=no

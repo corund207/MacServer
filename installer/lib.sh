@@ -36,8 +36,14 @@ check() { local good=$1 bad=$2; shift 2; if "$@"; then ok "$good"; else warn "$b
 die()  { printf '%s  error:%s %s\n' "$C_R" "$C_0" "$*" >&2; exit 1; }
 
 
+# Unattended mode (first boot after the disk-image installer): every prompt takes
+# its default, and secrets are never asked for.
+MACSERVER_UNATTENDED=${MACSERVER_UNATTENDED:-0}
+unattended() { [[ $MACSERVER_UNATTENDED == 1 ]]; }
+
 ask() {  # ask "Question" "default" -> echoes answer
   local reply
+  if unattended; then printf '%s' "$2"; return; fi
   printf '%s [%s]: ' "$1" "$2" > /dev/tty
   IFS= read -r reply < /dev/tty || reply=''
   printf '%s' "${reply:-$2}"
@@ -45,6 +51,7 @@ ask() {  # ask "Question" "default" -> echoes answer
 
 ask_secret() {  # ask_secret "Question" -> echoes answer (not shown)
   local reply
+  unattended && return 0
   printf '%s: ' "$1" > /dev/tty
   IFS= read -rs reply < /dev/tty || reply=''
   printf '\n' > /dev/tty
@@ -53,6 +60,7 @@ ask_secret() {  # ask_secret "Question" -> echoes answer (not shown)
 
 confirm() {  # confirm "Question" [default y|n]; returns 0 for yes
   local def=${2:-n} hint reply
+  if unattended; then [[ $def == y ]]; return; fi
   [[ $def == y ]] && hint='Y/n' || hint='y/N'
   printf '%s [%s]: ' "$1" "$hint" > /dev/tty
   IFS= read -r reply < /dev/tty || reply=''
