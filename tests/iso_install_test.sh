@@ -46,7 +46,7 @@ qemu -drive file="$ISO",media=cdrom,if=none,id=cd -device ide-cd,drive=cd,bootin
 qpid=$!
 sleep 2
 tail -n +1 -F --pid="$qpid" "$W/install.log" 2>/dev/null | tr -d "\r" | sed -u "s/^/[vm] /" &
-for ((waited = 0; waited < 4500; waited += 10)); do
+for ((waited = 0; waited < 2400; waited += 10)); do
   kill -0 "$qpid" 2>/dev/null || break
   sleep 10
 done
