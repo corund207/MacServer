@@ -61,3 +61,10 @@ npm test
 
 The release verifier intentionally retains a repository-only NO-GO verdict.
 Only completed target evidence can establish production readiness.
+
+## First-boot networking — 2026-09-27
+
+Before installing, pick a network route from `docs/NETWORK.md`. A USB-C Ethernet
+adapter is preferred. If using iPhone tethering, apply the installer DNS fix, then run
+`sudo python3 scripts/network_doctor.py fix-dns` after cloning. Record which DHCP
+client Debian 13 installs on the Mac and whether the override survives a DHCP renewal.

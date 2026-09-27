@@ -33,6 +33,10 @@ rate limits, audit logs, and Row Level Security (RLS).
 - The 2019 Intel MacBook Air, its charger, and physical console access.
 - A verified backup of everything currently on the Mac and working recovery media.
 - A Debian 13 `amd64` installer USB.
+- A network connection Debian can use without drivers: a USB-C Ethernet adapter or hub
+  (recommended), Android USB tethering, or iPhone tethering with the DNS fix. The
+  internal Wi-Fi does not work in the installer. See [Get the MacBook online](NETWORK.md).
+- A USB keyboard. The T2 internal keyboard and trackpad need a driver that stock Debian lacks.
 - A second computer with an SSH key, a safe way to transfer its public key, and
   access to your MFA-protected tailnet.
 - Two 200–300 GiB removable drives for rotating encrypted backups; the planned
@@ -49,12 +53,16 @@ UUIDs, database exports, or approval evidence in this repository.
 Mac. Verify a separate restorable backup and recovery boot, then obtain explicit
 confirmation immediately before the installer writes to disk.
 
-1. Download the current Debian 13 `amd64` netinst image from the
-   [official installer page](https://www.debian.org/releases/trixie/debian-installer/)
-   and verify its published checksum/signature.
-2. Boot the installer and first confirm that the internal SSD, keyboard/trackpad,
+1. Choose how the Mac will get online using [Get the MacBook online](NETWORK.md).
+   With a USB-C Ethernet adapter or Android tethering, download the current Debian 13
+   `amd64` netinst image from the
+   [official installer page](https://www.debian.org/releases/trixie/debian-installer/).
+   With no working network, use the DVD-1 image and install offline. Verify the
+   published checksum and signature either way.
+2. Boot the installer and first confirm that the internal SSD, USB keyboard,
    networking, display, and recovery boot work on this T2-era Mac. Stop if they do
-   not; stock Debian support for this exact machine is not yet verified.
+   not; stock Debian support for this exact machine is not yet verified. If you use
+   iPhone tethering, apply the installer DNS fix in section D of [Get the MacBook online](NETWORK.md).
 3. Install a minimal system using encrypted LVM on the internal SSD. Create a
    non-root sudo user, but do not enable an SSH server yet. Do not create
    unencrypted swap.
@@ -83,6 +91,7 @@ Clone the repository as the ordinary operator, not as root:
 ```sh
 git clone https://github.com/corund207/MacServer.git
 cd MacServer
+python3 scripts/network_doctor.py
 python3 scripts/bootstrap.py preflight --state-parent /srv
 python3 scripts/validate.py
 python3 -m unittest discover -s tests -v
@@ -90,7 +99,8 @@ python3 scripts/bootstrap.py stage --output /tmp/macserver-stage
 python3 scripts/bootstrap.py stage --output /tmp/macserver-stage
 ```
 
-The preflight must report `eligible: true`. Staging should report `Bundle staged`
+The network check must end with `Verdict: ok`; if it reports `dns-broken`, run
+`sudo python3 scripts/network_doctor.py fix-dns`. The preflight must report `eligible: true`. Staging should report `Bundle staged`
 and then `Bundle unchanged`. This proves the checkout is internally consistent; it
 does not install anything or certify the MacBook. If preflight fails, fix the
 reported OS, architecture, RAM, or disk issue instead of bypassing it.

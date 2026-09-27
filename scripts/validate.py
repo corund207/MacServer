@@ -20,7 +20,7 @@ def main():
                 "context/PHASE-7-STATUS.md",
                 "context/PHASE-8-STATUS.md",
                 "context/ARCHITECTURE.md", "context/NEXT-PHASE.md", "PRODUCT.md",
-                "docs/INSTALL.md", "docs/DEVELOPMENT.md", "docs/UPDATE-ROLLBACK.md",
+                "docs/INSTALL.md", "docs/NETWORK.md", "docs/DEVELOPMENT.md", "docs/UPDATE-ROLLBACK.md",
                 "docs/DASHBOARD.md", "docs/BACKUP-RESTORE.md", "docs/FINAL-VERIFICATION.md",
                 "docs/DEPLOYMENT.md",
                 "security/SECURITY-AUDIT.md",
