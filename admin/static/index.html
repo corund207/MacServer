@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MacServer</title>
+<link rel="stylesheet" href="/style.css">
+<script src="/app.js" defer></script>
+</head>
+<body>
+<header>
+  <h1>MacServer</h1>
+  <p id="summary" role="status">Loading…</p>
+  <p class="viewer" id="viewer"></p>
+</header>
+<main>
+  <section aria-labelledby="h-host"><h2 id="h-host">Mac</h2><dl id="host"></dl></section>
+  <section aria-labelledby="h-connect"><h2 id="h-connect">Connect your app</h2><dl id="connect"></dl></section>
+  <section aria-labelledby="h-services" class="wide"><h2 id="h-services">Services</h2>
+    <table><thead><tr><th scope="col">Container</th><th scope="col">Group</th><th scope="col">State</th><th scope="col">Details</th></tr></thead><tbody id="services"></tbody></table>
+  </section>
+</main>
+<footer>Read-only. Manage the server with <code>sudo macserver</code> over Tailscale SSH.</footer>
+</body>
+</html>

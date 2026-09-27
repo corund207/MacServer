@@ -1,0 +1,11 @@
+# t2linux packages for Debian 13 (installed by MacServer). Signing key is
+# verified by fingerprint before use; t2.pref limits what this repo may supply.
+Types: deb
+URIs: https://adityagarg8.github.io/t2-ubuntu-repo
+Suites: ./
+Signed-By: /etc/apt/keyrings/t2.gpg
+
+Types: deb
+URIs: https://github.com/AdityaGarg8/t2-ubuntu-repo/releases/download/trixie
+Suites: ./
+Signed-By: /etc/apt/keyrings/t2.gpg

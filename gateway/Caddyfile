@@ -1,0 +1,35 @@
+# Public path filter in front of the Supabase API gateway (api-gw:8000).
+# Only app-facing APIs pass. Studio (/), postgres-meta (/pg), MCP, Auth admin and
+# Realtime tenant management are refused. Anything unlisted returns 404.
+{
+	admin off
+	auto_https off
+	servers {
+		trusted_proxies static private_ranges
+		client_ip_headers Cf-Connecting-Ip
+	}
+}
+
+:8080 {
+	request_body {
+		max_size 50MB
+	}
+	header -Server
+
+	route {
+		respond /macserver-health 200
+
+		@refused path /auth/v1/admin /auth/v1/admin/* /realtime/v1/api/tenants /realtime/v1/api/tenants/* /pg /pg/* /mcp /mcp/* /api/mcp /api/mcp/*
+		respond @refused 404
+
+		@app path /auth/v1/* /rest/v1/* /storage/v1/* /realtime/v1/* /functions/v1/* /graphql/v1 /graphql/v1/*
+		reverse_proxy @app api-gw:8000
+
+		respond 404
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

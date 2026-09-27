@@ -1,0 +1,31 @@
+:root { --bg: #f6f6f4; --panel: #fff; --text: #1b1c1e; --muted: #5d6068; --line: #dedfe2;
+  --good: #1d7a45; --warn: #9a5b00; --bad: #b3261e; color-scheme: light; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #111214; --panel: #1a1c1f; --text: #eceef1; --muted: #a4a8b0; --line: #2c2f34;
+    --good: #5cc98a; --warn: #f0b35a; --bad: #ff7b72; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header, main, footer { max-width: 1040px; margin: 0 auto; padding: 0 16px; }
+header { padding-top: 28px; }
+h1 { margin: 0; font-size: 26px; letter-spacing: -0.01em; }
+h2 { margin: 0 0 12px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+#summary { font-weight: 600; margin: 6px 0 0; }
+.viewer { color: var(--muted); margin: 2px 0 20px; font-size: 13px; }
+main { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); }
+section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; min-width: 0; }
+.wide { grid-column: 1 / -1; overflow-x: auto; }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0; }
+dt { color: var(--muted); }
+dd { margin: 0; overflow-wrap: anywhere; }
+code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 13px; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 6px 8px; border-top: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 500; border-top: 0; }
+.good { color: var(--good); }
+.warn { color: var(--warn); }
+.bad { color: var(--bad); }
+button { font: inherit; font-size: 12px; margin-left: 8px; padding: 1px 8px; border-radius: 6px;
+  border: 1px solid var(--line); background: transparent; color: var(--text); cursor: pointer; }
+footer { color: var(--muted); font-size: 13px; padding-top: 20px; padding-bottom: 32px; }

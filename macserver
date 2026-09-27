@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+# macserver: day-to-day management of an installed MacServer.
+set -Eeuo pipefail
+
+LIB=/usr/local/lib/macserver
+# shellcheck source=installer/lib.sh
+source "$LIB/lib.sh"
+# shellcheck disable=SC2034  # read by the sourced step functions
+SRC=/usr/local/share/macserver   # host/ and gateway/ templates for re-runs
+for f in "$LIB"/[0-9]*.sh; do
+  # shellcheck source=/dev/null
+  source "$f"
+done
+
+usage() {
+  cat <<'EOF'
+Usage: sudo macserver COMMAND
+
+  status            health of the Mac, Tailscale and every container
+  keys              API keys and the Studio password (secret: do not share)
+  logs [SERVICE]    follow Supabase logs (e.g. auth, rest, db, storage)
+  restart           restart Supabase and the public route
+  update            back up the database, then update Debian, the T2 kernel and containers
+  backup            write a compressed database dump to /var/backups/macserver
+  public setup      turn on (or change) the public API route
+  public off        stop the public API route
+  public on         start it again
+  wifi              set up or change the built-in Wi-Fi
+  doctor            check network, DNS and T2 drivers
+EOF
+}
+
+need_root() { [[ $EUID -eq 0 ]] || die "run with sudo: sudo macserver $*"; }
+
+cmd_status() {
+  systemctl start macserver-status.service 2>/dev/null || true
+  local s=/run/macserver/status.json
+  [[ -f $s ]] || die "no status yet; is macserver-status.timer running?"
+  jq -r '
+    "Model      \(.host.model)",
+    "Kernel     \(.host.kernel)\(if .host.t2_kernel then "" else "  (NOT the T2 kernel)" end)",
+    "T2         keyboard=\(.host.t2_modules.apple_bce) wifi=\(.host.t2_modules.brcmfmac) smc=\(.host.t2_modules.applesmc)",
+    "CPU temp   \(.host.sensors.cpu_temp_c // "?") C   fans \(.host.sensors.fans_rpm | map(tostring) | join(", ")) rpm",
+    "Battery    \(if .host.battery then "\(.host.battery.percent)% \(.host.battery.status)" else "none" end)",
+    "Disk       \((.host.disk.used / 1073741824 | floor)) of \((.host.disk.total / 1073741824 | floor)) GB",
+    "Updates    \(.host.updates_pending) pending\(if .host.reboot_required then ", reboot required" else "" end)",
+    "Tailscale  \(.tailscale.state) \(.tailscale.name)",
+    "Public     \(if .public_domain == "" then "off" else "https://\(.public_domain)" end)",
+    "",
+    (.containers[] | "\(if .state == "running" then "  ok  " else "  !!  " end)\(.name)  \(.status)")
+  ' "$s"
+}
+
+cmd_keys() {
+  local env=$SUPABASE_DIR/.env k
+  for k in SUPABASE_PUBLISHABLE_KEY ANON_KEY SUPABASE_SECRET_KEY SERVICE_ROLE_KEY DASHBOARD_USERNAME DASHBOARD_PASSWORD POSTGRES_PASSWORD; do
+    printf '%-26s %s\n' "$k" "$(env_get "$env" "$k")"
+  done
+  say ""
+  say "Publishable / anon keys go in client apps. Secret / service_role keys and passwords stay on servers only."
+}
+
+cmd_backup() {
+  local dir=/var/backups/macserver file
+  install -d -m 0700 "$dir"
+  file=$dir/supabase-$(date +%Y%m%d-%H%M%S).sql.gz
+  say "Dumping the database to $file ..."
+  (umask 077; docker exec supabase-db pg_dumpall -h 127.0.0.1 -U supabase_admin | gzip > "$file")
+  ok "backup written ($(du -h "$file" | cut -f1)). Copy it off this Mac to keep it safe."
+  find "$dir" -name 'supabase-*.sql.gz' -printf '%T@ %p
+' | sort -rn | tail -n +11 | cut -d' ' -f2- | xargs -r rm -f   # keep the newest 10
+}
+
+cmd_update() {
+  cmd_backup
+  apt_quiet update
+  apt_quiet full-upgrade
+  (cd "$SUPABASE_DIR" && docker compose pull --quiet && docker compose up -d --wait)
+  [[ -f $GATEWAY_DIR/compose.yml ]] && gateway_compose up -d --wait
+  if [[ -f /run/reboot-required ]] || ! running_t2_kernel; then
+    warn "a reboot is needed to finish (sudo reboot). With disk encryption, type the passphrase on the Mac."
+  fi
+  ok "updated"
+}
+
+cmd_doctor() {
+  if can_resolve; then ok "Internet and DNS"
+  elif can_reach_ip; then warn "Internet works, DNS does not: sudo ./install.sh --redo network"
+  else warn "no Internet"; fi
+  if is_t2; then
+    check "T2 kernel $(uname -r)" "not running the T2 kernel ($(uname -r)); pick it in GRUB or reinstall linux-t2-lts" running_t2_kernel
+    check "apple-bce (keyboard, trackpad)" "apple-bce not loaded" test -d /sys/module/apple_bce
+    check "Wi-Fi firmware" "no Wi-Fi firmware (sudo macserver wifi)" wifi_firmware_present
+  fi
+  check "Tailscale" "Tailscale is not connected (sudo tailscale up --ssh)" tailscale_running
+  check "Docker" "Docker is not running" systemctl is-active --quiet docker
+}
+
+main() {
+  local cmd=${1:-}; shift || true
+  case $cmd in
+    status) cmd_status ;;
+    keys) need_root keys; cmd_keys ;;
+    logs) need_root logs; supabase_compose logs -f --tail 100 "$@" ;;
+    restart) need_root restart; (cd "$SUPABASE_DIR" && sh run.sh restart); [[ -f $GATEWAY_DIR/compose.yml ]] && gateway_compose restart; ok "restarted" ;;
+    update) need_root update; cmd_update ;;
+    backup) need_root backup; cmd_backup ;;
+    public)
+      need_root public
+      case ${1:-} in
+        setup) public_setup ;;
+        on) gateway_compose up -d --wait; ok "public route on" ;;
+        off) gateway_compose down; ok "public route off; everything is private" ;;
+        *) usage; exit 2 ;;
+      esac ;;
+    wifi) need_root wifi; wifi_setup ;;
+    doctor) cmd_doctor ;;
+    ''|-h|--help|help) usage ;;
+    *) usage; exit 2 ;;
+  esac
+}
+
+main "$@"

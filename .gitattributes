@@ -1,5 +1,2 @@
-# Preserve reviewed source hashes and Linux script line endings on every checkout.
 * text=auto eol=lf
 *.png binary
-*.jpg binary
-*.woff2 binary

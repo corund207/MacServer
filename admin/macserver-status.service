@@ -1,0 +1,15 @@
+[Unit]
+Description=MacServer: collect health for the admin page
+After=docker.service tailscaled.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/macserver/collect_status.py /run/macserver/status.json
+RuntimeDirectory=macserver
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
+Nice=10
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes

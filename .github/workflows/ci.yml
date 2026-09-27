@@ -1,0 +1,26 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Shell syntax, ShellCheck, library and Python tests
+        run: bash tests/run.sh
+      - name: Firewall rules parse
+        run: |
+          sudo apt-get install -y -q nftables
+          sudo nft -c -f host/nftables.conf
+      - name: Gateway Compose file is valid
+        env:
+          TUNNEL_TOKEN: ci-placeholder
+        run: docker compose -f gateway/compose.yml config --quiet
+      - name: Gateway exposes only app API paths
+        run: bash tests/gateway_test.sh

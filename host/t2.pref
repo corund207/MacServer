@@ -1,0 +1,17 @@
+# The t2linux repository may only supply T2 packages. Everything else it offers
+# is ignored, so it can never replace a Debian package.
+Package: *
+Pin: origin "adityagarg8.github.io"
+Pin-Priority: -1
+
+Package: *
+Pin: origin "github.com"
+Pin-Priority: -1
+
+Package: /t2/ apple-*
+Pin: origin "adityagarg8.github.io"
+Pin-Priority: 500
+
+Package: /t2/ apple-*
+Pin: origin "github.com"
+Pin-Priority: 500
