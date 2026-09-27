@@ -66,11 +66,17 @@ echo "== Phase 1: hands-off install from the image"
 # reserves index 0 for itself and needs none.
 # shellcheck disable=SC2054  # commas belong to the QEMU options
 if [[ ${FULL_UEFI:-0} == 1 ]]; then
-  qpid=$(vm install -drive if=pflash,format=raw,readonly=on,file="$CODE" -drive if=pflash,format=raw,file="$W/vars.fd"     -drive file="$ISO",media=cdrom,if=none,id=cd -device ide-cd,drive=cd,bootindex=0     -drive file="$W/answers.img",format=raw,if=none,id=ans -device virtio-blk-pci,drive=ans,bootindex=2)
+  qpid=$(vm install \
+    -drive if=pflash,format=raw,readonly=on,file="$CODE" -drive if=pflash,format=raw,file="$W/vars.fd" \
+    -drive file="$ISO",media=cdrom,if=none,id=cd -device ide-cd,drive=cd,bootindex=0 \
+    -drive file="$W/answers.img",format=raw,if=none,id=ans -device virtio-blk-pci,drive=ans,bootindex=2)
 else
   xorriso -osirrox on -indev "$ISO" -extract /live/vmlinuz "$W/vmlinuz" -extract /live/initrd.img "$W/initrd.img" 2>&1 | tail -3
   [[ -s $W/vmlinuz && -s $W/initrd.img ]] || { echo "could not extract the kernel from the image"; exit 1; }
-  qpid=$(vm install -kernel "$W/vmlinuz" -initrd "$W/initrd.img"     -append "boot=live $T2OPTS console=ttyS0,115200 macserver.auto=1"     -drive file="$ISO",media=cdrom,if=none,id=cd -device ide-cd,drive=cd     -drive file="$W/answers.img",format=raw,if=none,id=ans -device virtio-blk-pci,drive=ans)
+  qpid=$(vm install -kernel "$W/vmlinuz" -initrd "$W/initrd.img" \
+    -append "boot=live $T2OPTS console=ttyS0,115200 macserver.auto=1" \
+    -drive file="$ISO",media=cdrom,if=none,id=cd -device ide-cd,drive=cd \
+    -drive file="$W/answers.img",format=raw,if=none,id=ans -device virtio-blk-pci,drive=ans)
 fi
 watch_console install.log \
   "Hands-off install@300" \

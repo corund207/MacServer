@@ -39,3 +39,33 @@ installer built around the MacBook Air's T2 chip.
 ### Next
 
 Run the installer on the Mac, then record what was confirmed or corrected here.
+
+## 2026-09-27: USB installer image (Omarchy-style)
+
+`iso/` builds a bootable UEFI image: live Debian 13 with the t2linux kernel that
+starts `macserver-setup` (whiptail questions, types-ERASE confirmation, LUKS2 +
+ext4, debootstrap, T2 kernel, GRUB at the removable EFI path without NVRAM writes,
+NetworkManager/Wi-Fi carry-over, first-boot `install.sh --unattended`).
+
+Test pipeline (`installer-image` workflow, ~7 minutes per change):
+- `disk-install` (~3 min): runs `macserver-setup` hands-off onto a 32 GB loop device
+  and checks 22 properties of the result (LUKS2, T2 kernel + initrd with
+  t2bce_vhci/t2bce_core, BOOTX64.EFI, GRUB T2 options, crypttab/fstab, user, locked
+  root, first-boot unit, NetworkManager, MacServer files).
+- `image` (~30 s with cache): base squashfs cached weekly/by inputs; the MacServer
+  sources sit beside it on the image (`/macserver`), copied in by the launcher.
+- `vm-test` (~4 min): direct kernel boot of the image in QEMU/KVM with an MSANSWERS
+  drive, hands-off install to NVMe, then UEFI boot of the result, passphrase over
+  serial, first-boot preflight + network. Release tags also boot the image's own
+  UEFI GRUB menu (FULL_UEFI=1).
+
+Verified in CI: all of the above passed (run 36353592396).
+
+Found by the tests and fixed: missing initrd when the kernel installs before
+initramfs-tools; answer keys with digits ignored; OVMF not connecting drives without
+a boot index; **the T2 driver renamed from apple-bce to t2bce_* in kernel 6.18** (the
+built-in keyboard would not have worked at the passphrase prompt).
+
+Still needs the real MacBook Air: USB boot with Startup Security set, t2bce keyboard at
+the LUKS prompt, Wi-Fi firmware download via get-apple-firmware, iPhone tethering in
+the live system, t2fanrd, battery threshold, first-boot Tailscale QR flow.
