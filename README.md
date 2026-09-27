@@ -105,5 +105,5 @@ sudo macserver doctor      # network, DNS and T2 driver checks
   not automatic. Debian security updates are automatic and never reboot on their own.
 - **Backups:** `sudo macserver backup` makes a local dump only. Copy dumps off the Mac.
 
-More: [network options](docs/NETWORK.md) · [security design](docs/SECURITY.md) ·
+More: [development](docs/DEVELOPMENT.md) · [network options](docs/NETWORK.md) · [security design](docs/SECURITY.md) ·
 [troubleshooting](docs/TROUBLESHOOTING.md)

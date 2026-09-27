@@ -59,7 +59,9 @@ Test pipeline (`installer-image` workflow, ~7 minutes per change):
   serial, first-boot preflight + network. Release tags also boot the image's own
   UEFI GRUB menu (FULL_UEFI=1).
 
-Verified in CI: all of the above passed (run 36353592396).
+Verified in CI: all of the above passed (run 36353592396). Verified locally in WSL2
+(tests/local.sh): disk, image and vm stages, and FULL_UEFI=1 (boot through the
+image's own GRUB menu), in about 5 and 3 minutes.
 
 Found by the tests and fixed: missing initrd when the kernel installs before
 initramfs-tools; answer keys with digits ignored; OVMF not connecting drives without
