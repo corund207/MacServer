@@ -3,7 +3,10 @@
 MacServer turns a 2019 Intel MacBook Air (Apple T2 chip) into a private backend
 server: Debian 13 with the t2linux kernel, self-hosted Supabase in Docker, a private
 admin page, and an optional public API route through a Cloudflare Tunnel. The whole
-setup is driven by one guided, resumable installer (`install.sh`).
+setup ships as a bootable USB image (`iso/`, Omarchy-style): it erases the SSD,
+installs encrypted Debian with the T2 kernel, and first boot runs the guided,
+resumable installer (`install.sh --unattended`). `install.sh` also works on a
+manually installed Debian 13.
 
 ## Security rules
 
@@ -26,6 +29,10 @@ setup is driven by one guided, resumable installer (`install.sh`).
 - Keep `context/STATUS.md` current: what exists, what was verified, what was not.
 - Run `tests/run.sh` (shell syntax, Python unit tests) before committing. CI also
   runs shellcheck, Caddy validation and Compose validation.
+- Changes to `iso/`, `installer/` or `host/` must pass the `installer-image` workflow:
+  it builds the image and installs it end to end in a UEFI QEMU VM.
+- The USB installer erases a disk only after the operator types ERASE (or an
+  answers file names the same disk in CONFIRM_ERASE).
 
 ## Git delivery workflow
 
