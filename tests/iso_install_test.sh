@@ -49,10 +49,16 @@ vm() {  # vm LOG_NAME QEMU_ARGS...: run QEMU in the background with its serial o
   echo $!
 }
 
-watch_console() {  # watch_console LOG STEP...
-  local log=$1; shift
+watch_console() {  # watch_console LOG STEP...: on failure also show QEMU's own messages
+  local log=$1 rc=0; shift
   python3 "$ROOT/tests/qemu_serial.py" --sock "$W/serial.sock" --log "$ROOT/build/$log" \
-    --fail MACSERVER-SETUP-FAILED --fail "Kernel panic" --fail "failed (exit" "$@"
+    --fail MACSERVER-SETUP-FAILED --fail "Kernel panic" --fail "failed (exit" "$@" || rc=$?
+  if (( rc )); then
+    echo "--- QEMU messages"
+    cat "$W"/*.qemu.log 2>/dev/null || true
+    cp "$W"/*.qemu.log "$ROOT/build/" 2>/dev/null || true
+  fi
+  return "$rc"
 }
 
 echo "== Phase 1: hands-off install from the image"
