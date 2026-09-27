@@ -41,7 +41,7 @@ qemu() {
 
 echo "== Phase 1: hands-off install from the ISO"
 qemu -drive file="$ISO",media=cdrom,if=none,id=cd -device ide-cd,drive=cd,bootindex=0 \
-  -drive file="$W/answers.img",format=raw,if=virtio \
+  -drive file="$W/answers.img",format=raw,if=none,id=ans -device virtio-blk-pci,drive=ans,bootindex=2 \
   -serial file:"$W/install.log" &
 qpid=$!
 sleep 2
