@@ -94,4 +94,10 @@ route acceptance. Production remains false. Full-disk encryption requires local
 unlock after cold boot. Public management and router port forwarding are forbidden.
 
 Historical implementation evidence is retained in `PHASE-1-STATUS.md` through
-`PHASE-13-STATUS.md`. The current operator handoff is `NEXT-PHASE.md`.
+`PHASE-14-STATUS.md`. The current operator handoff is `NEXT-PHASE.md`.
+
+First-boot networking (Phase 14): `docs/NETWORK.md` sets the install network order:
+USB-C Ethernet, an offline DVD install, Android tethering, or iPhone tethering with
+fixed DNS. `scripts/network_doctor.py` checks the network read-only. Its `fix-dns`
+command changes the host only after a typed confirmation and keeps a backup of each
+file. Internal Wi-Fi stays optional because it needs Apple firmware from macOS.
