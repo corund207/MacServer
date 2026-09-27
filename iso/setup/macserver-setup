@@ -437,7 +437,7 @@ EOF
 
   progress 88 "Installing the boot loader"
   {
-    in_target update-initramfs -u -k all
+    make_initrds "$TARGET"
     in_target grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=debian \
       --removable --no-nvram
     in_target update-grub

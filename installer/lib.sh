@@ -164,3 +164,19 @@ tailnet_name() {  # MagicDNS name without trailing dot, or empty
 
 supabase_compose() { (cd "$SUPABASE_DIR" && docker compose "$@"); }
 gateway_compose() { docker compose -p macserver-gateway --project-directory "$GATEWAY_DIR" -f "$GATEWAY_DIR/compose.yml" "$@"; }
+
+# make_initrds ROOT: create or refresh the initramfs of every kernel under ROOT.
+# (update-initramfs -u only refreshes existing images; a kernel installed before
+# initramfs-tools has none yet.)
+make_initrds() {
+  local root=$1 kver
+  for kver in "$root"/lib/modules/*; do
+    kver=${kver##*/}
+    [[ -f $root/boot/vmlinuz-$kver ]] || continue
+    if [[ -f $root/boot/initrd.img-$kver ]]; then
+      chroot "$root" update-initramfs -u -k "$kver"
+    else
+      chroot "$root" update-initramfs -c -k "$kver"
+    fi
+  done
+}

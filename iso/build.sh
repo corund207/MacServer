@@ -92,7 +92,7 @@ install -m 0755 "$ROOT/iso/setup/macserver-setup" "$CHROOT/usr/local/sbin/macser
 install -d "$CHROOT/opt/macserver-src"
 tar -C "$ROOT" --exclude=./build --exclude=./.git --exclude='__pycache__' -cf - . | tar -C "$CHROOT/opt/macserver-src" -xf -
 chroot "$CHROOT" systemctl enable NetworkManager >/dev/null
-chroot "$CHROOT" update-initramfs -u -k all
+make_initrds "$CHROOT"
 
 head1 "Clean up"
 chroot "$CHROOT" apt-get clean

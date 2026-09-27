@@ -1,8 +1,16 @@
 # Getting the Mac online
 
-Stock Debian does not include Apple's firmware for the MacBook Air's Broadcom
-Wi-Fi, so **Wi-Fi does not work during installation**. MacServer installs the
-firmware afterwards. Until then, use one of these:
+**With the MacServer USB image** the T2 kernel is already running, so the only
+missing piece for Wi-Fi is Apple's firmware, which may not be redistributed. The
+installer handles everything else: it detects Ethernet adapters and USB-tethered
+phones, fixes the DNS problem common with iPhone tethering, pairs an iPhone if
+needed, and (once online) can download the Wi-Fi firmware from Apple and connect.
+Without cable or phone, put a `firmware.tar` made on macOS with t2linux's
+`get-apple-firmware` on a USB drive and choose *Load Wi-Fi firmware*.
+
+The rest of this page is for the [manual install](MANUAL-INSTALL.md), where stock
+Debian's installer has no T2 support, so **Wi-Fi does not work during installation**.
+Use one of these:
 
 | Option | Works in the installer | Notes |
 | --- | --- | --- |
