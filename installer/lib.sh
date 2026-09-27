@@ -180,3 +180,17 @@ make_initrds() {
     fi
   done
 }
+
+# Kernel modules the T2 keyboard and trackpad need at the disk passphrase prompt.
+# (Kernels before 6.18 called the driver apple-bce; it is now t2bce_*.)
+T2_INITRD_MODULES=(t2bce_dma t2bce_core t2bce_vhci usbhid hid_apple hid_generic)
+
+t2_keyboard_loaded() { [[ -d /sys/module/t2bce_vhci || -d /sys/module/apple_bce ]]; }
+
+# add_initrd_modules ROOT: list T2_INITRD_MODULES in ROOT/etc/initramfs-tools/modules.
+add_initrd_modules() {
+  local file=$1/etc/initramfs-tools/modules m
+  install -d "${file%/*}"
+  touch "$file"
+  for m in "${T2_INITRD_MODULES[@]}"; do grep -qx "$m" "$file" || echo "$m" >> "$file"; done
+}

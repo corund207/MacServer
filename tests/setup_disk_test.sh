@@ -74,7 +74,8 @@ kver=${kver#vmlinuz-}
 check_that "T2 kernel installed ($kver)" test -n "$kver"
 check_that "initrd for the T2 kernel" test -s "$R/boot/initrd.img-$kver"
 lsinitramfs "$R/boot/initrd.img-$kver" > "$W/initrd.list" 2>/dev/null || true
-check_that "initrd has apple-bce (built-in keyboard at the passphrase prompt)" grep -q 'apple-bce' "$W/initrd.list"
+check_that "initrd has the T2 keyboard driver (built-in keyboard at the passphrase prompt)" grep -q 't2bce_vhci' "$W/initrd.list"
+check_that "initrd has the T2 driver core" grep -q 't2bce_core' "$W/initrd.list"
 check_that "initrd has cryptsetup" grep -q 'sbin/cryptsetup' "$W/initrd.list"
 check_that "UEFI loader at the removable path the Mac boots" test -s "$R/boot/efi/EFI/BOOT/BOOTX64.EFI"
 check_that "GRUB passes the T2 kernel options" grep -q 'intel_iommu=on iommu=pt pcie_ports=compat' "$R/boot/grub/grub.cfg"

@@ -30,7 +30,7 @@ installer built around the MacBook Air's T2 chip.
 
 ### Not verified yet (needs the real Mac and CI)
 
-- The whole install on the MacBook Air: T2 kernel boot, `apple-bce` in initramfs,
+- The whole install on the MacBook Air: T2 kernel boot, the T2 keyboard driver in the initramfs,
   Wi-Fi firmware download, the battery threshold file, t2fanrd.
 - `tests/gateway_test.sh` (needs Docker; runs in CI) and Compose validation.
 - `pg_dumpall` as `supabase_admin` over TCP inside `supabase-db`.

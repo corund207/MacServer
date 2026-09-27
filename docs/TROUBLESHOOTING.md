@@ -7,7 +7,7 @@ step can be repeated with `sudo ./install.sh --redo STEP`.
 Security* and allow external boot media (README step 1), then hold ⌥ Option at power on.
 
 **The built-in keyboard does not work at the disk passphrase prompt.** It works only
-after the `t2` step and reboot, because the step adds `apple-bce` to the boot image.
+after the `t2` step and reboot, because the step adds the T2 keyboard driver (`t2bce_vhci`) to the boot image.
 Until then, use a USB keyboard. If it stops working after an update, run
 `sudo update-initramfs -u -k all`.
 

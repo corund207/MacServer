@@ -62,7 +62,7 @@ function render(s) {
   rows($('host'), [
     ['Model', h.model],
     ['Kernel', `${h.kernel}${h.t2_kernel ? '' : ' (not the T2 kernel)'}`, h.t2_kernel ? '' : 'warn'],
-    ['T2 drivers', `keyboard ${onOff(t2.apple_bce)} · Wi-Fi ${onOff(t2.brcmfmac)} · SMC ${onOff(t2.applesmc)}`],
+    ['T2 drivers', `keyboard ${onOff(t2.keyboard)} · Wi-Fi ${onOff(t2.brcmfmac)} · SMC ${onOff(t2.applesmc)}`],
     ['Uptime', duration(h.uptime_s)],
     ['Load', `${h.load.join(' / ')} on ${h.cpus} threads`],
     ['Memory', `${bytes(h.memory.used)} of ${bytes(h.memory.total)}`],

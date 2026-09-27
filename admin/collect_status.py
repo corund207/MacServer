@@ -108,7 +108,9 @@ def collect():
     disk = shutil.disk_usage("/")
     conf = parse_env(read(CONF, ""))
     env = parse_env(read(SUPABASE_ENV, ""))
-    t2_modules = {m: Path(f"/sys/module/{m}").exists() for m in ("apple_bce", "brcmfmac", "applesmc")}
+    t2_modules = {m: Path(f"/sys/module/{m}").exists() for m in ("brcmfmac", "applesmc")}
+    # The T2 keyboard/trackpad driver: t2bce_vhci since kernel 6.18, apple_bce before.
+    t2_modules["keyboard"] = any(Path(f"/sys/module/{m}").exists() for m in ("t2bce_vhci", "apple_bce"))
     upgradable = run("apt-get", "-s", "-o", "Debug::NoLocking=1", "upgrade", timeout=60)
     return {
         "generated_at": int(time.time()),

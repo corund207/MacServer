@@ -39,7 +39,7 @@ cmd_status() {
   jq -r '
     "Model      \(.host.model)",
     "Kernel     \(.host.kernel)\(if .host.t2_kernel then "" else "  (NOT the T2 kernel)" end)",
-    "T2         keyboard=\(.host.t2_modules.apple_bce) wifi=\(.host.t2_modules.brcmfmac) smc=\(.host.t2_modules.applesmc)",
+    "T2         keyboard=\(.host.t2_modules.keyboard) wifi=\(.host.t2_modules.brcmfmac) smc=\(.host.t2_modules.applesmc)",
     "CPU temp   \(.host.sensors.cpu_temp_c // "?") C   fans \(.host.sensors.fans_rpm | map(tostring) | join(", ")) rpm",
     "Battery    \(if .host.battery then "\(.host.battery.percent)% \(.host.battery.status)" else "none" end)",
     "Disk       \((.host.disk.used / 1073741824 | floor)) of \((.host.disk.total / 1073741824 | floor)) GB",
@@ -89,7 +89,7 @@ cmd_doctor() {
   else warn "no Internet"; fi
   if is_t2; then
     check "T2 kernel $(uname -r)" "not running the T2 kernel ($(uname -r)); pick it in GRUB or reinstall linux-t2-lts" running_t2_kernel
-    check "apple-bce (keyboard, trackpad)" "apple-bce not loaded" test -d /sys/module/apple_bce
+    check "T2 keyboard driver (keyboard, trackpad)" "T2 keyboard driver not loaded (sudo modprobe t2bce_vhci)" t2_keyboard_loaded
     check "Wi-Fi firmware" "no Wi-Fi firmware (sudo macserver wifi)" wifi_firmware_present
   fi
   check "Tailscale" "Tailscale is not connected (sudo tailscale up --ssh)" tailscale_running

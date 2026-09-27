@@ -387,7 +387,7 @@ EOF
   # Big, readable console text on the Retina screen.
   install -m 0644 "$SRC/iso/base/live/console-setup" "$TARGET/etc/default/console-setup"
   install -d "$TARGET/etc/initramfs-tools"
-  printf 'apple-bce\n' >> "$TARGET/etc/initramfs-tools/modules"
+  add_initrd_modules "$TARGET"
   install -D -m 0644 "$SRC/host/grub-t2.cfg" "$TARGET/etc/default/grub.d/60-macserver-t2.cfg"
   printf 'GRUB_TIMEOUT=2\n' > "$TARGET/etc/default/grub.d/50-macserver-timeout.cfg"
   if [[ -n ${A[EXTRA_CMDLINE]:-} ]]; then

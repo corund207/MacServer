@@ -29,7 +29,7 @@ EOF
   fi
 
   put_file "$SRC/host/grub-t2.cfg" /etc/default/grub.d/60-macserver-t2.cfg 0644
-  grep -qx apple-bce /etc/initramfs-tools/modules || echo apple-bce >> /etc/initramfs-tools/modules
+  add_initrd_modules /
   update-initramfs -u -k all
   update-grub
 
@@ -70,10 +70,10 @@ step_reboot() {
     return 10
   fi
   ok "running $(uname -r)"
-  if [[ -d /sys/module/apple_bce ]]; then
-    ok "apple-bce loaded: the built-in keyboard and trackpad work"
+  if t2_keyboard_loaded; then
+    ok "T2 keyboard driver loaded: the built-in keyboard and trackpad work"
   else
-    warn "apple-bce is not loaded; the built-in keyboard may not work (try: sudo modprobe apple-bce)"
+    warn "the T2 keyboard driver is not loaded; the built-in keyboard may not work (try: sudo modprobe t2bce_vhci)"
   fi
 }
 
