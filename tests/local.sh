@@ -8,6 +8,9 @@
 #   sudo bash tests/local.sh vm      install the image in QEMU and boot the result (~5 min)
 #   sudo bash tests/local.sh all     all three
 #
+# MACSERVER_WIFI_FIRMWARE=/path/firmware.tar makes the image stage build a personal
+# image with Wi-Fi firmware (see iso/fetch-wifi-firmware.sh); vm tests the newest image.
+#
 # From Windows:  wsl -d Debian -u root -- bash tests/local.sh all   (in the checkout)
 set -euo pipefail
 SRC=$(cd "$(dirname "$0")/.." && pwd)
@@ -22,7 +25,7 @@ stage() {
   case $1 in
     disk) bash tests/setup_disk_test.sh ;;
     image) bash iso/build.sh local ;;
-    vm) bash tests/iso_install_test.sh build/macserver-local.iso ;;
+    vm) bash tests/iso_install_test.sh "$(find build -maxdepth 1 -name 'macserver-local*.iso' -printf '%T@ %p\n' | sort -rn | head -1 | cut -d' ' -f2)" ;;
     *) echo "unknown stage '$1' (disk, image, vm, all)"; exit 2 ;;
   esac
 }

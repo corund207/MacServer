@@ -158,8 +158,21 @@ firmware_from_usb() {  # firmware.tar (made on macOS by get-apple-firmware) on a
   return 1
 }
 
+# A personal image (built with MACSERVER_WIFI_FIRMWARE) carries the Mac's Wi-Fi
+# firmware next to the live system; load it so Wi-Fi works from the first screen.
+load_bundled_firmware() {
+  local bundle=/run/live/medium/firmware/wifi.tar
+  [[ -f $bundle ]] || return 0
+  install -d /lib/firmware/brcm
+  if tar -xf "$bundle" -C /lib/firmware/brcm; then
+    log "loaded bundled Wi-Fi firmware"
+    echo "Wi-Fi firmware loaded from the USB stick"
+    reload_wifi
+  fi
+}
+
 setup_network() {
-  local choice
+  local choice offered_wifi=0
   systemctl start NetworkManager 2>/dev/null || true
   while :; do
     echo "Checking the Internet connection..."
@@ -170,6 +183,15 @@ setup_network() {
       if online; then return 0; fi
     fi
     (( AUTO )) && fail "no Internet connection"
+    # With firmware present, go straight to the Wi-Fi picker the first time.
+    if (( ! offered_wifi )) && wifi_firmware_present; then
+      offered_wifi=1
+      whiptail --title "$TITLE" --msgbox "Next, pick your Wi-Fi network and type its password.
+
+(Arrow keys to move, Enter to choose, then 'Back' to return here.)" 11 70
+      nmtui-connect || true
+      continue
+    fi
     choice=$(whiptail --title "$TITLE" --menu "No Internet connection yet.
 
 Plug in a USB-C Ethernet adapter, or connect a phone by USB with tethering on
@@ -409,7 +431,7 @@ EOF
     console-setup keyboard-configuration kbd zram-tools \
     curl jq git python3 nftables unattended-upgrades apt-listchanges pciutils usbutils \
     lm-sensors smartmontools intel-microcode firmware-realtek firmware-linux-free \
-    apple-firmware-script dmg2img usbmuxd less nano bash-completion openssh-client \
+    apple-firmware-script dmg2img usbmuxd wireless-regdb less nano bash-completion openssh-client \
     >> "$LOG" 2>&1
   in_target apt-get install -y -q t2fanrd >> "$LOG" 2>&1 || log "t2fanrd not available"
 
@@ -491,6 +513,7 @@ main() {
   [[ $EUID -eq 0 ]] || { echo "run as root"; exit 1; }
   : > "$LOG"
   load_answers
+  load_bundled_firmware
   welcome
   setup_network
   choose_disk

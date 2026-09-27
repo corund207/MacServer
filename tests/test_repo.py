@@ -59,6 +59,14 @@ class RepoTests(unittest.TestCase):
         pref = (ROOT / "host/t2.pref").read_text()
         self.assertEqual(pref.count("Pin-Priority: -1"), 2)
 
+    def test_published_images_never_bundle_apple_firmware(self):
+        for workflow in (ROOT / ".github/workflows").glob("*.yml"):
+            self.assertNotIn("MACSERVER_WIFI_FIRMWARE", workflow.read_text(), workflow.name)
+        ignored = (ROOT / ".gitignore").read_text().split()
+        self.assertIn("*.tar", ignored)
+        self.assertIn("*.iso", ignored)
+        self.assertFalse(list(ROOT.rglob("brcmfmac*")), "firmware files must never be committed")
+
     def test_no_secrets_committed(self):
         pattern = re.compile(r"(TUNNEL_TOKEN=\w|eyJ[A-Za-z0-9_-]{20,}\.|BEGIN [A-Z ]*PRIVATE KEY)")
         for path in ROOT.rglob("*"):

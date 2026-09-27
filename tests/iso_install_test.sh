@@ -78,8 +78,14 @@ else
     -drive file="$ISO",media=cdrom,if=none,id=cd -device ide-cd,drive=cd \
     -drive file="$W/answers.img",format=raw,if=none,id=ans -device virtio-blk-pci,drive=ans)
 fi
+# A personal image must load its bundled Wi-Fi firmware before anything else.
+fw_step=()
+if (( $(xorriso -indev "$ISO" -find /firmware/wifi.tar 2>/dev/null | grep -c wifi.tar) > 0 )); then
+  fw_step=("Wi-Fi firmware loaded from the USB stick@300")
+fi
 watch_console install.log \
   "Hands-off install@300" \
+  "${fw_step[@]}" \
   "[ 10%]@600" \
   "[ 55%]@1200" \
   "MACSERVER-SETUP-DONE@1200"

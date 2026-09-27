@@ -43,3 +43,4 @@ xz-utils
 zstd
 firmware-realtek
 firmware-linux-free
+wireless-regdb

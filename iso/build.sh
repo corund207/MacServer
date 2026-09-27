@@ -3,6 +3,10 @@
 #
 #   sudo iso/build.sh [VERSION]   -> build/macserver-VERSION.iso (+ .sha256)
 #
+# MACSERVER_WIFI_FIRMWARE=/path/firmware.tar (from iso/fetch-wifi-firmware.sh) makes
+# a PERSONAL image, macserver-VERSION-personal.iso, with Wi-Fi working from the first
+# screen. It contains Apple firmware: keep it to yourself, never publish it.
+#
 # The live base system (Debian 13 + t2linux kernel) comes from build/base; it is
 # built by iso/base/build-base.sh when missing (CI restores it from cache). The
 # MacServer sources are placed next to it on the image in /macserver, so changing
@@ -14,7 +18,8 @@ VERSION=${1:-dev}
 OUT=$ROOT/build
 BASE=$OUT/base
 STAGE=$OUT/stage
-ISO=$OUT/macserver-$VERSION.iso
+FIRMWARE=${MACSERVER_WIFI_FIRMWARE:-}
+if [[ -n $FIRMWARE ]]; then ISO=$OUT/macserver-$VERSION-personal.iso; else ISO=$OUT/macserver-$VERSION.iso; fi
 # shellcheck source=installer/lib.sh
 source "$ROOT/installer/lib.sh"
 [[ $EUID -eq 0 ]] || die "run as root"
@@ -36,6 +41,12 @@ mkdir -p "$STAGE/live" "$STAGE/boot/grub" "$STAGE/macserver"
 cp "$BASE/filesystem.squashfs" "$BASE/vmlinuz" "$BASE/initrd.img" "$BASE/kernel-version" "$STAGE/live/"
 tar -C "$ROOT" --exclude=./build --exclude=./.git --exclude='__pycache__' -cf - . | tar -C "$STAGE/macserver" -xf -
 install -m 0644 "$ROOT/iso/grub.cfg" "$STAGE/boot/grub/grub.cfg"
+if [[ -n $FIRMWARE ]]; then
+  [[ -s $FIRMWARE ]] || die "MACSERVER_WIFI_FIRMWARE: $FIRMWARE not found"
+  (( $(tar -tf "$FIRMWARE" | grep -c 'brcmfmac.*apple') > 0 )) || die "$FIRMWARE does not look like renamed Mac Wi-Fi firmware"
+  install -D -m 0644 "$FIRMWARE" "$STAGE/firmware/wifi.tar"
+  warn "PERSONAL image: it contains Apple Wi-Fi firmware. Do not share or publish it."
+fi
 echo "MacServer installer $VERSION ($(cat "$BASE/kernel-version"))" > "$STAGE/README.txt"
 
 head1 "ISO image"

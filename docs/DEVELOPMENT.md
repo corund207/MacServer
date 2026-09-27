@@ -29,3 +29,18 @@ Logs land in `/var/tmp/macserver-local/repo/build/` inside WSL.
 
 `bash tests/run.sh` (shell syntax, ShellCheck, library and Python tests). CI runs the
 same plus the gateway and installer-image workflows.
+
+## Personal image with Wi-Fi from the first screen
+
+Apple's Wi-Fi firmware may not be redistributed, so published images do not contain
+it. For your own Mac you can build an image that does:
+
+```powershell
+wsl -d Debian -u root -- bash iso/fetch-wifi-firmware.sh /var/tmp/macserver-wifi-firmware.tar
+wsl -d Debian -u root -- bash -c "MACSERVER_WIFI_FIRMWARE=/var/tmp/macserver-wifi-firmware.tar bash tests/local.sh image"
+```
+
+This downloads macOS Sonoma Recovery from Apple, extracts `/usr/share/firmware`, and
+renames it with t2linux's renamer. The result is `build/macserver-local-personal.iso`.
+It loads the firmware at startup and opens the Wi-Fi picker straight away. Never
+share or publish it; CI never builds one (`tests/test_repo.py` checks this).
