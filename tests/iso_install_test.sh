@@ -44,6 +44,8 @@ qemu -drive file="$ISO",media=cdrom,if=none,id=cd -device ide-cd,drive=cd,bootin
   -drive file="$W/answers.img",format=raw,if=virtio \
   -serial file:"$W/install.log" &
 qpid=$!
+sleep 2
+tail -n +1 -F --pid="$qpid" "$W/install.log" 2>/dev/null | tr -d "\r" | sed -u "s/^/[vm] /" &
 for ((waited = 0; waited < 4500; waited += 10)); do
   kill -0 "$qpid" 2>/dev/null || break
   sleep 10
@@ -51,7 +53,6 @@ done
 kill "$qpid" 2>/dev/null || true
 wait "$qpid" 2>/dev/null || true
 mkdir -p "$ROOT/build"; cp "$W/install.log" "$ROOT/build/" 2>/dev/null || true
-tail -n 40 "$W/install.log" | tr -d '\r'
 grep -q MACSERVER-SETUP-DONE "$W/install.log" || { echo "install did not finish"; exit 1; }
 
 echo "== Phase 2: boot the installed system and unlock the disk"

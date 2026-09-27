@@ -39,6 +39,8 @@ def main():
                 text = chunk.decode("utf-8", "replace")
                 log.write(text)
                 log.flush()
+                sys.stdout.write(text.replace("\r", ""))
+                sys.stdout.flush()
                 seen = (seen + text)[-20000:]
             print(f"seen: {expect}", flush=True)
             seen = seen[seen.index(expect) + len(expect):]
