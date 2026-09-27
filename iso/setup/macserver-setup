@@ -48,7 +48,7 @@ load_answers() {
   local dev mnt=/run/macserver-answers line
   if [[ -n ${MACSERVER_ANSWERS:-} ]]; then   # test hook: answers file given directly
     while IFS= read -r line; do
-      if [[ $line =~ ^([A-Z_]+)=(.*)$ ]]; then A[${BASH_REMATCH[1]}]=${BASH_REMATCH[2]}; fi
+      if [[ $line =~ ^([A-Z][A-Z0-9_]*)=(.*)$ ]]; then A[${BASH_REMATCH[1]}]=${BASH_REMATCH[2]}; fi
     done < <(tr -d "\r" < "$MACSERVER_ANSWERS")
     AUTO=1
     return 0
@@ -59,7 +59,7 @@ load_answers() {
   mount -o ro "$dev" "$mnt" || return 0
   if [[ -f $mnt/answers.txt ]]; then
     while IFS= read -r line; do
-      if [[ $line =~ ^([A-Z_]+)=(.*)$ ]]; then A[${BASH_REMATCH[1]}]=${BASH_REMATCH[2]}; fi
+      if [[ $line =~ ^([A-Z][A-Z0-9_]*)=(.*)$ ]]; then A[${BASH_REMATCH[1]}]=${BASH_REMATCH[2]}; fi
     done < <(tr -d '\r' < "$mnt/answers.txt")
     AUTO=1
     echo "Hands-off install: answers.txt found on $dev"
@@ -108,6 +108,7 @@ welcome() {
   if ! is_t2; then
     if [[ ${A[ALLOW_NON_T2]:-no} != yes ]] &&
        ! ui_yesno ALLOW_NON_T2 "This computer ($model) has no Apple T2 chip.\n\nMacServer is built for the 2019 MacBook Air. Continue anyway?" no; then
+      (( AUTO )) && fail "not a T2 Mac ($model); set ALLOW_NON_T2=yes in answers.txt to continue"
       exit 0
     fi
   elif [[ $model != MacBookAir8,2 ]]; then
