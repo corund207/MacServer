@@ -54,6 +54,8 @@ def main():
                     chunk = sock.recv(4096)
                 except socket.timeout:
                     continue
+                except OSError as error:
+                    sys.exit(f"console closed ({error}) while waiting for {expect!r}")
                 if not chunk:
                     sys.exit(f"console closed while waiting for {expect!r}")
                 text = chunk.decode("utf-8", "replace")

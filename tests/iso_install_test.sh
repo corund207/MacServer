@@ -62,7 +62,8 @@ cd_args=(-drive file="$ISO",media=cdrom,if=none,id=cd -device ide-cd,drive=cd,bo
 if [[ ${FULL_UEFI:-0} == 1 ]]; then
   qpid=$(vm install -drive if=pflash,format=raw,readonly=on,file="$CODE" -drive if=pflash,format=raw,file="$W/vars.fd" "${cd_args[@]}")
 else
-  xorriso -osirrox on -indev "$ISO" -extract /live/vmlinuz "$W/vmlinuz" -extract /live/initrd.img "$W/initrd.img" >/dev/null 2>&1
+  xorriso -osirrox on -indev "$ISO" -extract /live/vmlinuz "$W/vmlinuz" -extract /live/initrd.img "$W/initrd.img" 2>&1 | tail -3
+  [[ -s $W/vmlinuz && -s $W/initrd.img ]] || { echo "could not extract the kernel from the image"; exit 1; }
   qpid=$(vm install -kernel "$W/vmlinuz" -initrd "$W/initrd.img" \
     -append "boot=live $T2OPTS console=ttyS0,115200 macserver.auto=1" "${cd_args[@]}")
 fi
