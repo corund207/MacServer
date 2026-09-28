@@ -118,7 +118,7 @@ main() {
         *) usage; exit 2 ;;
       esac ;;
     upgrade) need_root upgrade; exec "$LIB/self-update" --now ;;
-    autoupdate)
+    autoupdate|autoupdates|auto-update)
       case ${1:-status} in
         on|off) need_root autoupdate; conf_set AUTO_UPDATE "$1"; ok "automatic updates $1" ;;
         status) jq -r '"\(.state): \(.message)"' /run/macserver/self-update.json 2>/dev/null || say "no update check yet" ;;
@@ -127,7 +127,7 @@ main() {
     wifi) need_root wifi; wifi_setup ;;
     doctor) cmd_doctor ;;
     ''|-h|--help|help) usage ;;
-    *) usage; exit 2 ;;
+    *) warn "unknown command '$cmd'"; usage; exit 2 ;;
   esac
 }
 
