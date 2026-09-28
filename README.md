@@ -80,8 +80,11 @@ From any device on your tailnet:
   with `sudo macserver keys`.
 - **Shell:** `ssh <user>@macserver` (Tailscale SSH, no keys to copy).
 - **Claude Code:** installed on the server with a `macserver` skill that knows what the
-  Mac runs and its rules. Sign in once (`ssh <user>@macserver`, then `claude`), then
-  ask it to help connect your apps and backends. Its version is pinned by MacServer.
+  Mac runs and its rules. Sign in once over SSH (`ssh <user>@macserver`, run `claude`,
+  follow the login link; then run `claude remote-control`, answer `y`, press Ctrl+C).
+  After that, the admin page's **Start Claude session** button opens a session you
+  continue at claude.ai/code or in the Claude app, to help connect your apps and
+  backends. Its version is pinned by MacServer.
 
 Connect an app:
 

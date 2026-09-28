@@ -6,6 +6,7 @@ public (anon/publishable) app keys, which are meant to ship inside client apps.
 """
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -79,6 +80,34 @@ def battery(root="/sys/class/power_supply"):
     return None
 
 
+CLAUDE_LOG = Path("/run/macserver-claude/session.log")
+ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][0-9A-Za-z]")
+SESSION_URL = re.compile(r"https://claude\.ai/code[/?][A-Za-z0-9_\-/?=&.%]*")
+
+
+def unit_state(unit):
+    """systemctl is-active output (active, activating, failed, inactive, ...)."""
+    try:
+        done = subprocess.run(["systemctl", "is-active", unit], capture_output=True, text=True, timeout=10, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return "unknown"
+    return done.stdout.strip() or "unknown"
+
+
+def claude_session(log_text, state, installed):
+    """Remote Control session started from the admin page: state and link."""
+    info = {"installed": installed, "state": state or "inactive", "url": "", "problem": ""}
+    text = ANSI.sub("", log_text or "")
+    urls = SESSION_URL.findall(text)
+    if urls and info["state"] == "active":   # the log outlives the session
+        info["url"] = urls[-1].rstrip(".")
+    if "must be logged in" in text or "requires a claude.ai subscription" in text:
+        info["problem"] = "login"
+    elif "Enable Remote Control?" in text and not urls:
+        info["problem"] = "consent"
+    return info
+
+
 def containers(ps_json_lines):
     result = []
     for line in (ps_json_lines or "").splitlines():
@@ -136,6 +165,8 @@ def collect():
         "site_url": conf.get("SITE_URL", ""),
         "api_url": env.get("SUPABASE_PUBLIC_URL", ""),
         "public_keys": {k: env[k] for k in PUBLIC_KEYS if env.get(k)},
+        "claude": claude_session(read(CLAUDE_LOG, ""), unit_state("macserver-claude.service"),
+                                 Path("/usr/local/bin/claude").exists()),
     }
 
 

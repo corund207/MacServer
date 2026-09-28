@@ -27,6 +27,21 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(result, [{"name": "supabase-db", "state": "running",
                                    "status": "Up 2 hours (healthy)", "project": "supabase"}])
 
+    def test_claude_session(self):
+        log = ("\x1b[2J\x1b[1mRemote Control\x1b[0m connecting...\r\n"
+               "Session: \x1b[4mhttps://claude.ai/code/session_01AbC-x_9?env=1\x1b[0m\r\n")
+        info = collector.claude_session(log, "active", True)
+        self.assertEqual(info["url"], "https://claude.ai/code/session_01AbC-x_9?env=1")
+        self.assertEqual(info["problem"], "")
+        # The log outlives the session: no link once it stopped.
+        self.assertEqual(collector.claude_session(log, "inactive", True)["url"], "")
+        denied = "Error: You must be logged in to use Remote Control.\n"
+        self.assertEqual(collector.claude_session(denied, "failed", True)["problem"], "login")
+        self.assertEqual(collector.claude_session("Enable Remote Control? (y/n)", "active", True)["problem"],
+                         "consent")
+        self.assertEqual(collector.claude_session("", "", False),
+                         {"installed": False, "state": "inactive", "url": "", "problem": ""})
+
     def test_tailscale(self):
         data = {"BackendState": "Running", "Self": {"DNSName": "macserver.tail1.ts.net.",
                                                     "TailscaleIPs": ["100.64.0.1"], "Online": True}}

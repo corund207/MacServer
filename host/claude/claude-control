@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Runs as root when the admin page (unprivileged) writes "start" or "stop" to its
+# request file. The admin page can do nothing else through this path.
+set -euo pipefail
+req=/run/macserver-admin/claude-request
+[[ -f $req && ! -L $req ]] || exit 0
+action=$(head -c 16 "$req" | tr -dc '[:lower:]')  # only "start" or "stop" are acted on
+rm -f "$req"
+case $action in
+  start)
+    [[ -x /usr/local/bin/claude ]] || exit 0
+    systemctl reset-failed macserver-claude.service 2>/dev/null || true
+    systemctl start --no-block macserver-claude.service ;;
+  stop) systemctl stop --no-block macserver-claude.service ;;
+esac

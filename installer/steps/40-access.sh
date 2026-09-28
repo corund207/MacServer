@@ -67,12 +67,27 @@ step_claude() {
   grep -qx 'DISABLE_AUTOUPDATER=1' /etc/environment 2>/dev/null || echo 'DISABLE_AUTOUPDATER=1' >> /etc/environment
 
   # The macserver skill for every session of the owner, and a workspace to start in.
-  install -d -m 0755 -o "$user" -g "$user" "$home/.claude" "$home/.claude/skills" \
+  local group; group=$(id -gn "$user")
+  install -d -m 0755 -o "$user" -g "$group" "$home/.claude" "$home/.claude/skills" \
     "$home/.claude/skills/macserver" "$home/macserver-workspace"
-  install -m 0644 -o "$user" -g "$user" "$SRC/host/claude/SKILL.md" "$home/.claude/skills/macserver/SKILL.md"
+  install -m 0644 -o "$user" -g "$group" "$SRC/host/claude/SKILL.md" "$home/.claude/skills/macserver/SKILL.md"
   [[ -f $home/macserver-workspace/CLAUDE.md ]] ||
-    install -m 0644 -o "$user" -g "$user" "$SRC/host/claude/CLAUDE.md" "$home/macserver-workspace/CLAUDE.md"
+    install -m 0644 -o "$user" -g "$group" "$SRC/host/claude/CLAUDE.md" "$home/macserver-workspace/CLAUDE.md"
+
+  # Remote Control sessions started from the admin page run as the owner, in the workspace.
+  install -D -m 0755 "$SRC/host/claude/claude-control" /usr/local/lib/macserver/claude-control
+  local unit
+  for unit in macserver-claude.service macserver-claude-control.service macserver-claude-control.path; do
+    put_file "$SRC/host/claude/$unit" "/etc/systemd/system/$unit" 0644
+  done
+  install -d -m 0755 /etc/systemd/system/macserver-claude.service.d
+  printf '[Service]\nUser=%s\nGroup=%s\nWorkingDirectory=%s\nEnvironment=HOME=%s\n' \
+    "$user" "$group" "$home/macserver-workspace" "$home" \
+    > /etc/systemd/system/macserver-claude.service.d/60-owner.conf
+  systemctl daemon-reload
+  systemctl enable --now macserver-claude-control.path >/dev/null
   ok "Claude Code $(/usr/local/bin/claude --version 2>/dev/null | cut -d' ' -f1) installed with the macserver skill"
+  say "The admin page's 'Start Claude session' button opens a Remote Control session as $user."
   say "Sign in once as $user: run 'claude' and follow the login link (needs a claude.ai plan)."
 }
 

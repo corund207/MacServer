@@ -57,6 +57,9 @@ render() {
       ($c[] | select(.state != "running") | "        \($R)stopped\($Z)  \(.name)  \(.status)"),
       "   \(mark((.host.disk.total - .host.disk.used) > 5368709120)) Disk       \(.host.disk.used | gb) of \(.host.disk.total | gb) GB used",
       "      Battery    \(if .host.battery then "\(.host.battery.percent)% \(.host.battery.status)" else "none" end)   CPU \(.host.sensors.cpu_temp_c // "?") C   load \(.host.load[0])",
+      (if .claude.installed then
+        "      Claude     \(if .claude.state == "active" then "session running: open it at claude.ai/code" else "start a session from the admin page" end)"
+       else empty end),
       (if .host.updates_pending > 0 or .host.reboot_required then
         "   \($Y)!!\($Z) Updates    \(.host.updates_pending) pending\(if .host.reboot_required then ", restart needed" else "" end): sudo macserver update"
        else empty end),

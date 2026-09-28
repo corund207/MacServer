@@ -1,0 +1,23 @@
+[Unit]
+Description=MacServer: Claude Code Remote Control session (started from the admin page)
+Wants=network-online.target
+After=network-online.target
+
+# User=, Group=, WorkingDirectory= and HOME come from the drop-in written by the
+# installer (the owner's account and ~/macserver-workspace).
+[Service]
+Type=simple
+Environment=DISABLE_AUTOUPDATER=1 TERM=xterm-256color
+UMask=0077
+RuntimeDirectory=macserver-claude
+RuntimeDirectoryMode=0700
+# Keep the log after the session ends, so the admin page can say why it stopped.
+RuntimeDirectoryPreserve=yes
+# Remote Control's server mode is a terminal app: give it a wide pseudo-terminal and
+# keep its output, from which the status collector reads the session link.
+ExecStart=/usr/bin/script -qfec "stty cols 400 rows 60; exec /usr/local/bin/claude remote-control --name '%H MacServer'" /run/macserver-claude/session.log
+# Refresh the admin page's data as soon as the link appears, and after stopping.
+ExecStartPost=+/bin/sh -c 'for i in $$(seq 40); do grep -aq "claude.ai/code" /run/macserver-claude/session.log 2>/dev/null && break; sleep 1; done; systemctl start --no-block macserver-status.service || true'
+ExecStopPost=-+/bin/systemctl start --no-block macserver-status.service
+Restart=no
+TimeoutStopSec=20

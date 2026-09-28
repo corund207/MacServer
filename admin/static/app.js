@@ -84,6 +84,8 @@ function render(s) {
   pairs.push(['Secret keys', 'never shown here: sudo macserver keys']);
   rows($('connect'), pairs);
 
+  renderClaude(s.claude, s.tailscale.name);
+
   const body = $('services');
   body.replaceChildren();
   for (const c of s.containers) {
@@ -92,6 +94,61 @@ function render(s) {
     body.append(tr);
   }
 }
+
+function renderClaude(c, host) {
+  const state = $('claude-state');
+  const start = $('claude-start'), open = $('claude-open'), stop = $('claude-stop');
+  const ssh = `ssh <your user>@${(host || 'macserver').split('.')[0]}`;
+  const running = c && (c.state === 'active' || c.state === 'activating');
+  start.hidden = !c || !c.installed || running;
+  stop.hidden = !running;
+  open.hidden = true;
+  state.className = '';
+  if (!c || !c.installed) {
+    state.textContent = 'Claude Code is not installed. Over SSH run: sudo /opt/macserver-src/install.sh --redo claude';
+  } else if (c.problem === 'login') {
+    state.textContent = `Sign in once first: ${ssh}, run claude, and follow the login link. Then start the session here.`;
+    state.className = 'warn';
+  } else if (c.problem === 'consent') {
+    state.textContent = `Allow Remote Control once: ${ssh}, run claude remote-control, answer y, then press Ctrl+C. Then start it here.`;
+    state.className = 'warn';
+  } else if (running && c.url && c.url.startsWith('https://claude.ai/code')) {
+    state.textContent = 'A session is running on this Mac.';
+    state.className = 'good';
+    open.href = c.url;
+    open.hidden = false;
+  } else if (running) {
+    state.textContent = 'Starting… (the link appears here in a few seconds; it is also listed at claude.ai/code)';
+  } else if (c.state === 'failed') {
+    state.textContent = 'The last session stopped with an error. Try again, or check: journalctl -u macserver-claude';
+    state.className = 'bad';
+  } else {
+    state.textContent = 'No session running. Start one to get help connecting apps and backends.';
+  }
+}
+
+async function claudeAction(action) {
+  const buttons = [$('claude-start'), $('claude-stop')];
+  buttons.forEach((b) => { b.disabled = true; });
+  try {
+    const res = await fetch('/api/claude', {
+      method: 'POST', cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action }),
+    });
+    if (!res.ok) throw new Error(String(res.status));
+    $('claude-state').textContent = action === 'start' ? 'Starting…' : 'Stopping…';
+    for (let i = 0; i < 12; i++) setTimeout(refresh, 3000 * (i + 1));
+  } catch {
+    $('claude-state').textContent = 'The server refused the request.';
+    $('claude-state').className = 'bad';
+  } finally {
+    buttons.forEach((b) => { b.disabled = false; });
+  }
+}
+
+$('claude-start').addEventListener('click', () => claudeAction('start'));
+$('claude-stop').addEventListener('click', () => claudeAction('stop'));
 
 async function refresh() {
   try {

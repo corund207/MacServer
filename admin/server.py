@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""MacServer private admin page (read-only).
+"""MacServer private admin page.
+
+Read-only except for one action: starting or stopping the Claude Code Remote Control
+session. The page cannot run anything itself; it writes "start" or "stop" to a
+request file that a root-owned systemd path unit acts on.
 
 Listens on 127.0.0.1 only. `tailscale serve` puts it on the tailnet over HTTPS and
 adds the Tailscale-User-Login header, which Tailscale sets itself and does not
@@ -27,17 +31,23 @@ SECURITY_HEADERS = {
     "Cross-Origin-Resource-Policy": "same-origin",
 }
 STALE_AFTER_S = 120
+CLAUDE_ACTIONS = ("start", "stop")
+MAX_BODY = 256
 
 
-def allowed_logins(conf_path):
+def conf_value(conf_path, key):
     try:
         text = Path(conf_path).read_text()
     except OSError:
-        return set()
+        return ""
     for line in text.splitlines():
-        if line.startswith("ADMIN_LOGINS="):
-            return {x.strip().lower() for x in line.split("=", 1)[1].split(",") if x.strip()}
-    return set()
+        if line.startswith(f"{key}="):
+            return line.split("=", 1)[1].strip()
+    return ""
+
+
+def allowed_logins(conf_path):
+    return {x.strip().lower() for x in conf_value(conf_path, "ADMIN_LOGINS").split(",") if x.strip()}
 
 
 def authorize(client_ip, login, allowlist):
@@ -94,9 +104,49 @@ class Handler(BaseHTTPRequestHandler):
     do_HEAD = do_GET
 
     def do_POST(self):
+        login = authorize(self.client_address[0], self.headers.get("Tailscale-User-Login"),
+                          allowed_logins(self.config["conf"]))
+        if login is None:
+            self.send(HTTPStatus.FORBIDDEN, b"Forbidden: not an approved MacServer admin.\n",
+                      "text/plain; charset=utf-8")
+            return
+        if self.path.split("?", 1)[0] != "/api/claude" or not self.config.get("claude_request"):
+            self.send(HTTPStatus.METHOD_NOT_ALLOWED, b"Read-only\n", "text/plain; charset=utf-8")
+            return
+        action = self.read_action()
+        if action is None:
+            self.send(HTTPStatus.BAD_REQUEST, b"Bad request\n", "text/plain; charset=utf-8")
+            return
+        Path(self.config["claude_request"]).write_text(action)
+        self.send(HTTPStatus.ACCEPTED, json.dumps({"action": action}).encode(), "application/json")
+
+    def read_action(self):
+        """The requested Claude action, or None. Only same-origin JSON is accepted: a
+        cross-site page cannot send application/json without a CORS preflight, which
+        this server never answers."""
+        if self.headers.get("Content-Type", "").split(";")[0].strip() != "application/json":
+            return None
+        name = conf_value(self.config["conf"], "TAILNET_NAME")
+        if not name or self.headers.get("Origin") not in (None, f"https://{name}"):
+            return None
+        if self.headers.get("Sec-Fetch-Site", "same-origin") != "same-origin":
+            return None
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            return None
+        if not 0 < length <= MAX_BODY:
+            return None
+        try:
+            action = json.loads(self.rfile.read(length)).get("action")
+        except (ValueError, AttributeError):
+            return None
+        return action if action in CLAUDE_ACTIONS else None
+
+    def do_PUT(self):
         self.send(HTTPStatus.METHOD_NOT_ALLOWED, b"Read-only\n", "text/plain; charset=utf-8")
 
-    do_PUT = do_DELETE = do_PATCH = do_POST
+    do_DELETE = do_PATCH = do_PUT
 
     def log_message(self, fmt, *args):  # keep the journal short; no headers logged
         pass
@@ -107,8 +157,10 @@ def main():
     parser.add_argument("--port", type=int, default=8090)
     parser.add_argument("--status", default="/run/macserver/status.json")
     parser.add_argument("--conf", default="/etc/macserver/macserver.conf")
+    parser.add_argument("--claude-request", default="",
+                        help="file that Claude session requests are written to (empty: disabled)")
     args = parser.parse_args()
-    Handler.config = {"status": args.status, "conf": args.conf}
+    Handler.config = {"status": args.status, "conf": args.conf, "claude_request": args.claude_request}
     ThreadingHTTPServer(("127.0.0.1", args.port), Handler).serve_forever()
 
 

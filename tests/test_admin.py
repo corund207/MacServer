@@ -51,9 +51,11 @@ class LiveServerTests(unittest.TestCase):
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
         base = Path(cls.tmp.name)
-        (base / "macserver.conf").write_text("ADMIN_LOGINS=admin@example.com\n")
+        (base / "macserver.conf").write_text("ADMIN_LOGINS=admin@example.com\nTAILNET_NAME=mac.tail1.ts.net\n")
         (base / "status.json").write_text(json.dumps({"generated_at": time.time(), "host": {}}))
-        server.Handler.config = {"status": str(base / "status.json"), "conf": str(base / "macserver.conf")}
+        cls.claude_request = base / "claude-request"
+        server.Handler.config = {"status": str(base / "status.json"), "conf": str(base / "macserver.conf"),
+                                 "claude_request": str(cls.claude_request)}
         cls.httpd = server.ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
         threading.Thread(target=cls.httpd.serve_forever, daemon=True).start()
 
@@ -63,9 +65,11 @@ class LiveServerTests(unittest.TestCase):
         cls.httpd.server_close()
         cls.tmp.cleanup()
 
-    def request(self, path, method="GET", login="admin@example.com"):
+    def request(self, path, method="GET", login="admin@example.com", body=None, headers=None):
         conn = http.client.HTTPConnection("127.0.0.1", self.httpd.server_address[1], timeout=5)
-        conn.request(method, path, headers={"Tailscale-User-Login": login} if login else {})
+        all_headers = {"Tailscale-User-Login": login} if login else {}
+        all_headers.update(headers or {})
+        conn.request(method, path, body=body, headers=all_headers)
         response = conn.getresponse()
         body = response.read()
         conn.close()
@@ -87,6 +91,29 @@ class LiveServerTests(unittest.TestCase):
         self.assertEqual(self.request("/../server.py")[0].status, 404)
         self.assertEqual(self.request("/static/../server.py")[0].status, 404)
         self.assertEqual(self.request("/api/status", method="POST")[0].status, 405)
+        self.assertEqual(self.request("/api/status", method="PUT")[0].status, 405)
+
+    def claude(self, action="start", login="admin@example.com", **headers):
+        sent = {"Content-Type": "application/json", "Origin": "https://mac.tail1.ts.net",
+                "Sec-Fetch-Site": "same-origin"}
+        sent.update({k.replace("_", "-"): v for k, v in headers.items()})
+        self.claude_request.unlink(missing_ok=True)
+        return self.request("/api/claude", "POST", login, json.dumps({"action": action}), sent)[0].status
+
+    def test_claude_session_request(self):
+        self.assertEqual(self.claude("start"), 202)
+        self.assertEqual(self.claude_request.read_text(), "start")
+        self.assertEqual(self.claude("stop"), 202)
+        self.assertEqual(self.claude_request.read_text(), "stop")
+
+    def test_claude_request_refused(self):
+        self.assertEqual(self.claude("start", login=None), 403)
+        self.assertEqual(self.claude("start", login="intruder@example.com"), 403)
+        self.assertEqual(self.claude("rm -rf /"), 400)
+        self.assertEqual(self.claude("start", Origin="https://evil.example"), 400)
+        self.assertEqual(self.claude("start", Sec_Fetch_Site="cross-site"), 400)
+        self.assertEqual(self.claude("start", Content_Type="text/plain"), 400)
+        self.assertFalse(self.claude_request.exists())
 
 
 if __name__ == "__main__":

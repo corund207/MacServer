@@ -1,0 +1,8 @@
+[Unit]
+Description=MacServer: watch for Claude session requests from the admin page
+
+[Path]
+PathChanged=/run/macserver-admin/claude-request
+
+[Install]
+WantedBy=multi-user.target

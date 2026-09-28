@@ -5,7 +5,11 @@ After=network.target
 [Service]
 User=macserver-admin
 Group=macserver-admin
-ExecStart=/usr/bin/python3 /opt/macserver/admin/server.py --port 8090 --status /run/macserver/status.json --conf /etc/macserver/macserver.conf
+ExecStart=/usr/bin/python3 /opt/macserver/admin/server.py --port 8090 --status /run/macserver/status.json --conf /etc/macserver/macserver.conf --claude-request /run/macserver-admin/claude-request
+# The only thing the page can write: "start" or "stop" for the Claude session, which
+# the root-owned macserver-claude-control.path acts on.
+RuntimeDirectory=macserver-admin
+RuntimeDirectoryMode=0755
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=yes

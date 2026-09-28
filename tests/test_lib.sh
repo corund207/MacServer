@@ -45,12 +45,14 @@ cat > "$tmp/status.json" <<EOF
  "tailscale": {"state": "Running", "name": "macserver.tail1234.ts.net"},
  "containers": [{"name": "supabase-db", "state": "running", "status": "Up"},
                 {"name": "supabase-auth", "state": "exited", "status": "Exited (1)"}],
- "public_domain": "", "public_keys": {"ANON_KEY": "public-anon"}}
+ "public_domain": "", "public_keys": {"ANON_KEY": "public-anon"},
+ "claude": {"installed": true, "state": "active", "url": "https://claude.ai/code/session_x", "problem": ""}}
 EOF
 out=$(MACSERVER_STATUS=$tmp/status.json bash "$ROOT/admin/dashboard.sh" --once | sed 's/\x1b\[[0-9;]*[a-zA-Z]//g')
 grep -q 'Admin page      https://macserver.tail1234.ts.net/' <<<"$out" || fail dashboard admin url
 grep -q '1 of 2 containers running' <<<"$out" || fail dashboard container count
 grep -q 'stopped  supabase-auth' <<<"$out" || fail dashboard stopped container
+grep -q 'Claude     session running' <<<"$out" || fail dashboard claude session
 ! grep -q 'Setup has not finished' <<<"$out" || fail dashboard setup state
 ! grep -q 'public-anon' <<<"$out" || fail dashboard shows keys
 out=$(MACSERVER_STATUS=$tmp/missing.json bash "$ROOT/admin/dashboard.sh" --once)

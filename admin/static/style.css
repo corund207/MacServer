@@ -29,3 +29,9 @@ th { color: var(--muted); font-weight: 500; border-top: 0; }
 button { font: inherit; font-size: 12px; margin-left: 8px; padding: 1px 8px; border-radius: 6px;
   border: 1px solid var(--line); background: transparent; color: var(--text); cursor: pointer; }
 footer { color: var(--muted); font-size: 13px; padding-top: 20px; padding-bottom: 32px; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; }
+.actions button { margin-left: 0; font-size: 14px; padding: 6px 14px; }
+.primary { display: inline-block; font-size: 14px; padding: 6px 14px; border-radius: 6px; font-weight: 600;
+  background: var(--text); color: var(--bg); border: 1px solid var(--text); text-decoration: none; }
+[hidden] { display: none !important; }
+.note { color: var(--muted); font-size: 13px; margin: 0; }

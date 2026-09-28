@@ -16,10 +16,17 @@
 <main>
   <section aria-labelledby="h-host"><h2 id="h-host">Mac</h2><dl id="host"></dl></section>
   <section aria-labelledby="h-connect"><h2 id="h-connect">Connect your app</h2><dl id="connect"></dl></section>
+  <section aria-labelledby="h-claude"><h2 id="h-claude">Claude on this server</h2>
+    <p id="claude-state">Loading…</p>
+    <p class="actions"><button type="button" id="claude-start" class="primary" hidden>Start Claude session</button>
+      <a id="claude-open" class="primary" hidden target="_blank" rel="noopener noreferrer">Open session</a>
+      <button type="button" id="claude-stop" hidden>Stop session</button></p>
+    <p class="note">Claude Code runs on this Mac with the <code>macserver</code> skill, so it knows the server and its rules. You continue the session in claude.ai/code or the Claude app.</p>
+  </section>
   <section aria-labelledby="h-services" class="wide"><h2 id="h-services">Services</h2>
     <table><thead><tr><th scope="col">Container</th><th scope="col">Group</th><th scope="col">State</th><th scope="col">Details</th></tr></thead><tbody id="services"></tbody></table>
   </section>
 </main>
-<footer>Read-only. Manage the server with <code>sudo macserver</code> over Tailscale SSH.</footer>
+<footer>Read-only, except starting and stopping the Claude session. Manage the server with <code>sudo macserver</code> over Tailscale SSH.</footer>
 </body>
 </html>

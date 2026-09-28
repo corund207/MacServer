@@ -42,6 +42,18 @@ already running on the Mac could forge that header, so treat local users as trus
 Health data comes from a root collector that writes a JSON file containing no secrets
 (only the publishable/anon keys, which are public by design).
 
+The page has exactly one action: **Start / Stop Claude session**. The server accepts it
+only from an allowlisted login, as same-origin JSON (`Origin` must be the tailnet
+name, `Sec-Fetch-Site` same-origin; a cross-site page cannot send JSON without a CORS
+preflight, which is never answered), and only the words `start` or `stop`. It writes
+that word to `/run/macserver-admin/claude-request` and nothing else. The root-owned
+`macserver-claude-control.path` reads it (ignoring symlinks) and starts or stops
+`macserver-claude.service`, which runs `claude remote-control` as the owner in
+`~/macserver-workspace`. The session is then reached through claude.ai/code or the
+Claude app, signed in with the owner's claude.ai account. Anyone on the allowlist can
+therefore start a Claude session with the owner's rights (but not their sudo password):
+keep `ADMIN_LOGINS` to yourself. The session log is private to the owner (mode 0600).
+
 ## Supply chain
 
 - APT repositories (t2linux, Docker, Tailscale) are added only after the downloaded

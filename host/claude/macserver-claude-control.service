@@ -1,0 +1,6 @@
+[Unit]
+Description=MacServer: start or stop the Claude session the admin page asked for
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/macserver/claude-control

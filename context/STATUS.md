@@ -141,3 +141,27 @@ the binary reports 2.1.284. Repo test checks the pin format and the checksum cal
 
 Not verified: signing in on the Mac (needs the owner's claude.ai account), and
 that Claude Code picks up the skill there.
+
+## 2026-09-28: "Start Claude session" on the admin page
+
+The admin page gains one action (see docs/SECURITY.md): an allowlisted, same-origin
+JSON POST to `/api/claude` writes `start`/`stop` to `/run/macserver-admin/claude-request`
+(the admin unit's RuntimeDirectory). Root-owned `macserver-claude-control.path` runs
+`claude-control`, which starts/stops `macserver-claude.service`: `claude remote-control
+--name "<host> MacServer"` as the owner in `~/macserver-workspace`, inside `script` for
+a 400-column pty, log at `/run/macserver-claude/session.log` (0600, kept after stop).
+The collector reports `claude` (installed, state, link, problem: login/consent); the
+page shows Start / Open session / Stop and what to do when sign-in or the one-time
+Remote Control consent is missing. The console dashboard shows the session state.
+
+Verified: 8 admin server tests (accepted start/stop; refused without login, wrong
+login, bad action, foreign Origin, cross-site, non-JSON), collector parsing test,
+dashboard fixture; end to end on WSL's systemd with a stand-in `claude`: step_claude
+installs the units, the real admin server's POST starts the service as the owner in
+the workspace on a 60x400 pty, the collector reports the link, stop works, and a
+symlinked request file is ignored (17 checks, all cleaned up afterwards).
+
+Not verified: the real `claude remote-control` output format under `script` (the
+collector looks for a claude.ai/code link; the page otherwise says to find the
+session at claude.ai/code), the page in a browser over `tailscale serve`, and whether
+`tailscale serve` passes an `Origin` header matching `https://<TAILNET_NAME>`.
