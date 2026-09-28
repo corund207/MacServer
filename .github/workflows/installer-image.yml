@@ -3,14 +3,14 @@ name: installer-image
 # Fast path first: the disk installer is tested directly on a loop device (~10 min)
 # while the image is assembled from a cached base. The VM test boots the kernel
 # directly and fails within minutes if a step stalls. Release tags also boot the
-# image through its own UEFI menu.
+# image through its own UEFI menu. It runs for every commit on main: installed Macs
+# update themselves only to commits where this workflow and ci have passed.
 
 on:
   workflow_dispatch:
   push:
     branches: [main, usb-installer]
     tags: ['v*']
-    paths: ['iso/**', 'installer/**', 'host/**', 'install.sh', 'tests/setup_disk_test.sh', 'tests/iso_install_test.sh', 'tests/qemu_serial.py', '.github/workflows/installer-image.yml']
 
 permissions:
   contents: read

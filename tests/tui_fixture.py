@@ -88,6 +88,8 @@ def status(scenario):
         "tailscale": {"state": "Running", "name": "macserver.tail4f2a.ts.net", "peers_online": 3},
         "containers": containers,
         "public_domain": "api.example.com", "public_ok": not trouble, "clock_synced": True,
+        "macserver_update": {"state": "up-to-date", "message": "running the newest version",
+                             "current": "6bc4f51aa0", "latest": "6bc4f51aa0", "auto": "on"},
         "public_keys": {"ANON_KEY": "eyJpublic-anon-key"},
         "claude": {"installed": True, "state": "inactive" if trouble else "active",
                    "url": "https://claude.ai/code/session_x", "problem": ""},

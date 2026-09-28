@@ -269,3 +269,28 @@ macserver-console) -> request -> path unit -> vt-switch -> chvt (stand-in) chain
 works, junk and symlinked requests are refused; key parsing unit test.
 Not verified: on the Mac's keyboard (does the T2 keyboard deliver Ctrl + Option + 1
 to the kernel keymap as expected; is `2` delivered to the dashboard inside foot).
+
+## 2026-09-28: MacServer updates itself from GitHub
+
+Owner chose: install new commits on `main` automatically once CI passes, checking
+every 15 minutes. New step `autoupdate` (asks; on in unattended mode) enables
+`macserver-self-update.timer` -> `installer/self-update.sh` (root): newest `main` via
+`git ls-remote`; requires `checks`, `disk-install`, `image`, `vm-test` all successful
+for that commit (GitHub check-runs API); fast-forward of the running commit only;
+database backup; `/opt/macserver-src` becomes a git checkout (old tree kept as
+`.prev`); re-runs host/admin/claude when done before; health check (admin page,
+collector, dashboard, CLI); rollback on failure and no automatic retry of that
+commit. Status in `/run/macserver/self-update.json` -> status.json `macserver_update`
+-> dashboard "MacServer" row and admin page. CLI: `macserver upgrade`,
+`macserver autoupdate on|off|status`.
+
+Found while building it: the `checks` job had failed on two pushes (a timing-flaky
+dashboard test; fixed), and installer-image only ran for some paths, so admin/ and
+CLI changes never got the VM test. installer-image now runs for every commit on main.
+
+Verified: `tests/self_update_test.sh` (private mount namespace, local repository,
+saved CI answers; runs in CI): waits for CI, skips failed CI, installs, reports up to
+date, refuses rewritten history, rolls back a broken update, no automatic retry,
+`upgrade` installs on request, off switch, status file readable. Live read-only
+`--check` against GitHub correctly waited on a commit without the full CI.
+Not verified: a real update on the Mac (the first will come from this push).

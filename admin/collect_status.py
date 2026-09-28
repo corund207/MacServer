@@ -165,6 +165,17 @@ def with_stats(items, stats):
     return items
 
 
+def self_update():
+    """What the MacServer self-updater last did (installer/self-update.sh)."""
+    for path in (Path("/run/macserver/self-update.json"), Path("/var/lib/macserver/self-update.json")):
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        return {k: data.get(k, "") for k in ("state", "message", "current", "latest", "auto")}
+    return None
+
+
 def public_ok(domain):
     """Does the public API route answer? None when there is no public route."""
     if not domain:
@@ -208,6 +219,7 @@ def collect():
                                  container_stats(run("docker", "stats", "--no-stream", "--format", "{{json .}}", timeout=30))),
         "public_domain": conf.get("PUBLIC_DOMAIN", ""),
         "public_ok": public_ok(conf.get("PUBLIC_DOMAIN", "")),
+        "macserver_update": self_update(),
         "clock_synced": (run("timedatectl", "show", "-p", "NTPSynchronized", "--value") or "").strip() == "yes",
         "site_url": conf.get("SITE_URL", ""),
         "api_url": env.get("SUPABASE_PUBLIC_URL", ""),

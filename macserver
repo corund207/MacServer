@@ -22,6 +22,8 @@ Usage: sudo macserver COMMAND
   logs [SERVICE]    follow Supabase logs (e.g. auth, rest, db, storage)
   restart           restart Supabase and the public route
   update            back up the database, then update Debian, the T2 kernel and containers
+  upgrade           install the newest MacServer version now (once it passed CI)
+  autoupdate on|off|status   MacServer updates itself from GitHub (on by default)
   backup            write a compressed database dump to /var/backups/macserver
   public setup      turn on (or change) the public API route
   public off        stop the public API route
@@ -113,6 +115,13 @@ main() {
         setup) public_setup ;;
         on) gateway_compose up -d --wait; ok "public route on" ;;
         off) gateway_compose down; ok "public route off; everything is private" ;;
+        *) usage; exit 2 ;;
+      esac ;;
+    upgrade) need_root upgrade; exec "$LIB/self-update" --now ;;
+    autoupdate)
+      case ${1:-status} in
+        on|off) need_root autoupdate; conf_set AUTO_UPDATE "$1"; ok "automatic updates $1" ;;
+        status) jq -r '"\(.state): \(.message)"' /run/macserver/self-update.json 2>/dev/null || say "no update check yet" ;;
         *) usage; exit 2 ;;
       esac ;;
     wifi) need_root wifi; wifi_setup ;;

@@ -56,6 +56,17 @@ keep `ADMIN_LOGINS` to yourself. The session log is private to the owner (mode 0
 
 ## Supply chain
 
+- **MacServer updates itself** (`installer/self-update.sh`, every 15 minutes, root).
+  It follows `main` on github.com/corund207/MacServer over HTTPS and installs a commit
+  only when every required CI job for that exact commit (`checks`, `disk-install`,
+  `image`, `vm-test`) completed successfully, and only if it is a fast-forward of the
+  running version (a rewritten history is refused). It backs up the database, re-runs
+  the host, admin and claude steps, checks health and rolls back on failure; a
+  rolled-back commit is not retried automatically. It never touches Supabase's
+  version, Docker, the firewall or data. Trust: whoever can push to `main` and pass
+  CI can run code as root on the server, so the GitHub account needs 2FA. Turn it off
+  with `sudo macserver autoupdate off`.
+
 - APT repositories (t2linux, Docker, Tailscale) are added only after the downloaded
   signing key matches the fingerprint pinned in `installer/lib.sh`, and each key is
   scoped to its own repository with `Signed-By`.

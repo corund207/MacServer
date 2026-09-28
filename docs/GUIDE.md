@@ -16,7 +16,7 @@ It takes about an hour, most of it waiting.
 8. [Connect an app](#8-connect-an-app)
 9. [Get help from Claude](#9-get-help-from-claude)
 10. [Everyday use](#10-everyday-use)
-11. [Update MacServer on an installed Mac](#11-update-macserver-on-an-installed-mac)
+11. [Updates to MacServer itself](#11-updates-to-macserver-itself)
 12. [If something goes wrong](#12-if-something-goes-wrong)
 
 ---
@@ -229,6 +229,7 @@ Logging in shows a summary; `macserver dashboard` opens the full dashboard (q qu
 | `sudo macserver restart` | Restarts Supabase |
 | `sudo macserver public off` | Takes the public API off the Internet immediately |
 | `sudo macserver doctor` | Checks network, DNS and the Mac's drivers |
+| `sudo macserver upgrade` | Installs the newest tested MacServer version now (it also updates itself) |
 
 Good habits:
 
@@ -240,21 +241,37 @@ Good habits:
 - The battery stops charging at 80% when the Mac supports it, so it lasts longer
   on the charger.
 
-## 11. Update MacServer on an installed Mac
+## 11. Updates to MacServer itself
 
-New versions of MacServer (like a new dashboard) don't need a reinstall. Log in to
-the server and run:
+MacServer keeps itself up to date. About every 15 minutes it checks GitHub for a new
+version, and installs it only after every automatic test has passed for it,
+including a full install in a virtual machine. It backs up the database first,
+checks everything still works afterwards, and goes back to the old version by itself
+if not. The dashboard shows the result on the **MacServer** line.
+
+| Command | What it does |
+| --- | --- |
+| `sudo macserver autoupdate status` | What the last check did |
+| `sudo macserver upgrade` | Install the newest tested version now |
+| `sudo macserver autoupdate off` | Stop automatic updates (`on` turns them back on) |
+
+Updates change MacServer's own parts (the screen, the admin page, Claude Code). They
+never touch your data, Supabase's version, Docker or the firewall; `sudo macserver
+update` handles Debian and container updates.
+
+Because a new version on GitHub becomes code running on your server, protect your
+GitHub account with two-factor authentication.
+
+**Older installs** (before automatic updates existed) need one manual update. Log in
+and run:
 
 ```sh
 git clone https://github.com/corund207/MacServer.git ~/MacServer   # first time only
 cd ~/MacServer && git pull
-sudo ./install.sh --redo host     # the screen dashboard
-sudo ./install.sh                 # anything new or unfinished (for example Claude)
-sudo ./install.sh --redo admin    # the admin page
+sudo bash install.sh              # installs new steps, including automatic updates
+sudo bash install.sh --redo host  # the screen dashboard
+exit
 ```
-
-If you're logged in on the Mac's own screen, type `exit` afterwards and the new
-dashboard appears.
 
 ## 12. If something goes wrong
 

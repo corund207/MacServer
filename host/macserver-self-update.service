@@ -1,0 +1,10 @@
+[Unit]
+Description=MacServer: install the newest version from GitHub once CI has passed
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/macserver/self-update
+Nice=10
+TimeoutStartSec=1h

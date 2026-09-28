@@ -72,6 +72,8 @@ function render(s) {
     ['Battery', bat ? `${bat.percent ?? '?'}% · ${bat.status}${bat.limit ? ` · stops at ${bat.limit}%` : ''}` : 'none'],
     ['Updates', h.updates_pending ? `${h.updates_pending} pending (sudo macserver update)` : 'up to date', h.updates_pending ? 'warn' : ''],
     ['Tailscale', `${s.tailscale.state}${s.tailscale.name ? ` · ${s.tailscale.name}` : ''}`],
+    ['MacServer', s.macserver_update ? `${s.macserver_update.message}${s.macserver_update.auto === 'off' ? ' (auto-update off)' : ''}` : 'unknown',
+      s.macserver_update && ['skipped', 'refused', 'rolled-back', 'error'].includes(s.macserver_update.state) ? 'warn' : ''],
   ]);
 
   const keys = s.public_keys || {};

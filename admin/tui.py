@@ -578,6 +578,15 @@ def connections(sampler):
                  "synced" if synced else "not synced" if synced is False else "unknown"))
     upd = s.get("host", {}).get("updates_pending", 0) if s else 0
     rows.append(("warn" if upd else "ok", "Updates", f"{upd} pending · sudo macserver update" if upd else "up to date"))
+    mu = s.get("macserver_update") if s else None
+    if mu:
+        state, version = mu.get("state", ""), (mu.get("current") or "")[:7]
+        level = {"up-to-date": "ok", "updated": "ok", "waiting-ci": "off", "available": "off", "updating": "warn",
+                 "waiting": "off", "off": "off"}.get(state, "warn")
+        text = {"up-to-date": f"up to date · {version}", "updated": f"updated · {version}",
+                "waiting-ci": "new version in testing", "available": "new version ready",
+                "updating": "installing a new version", "waiting": "after setup", "off": "auto-update off"}
+        rows.append((level, "MacServer", text.get(state, mu.get("message", state))))
     return rows
 
 

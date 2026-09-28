@@ -31,7 +31,7 @@ class DashboardTests(unittest.TestCase):
     def test_healthy(self):
         text = tui_fixture.screen("healthy", 232, 64).text()
         for expected in ("ALL SYSTEMS NORMAL", "15/15 running", "https://macserver.tail4f2a.ts.net/",
-                         "i5-8210Y", "27%", "41%", "62°C", "fan 2400 rpm", "5.2 GB", "41.2 GB",
+                         "i5-8210Y", "27%", "41%", "62°C", "up to date · 6bc4f51", "fan 2400 rpm", "5.2 GB", "41.2 GB",
                          "1.2 MB/s", "86.0 KB/s", "BAT ▲  80%", "3.2W", "realtime", "cloudflared",
                          "press 2 to log in"):
             self.assertIn(expected, text)

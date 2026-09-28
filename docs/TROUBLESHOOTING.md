@@ -22,7 +22,7 @@ first-boot log is `/var/log/macserver-firstboot.log`.
 
 **The dashboard is not on the screen (a login prompt instead).** Run
 `sudo ./install.sh --redo host` from a current MacServer checkout (see the
-[guide, part 11](GUIDE.md#11-update-macserver-on-an-installed-mac)), then log out.
+[guide, part 11](GUIDE.md#11-updates-to-macserver-itself)), then log out.
 The dashboard itself: `systemctl status getty@tty1`, and `macserver dashboard` to
 see errors in a terminal.
 
@@ -60,3 +60,8 @@ example `auth`, `db`, `storage`).
 
 **Fans are loud or the Mac runs hot.** `systemctl status t2fanrd`. The admin page shows
 the CPU temperature and fan speed. Keep the vents clear. Running with the lid open helps cooling.
+
+**The dashboard's MacServer line says it was rolled back or skipped.** A new version
+failed its tests or the health check after installing; the Mac stays on the version
+that worked. `sudo macserver autoupdate status` says why; the details are in
+`/var/log/macserver-self-update.log`. It installs the next version that passes.

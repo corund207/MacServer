@@ -8,6 +8,7 @@ install_tools() {
   install -m 0755 "$SRC/admin/collect_status.py" /usr/local/lib/macserver/collect_status.py
   install -m 0755 "$SRC/admin/tui.py" /usr/local/lib/macserver/dashboard
   install -m 0755 "$SRC/host/macserver-console" /usr/local/lib/macserver/console
+  install -m 0755 "$SRC/installer/self-update.sh" /usr/local/lib/macserver/self-update
   install -d -m 0755 /usr/local/share/macserver
   cp -a "$SRC/host" "$SRC/gateway" /usr/local/share/macserver/
   install -m 0755 "$SRC/macserver" /usr/local/sbin/macserver
@@ -89,6 +90,26 @@ step_claude() {
   ok "Claude Code $(/usr/local/bin/claude --version 2>/dev/null | cut -d' ' -f1) installed with the macserver skill"
   say "The admin page's 'Start Claude session' button opens a Remote Control session as $user."
   say "Sign in once as $user: run 'claude' and follow the login link (needs a claude.ai plan)."
+}
+
+step_autoupdate() {
+  install_tools
+  local unit
+  for unit in macserver-self-update.service macserver-self-update.timer; do
+    put_file "$SRC/host/$unit" "/etc/systemd/system/$unit" 0644
+  done
+  cat <<'EOF'
+MacServer can install its own new versions from GitHub (github.com/corund207/MacServer)
+by itself: about every 15 minutes it looks for a new commit, and installs it only once
+every automatic test has passed for it, including a full install in a virtual machine.
+It backs up the database first, and goes back to the old version if anything is wrong
+afterwards. Supabase, Docker and the firewall are not touched.
+EOF
+  if confirm "Install new MacServer versions automatically?" y; then conf_set AUTO_UPDATE on
+  else conf_set AUTO_UPDATE off; fi
+  systemctl daemon-reload
+  systemctl enable --now macserver-self-update.timer >/dev/null
+  ok "automatic updates $(conf_get AUTO_UPDATE on) (change: sudo macserver autoupdate on|off; now: sudo macserver upgrade)"
 }
 
 step_public() {
