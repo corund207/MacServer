@@ -1,0 +1,2 @@
+# The dashboard (tty1) asks for screen switches here; see macserver-vt.path.
+d /run/macserver-console 0755 macserver-console macserver-console -

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Runs as root when the dashboard (unprivileged, on tty1) asks to show another screen,
+# for example the login prompt on tty2. It can only switch between screens 1-6.
+set -euo pipefail
+req=/run/macserver-console/vt
+[[ -f $req && ! -L $req ]] || exit 0
+n=$(head -c 4 "$req" | tr -dc '1-6' | head -c 1)
+rm -f "$req"
+[[ -n $n ]] && chvt "$n"
+exit 0

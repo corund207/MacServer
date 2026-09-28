@@ -74,6 +74,16 @@ install_console() {
   install -d -m 0755 /usr/local/share/macserver
   sed "s/@FONT_PX@/$px/" "$SRC/host/foot.ini" > /usr/local/share/macserver/foot.ini
   chmod 0644 /usr/local/share/macserver/foot.ini
+  # Screen switching on the number row (the Mac's F-keys need fn): key 2 on the
+  # dashboard opens the login screen; Ctrl + Option + 1..6 switch screens anywhere.
+  install -m 0644 "$SRC/host/vt-keys.map" /usr/local/share/macserver/vt-keys.map
+  install -D -m 0755 "$SRC/host/vt-switch" /usr/local/lib/macserver/vt-switch
+  put_file "$SRC/host/macserver-console.tmpfiles" /etc/tmpfiles.d/macserver-console.conf 0644
+  local unit
+  for unit in macserver-vtkeys.service macserver-vt.path macserver-vt.service; do
+    put_file "$SRC/host/$unit" "/etc/systemd/system/$unit" 0644
+  done
+  systemd-tmpfiles --create /etc/tmpfiles.d/macserver-console.conf 2>/dev/null || true
   put_file "$SRC/host/getty-dashboard.conf" /etc/systemd/system/getty@tty1.service.d/60-macserver-dashboard.conf 0644
   put_file "$SRC/host/profile-macserver.sh" /etc/profile.d/macserver.sh 0644
   if [[ -d /etc/default/grub.d ]] && ! cmp -s "$SRC/host/grub-t2.cfg" /etc/default/grub.d/60-macserver-t2.cfg; then
@@ -81,6 +91,9 @@ install_console() {
     update-grub >/dev/null 2>&1 || warn "update-grub failed; the screen may still blank after a restart"
   fi
   systemctl daemon-reload
+  systemctl enable --now macserver-vt.path >/dev/null 2>&1 || warn "could not start the screen-switch watcher"
+  systemctl enable macserver-vtkeys.service >/dev/null 2>&1 || true
+  systemctl start macserver-vtkeys.service 2>/dev/null || true    # needs a real console; fine to skip in tests
   # During first boot the dashboard starts when setup ends; otherwise start it now.
   # Never restart tty1 under someone logged in there: that would end their session
   # (and this installer, if it runs there). getty restarts by itself after they log out.
@@ -91,7 +104,7 @@ install_console() {
   elif [[ $(systemctl show -p ActiveState --value macserver-firstboot.service 2>/dev/null) != activating ]]; then
     systemctl restart --no-block getty@tty1.service 2>/dev/null || true
   fi
-  ok "the screen shows the MacServer dashboard and stays on (log in: Ctrl + Option + F2)"
+  ok "the screen shows the MacServer dashboard and stays on (log in: press 2; back: Ctrl + Option + 1)"
 }
 
 step_reboot() {

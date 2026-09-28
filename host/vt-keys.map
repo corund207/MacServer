@@ -1,0 +1,9 @@
+# Switch screens with Ctrl + Option + a number key: the Mac's top row sends brightness
+# and volume unless fn is held, so the usual Ctrl + Alt + F1..F6 is awkward.
+# Loaded on top of the normal keymap by macserver-vtkeys.service.
+control alt keycode 2 = Console_1
+control alt keycode 3 = Console_2
+control alt keycode 4 = Console_3
+control alt keycode 5 = Console_4
+control alt keycode 6 = Console_5
+control alt keycode 7 = Console_6

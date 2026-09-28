@@ -16,7 +16,7 @@ Open a shell).
 **The screen is black.** Press Shift. After a restart the screen can stay dark at
 the disk passphrase prompt: type the passphrase and press Enter.
 
-**The dashboard shows "Setup has not finished".** Log in (Ctrl + Option + F2) and
+**The dashboard shows "Setup has not finished".** Press 2 on the dashboard, log in, and
 run `sudo /opt/macserver-src/install.sh`; it continues where it stopped. The
 first-boot log is `/var/log/macserver-firstboot.log`.
 

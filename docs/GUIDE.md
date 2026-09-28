@@ -143,10 +143,16 @@ MacServer folder and log out of the Mac's screen.
 If the Mac's graphics ever fail, the screen falls back to a simpler text version of
 the same dashboard by itself.
 
-You can't type into the dashboard; it's safe to leave on. To use the Mac's own
-screen for commands, press **Ctrl + ⌥ Option + F2** (hold **fn** too if the
-brightness changes instead) and log in. **Ctrl + ⌥ Option + F1** brings the
-dashboard back.
+The dashboard ignores typing, so it's safe to leave on. To use the Mac's own screen
+for commands:
+
+- On the dashboard, press **2**. The login screen appears; log in with your
+  username and password.
+- To go back, press **Ctrl + ⌥ Option + 1** (on the number row). Typing `exit`
+  first logs you out.
+
+(Ctrl + ⌥ Option + 1 to 6 switch between screens anywhere. The Mac's F-keys work
+too if you hold fn, but the number row is easier.)
 
 You can close the lid; the server keeps running. Leave it on the charger.
 
@@ -210,7 +216,7 @@ then **Open session**. It opens in claude.ai/code or the Claude app. Ask things 
 ## 10. Everyday use
 
 **Running a command.** From your computer (with Tailscale on) open a terminal and run
-`ssh <username>@macserver`, or use the Mac's screen (**Ctrl + ⌥ Option + F2**).
+`ssh <username>@macserver`, or use the Mac's screen (press **2** on the dashboard).
 Logging in shows a summary; `macserver dashboard` opens the full dashboard (q quits).
 
 | Command | What it does |
@@ -257,7 +263,7 @@ dashboard appears.
 | The Mac won't start from the USB stick | Redo [part 4](#4-let-the-mac-start-from-usb-once), then hold ⌥ Option at power on |
 | Installer says "not connected" though Wi-Fi shows Deactivate | Read the reason on screen. Clock or certificate: choose **Set the date and time by hand** |
 | The screen is black | Press Shift. If it stays black, type the disk passphrase and press Enter (the prompt may not show) |
-| The dashboard says **Setup has not finished** | Log in (Ctrl + ⌥ Option + F2) and run `sudo /opt/macserver-src/install.sh`. It continues where it stopped |
+| The dashboard says **Setup has not finished** | Press **2**, log in, and run `sudo /opt/macserver-src/install.sh`. It continues where it stopped |
 | Admin page says **Forbidden** | Your Tailscale login isn't on the list: log in and add it to `ADMIN_LOGINS` in `/etc/macserver/macserver.conf` |
 | Admin page doesn't open at all | Tailscale must be on for that device; check MagicDNS and HTTPS in [part 2](#2-set-up-tailscale-5-minutes) |
 | A Supabase service is red | `sudo macserver logs <name>`, then `sudo macserver restart` |

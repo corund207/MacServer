@@ -1,0 +1,6 @@
+[Unit]
+Description=MacServer: switch the Mac's screen as the dashboard asked (key 2..6)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/macserver/vt-switch

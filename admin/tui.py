@@ -802,7 +802,7 @@ def setup_panel(c, sampler, x, y, w, h):
                  ("If a QR code appears, scan it with your phone to add this Mac to Tailscale.", C["text"], False)]
     else:
         lines = [("Setup has not finished.", C["warn"], True),
-                 ("Log in (Ctrl + Option + F2) and run:  sudo /opt/macserver-src/install.sh", C["text"], False),
+                 ("Press 2 to log in, then run:  sudo /opt/macserver-src/install.sh", C["text"], False),
                  ("It continues where it stopped and tells you what it needs.", C["dim"], False)]
     for i, (text, colour, bold) in enumerate(lines):
         c.put(x + 2, y + 1 + i, clip(text, w - 4), colour, bold=bold)
@@ -816,7 +816,7 @@ def bottom_bar(c, sampler, kiosk):
     name = (s.get("tailscale", {}) or {}).get("name")
     links = ([("admin", f"https://{name}/"), ("studio", f"https://{name}:{STUDIO_PORT}")] if name else [])
     links.append(("guide", DOCS))
-    hint = "log in  Ctrl+Option+F2" if kiosk else "q quit · sudo macserver help"
+    hint = "press 2 to log in · back here: Ctrl+Option+1" if kiosk else "q quit · sudo macserver help"
     x = 1
     for label, url in links:
         if x + len(label) + len(url) + 4 > w - len(hint) - 3:
@@ -875,6 +875,28 @@ def render_once(width=120, height=34, rich=True):
 
 # --- terminal front end ---------------------------------------------------------------
 
+VT_REQUEST = Path(os.environ.get("MACSERVER_VT_REQUEST", "/run/macserver-console/vt"))
+
+
+def wanted_screen(keys):
+    """Kiosk keys: 2..6 on the number row (alone or with Ctrl/Option) open that
+    screen, 2 being the login prompt. Ctrl+2 arrives as NUL. Anything else: None."""
+    for byte in keys:
+        if 0x32 <= byte <= 0x36:
+            return byte - 0x30
+        if byte == 0:
+            return 2
+    return None
+
+
+def request_screen(n):
+    """Ask the root helper (macserver-vt.path) to switch the Mac's screen."""
+    try:
+        VT_REQUEST.write_text(f"{n}\n")
+    except OSError:
+        pass
+
+
 def rich_terminal():
     return os.environ.get("TERM", "") != "linux"
 
@@ -927,7 +949,11 @@ def run(kiosk):
                 keys = os.read(fd, 64)
                 if not keys:
                     time.sleep(wait)       # input closed: keep drawing
-                elif not kiosk and (b"q" in keys or b"Q" in keys or b"\x03" in keys):
+                elif kiosk:
+                    screen = wanted_screen(keys)
+                    if screen:
+                        request_screen(screen)
+                elif b"q" in keys or b"Q" in keys or b"\x03" in keys:
                     return
     finally:
         out.write("\x1b[?7h\x1b[?25h\x1b[?1049l\x1b[0m")

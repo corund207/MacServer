@@ -1,0 +1,8 @@
+[Unit]
+Description=MacServer: watch for screen-switch requests from the dashboard
+
+[Path]
+PathChanged=/run/macserver-console/vt
+
+[Install]
+WantedBy=multi-user.target

@@ -9,7 +9,7 @@ if [ -z "${MACSERVER_TEXT_CONSOLE:-}" ] && command -v cage >/dev/null 2>&1 &&
     # Software rendering: a dashboard needs no GPU, and it avoids driver trouble.
     export WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1
     started=$(date +%s)
-    # -s: Ctrl + Option + F2 still switches to the login screen.
+    # -s: Ctrl + Option + F-keys still switch screens (key 2 on the dashboard is easier).
     cage -s -- foot -c "$FOOT_INI" "$DASH" --kiosk 2>>"${XDG_RUNTIME_DIR:-/tmp}/macserver-kiosk.log"
     # cage only returns if the graphics could not start or it crashed. After a long
     # run, start it again; if it failed straight away, use the text console.

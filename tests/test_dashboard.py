@@ -33,7 +33,7 @@ class DashboardTests(unittest.TestCase):
         for expected in ("ALL SYSTEMS NORMAL", "15/15 running", "https://macserver.tail4f2a.ts.net/",
                          "i5-8210Y", "27%", "41%", "62°C", "fan 2400 rpm", "5.2 GB", "41.2 GB",
                          "1.2 MB/s", "86.0 KB/s", "BAT ▲  80%", "3.2W", "realtime", "cloudflared",
-                         "Ctrl+Option+F2"):
+                         "press 2 to log in"):
             self.assertIn(expected, text)
         self.assertIn(chr(0x28FF), text)                 # braille graphs are drawn
         self.assertNotIn("public-anon-key", text)       # no keys on the screen, not even public ones
@@ -73,6 +73,20 @@ class DashboardTests(unittest.TestCase):
         c.put(0, 0, "abc", tui.C["cpu"])
         self.assertIn("\x1b[0;1;32m", c.ansi())
         self.assertNotIn("38;2", c.ansi())
+
+    def test_kiosk_keys_switch_screens(self):
+        self.assertEqual(tui.wanted_screen(b"2"), 2)
+        self.assertEqual(tui.wanted_screen(b"\x1b5"), 5)        # Option+5
+        self.assertEqual(tui.wanted_screen(b"\x00"), 2)         # Ctrl+2
+        for ignored in (b"q", b"\x03", b"1", b"7", b"\x1b[A", b""):
+            self.assertIsNone(tui.wanted_screen(ignored))
+        original = tui.VT_REQUEST
+        try:
+            tui.VT_REQUEST = tui_fixture.BASE / "vt"
+            tui.request_screen(2)
+            self.assertEqual((tui_fixture.BASE / "vt").read_text(), "2\n")
+        finally:
+            tui.VT_REQUEST = original
 
     def test_helpers(self):
         self.assertEqual(tui.clip("abcdef", 4), "abc…")

@@ -253,3 +253,19 @@ real agetty autologin and ignored Ctrl+C/Ctrl+Z/q/Ctrl+D; `foot --check-config` 
 
 Not verified: cage on the Mac's i915 + DRM through logind (the fallback covers a
 failure), the exact grid at 18 px on the Retina panel, hwmon labels on the Mac.
+
+## 2026-09-28: screen switching on the number row
+
+On the Mac the owner could not use Ctrl + Option + F2: the top row sends brightness
+and volume unless fn works. Now: key 2 (or 3-6) on the dashboard asks the root
+`macserver-vt.path` (request file in `/run/macserver-console`, made by tmpfiles for
+the console account) to `chvt` there; `vt-switch` accepts only a digit 1-6 and ignores
+symlinks. `macserver-vtkeys.service` loads `host/vt-keys.map` so Ctrl + Option + 1..6
+switch screens on the text consoles (back from the login screen: Ctrl + Option + 1).
+The dashboard, guide and troubleshooting say "press 2" instead of the F-keys.
+
+Verified: `loadkeys --parse` accepts the map; on WSL's systemd the dashboard (run as
+macserver-console) -> request -> path unit -> vt-switch -> chvt (stand-in) chain
+works, junk and symlinked requests are refused; key parsing unit test.
+Not verified: on the Mac's keyboard (does the T2 keyboard deliver Ctrl + Option + 1
+to the kernel keymap as expected; is `2` delivered to the dashboard inside foot).

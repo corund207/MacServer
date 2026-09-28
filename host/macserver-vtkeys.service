@@ -1,0 +1,11 @@
+[Unit]
+Description=MacServer: switch screens with Ctrl + Option + 1..6
+After=console-setup.service keyboard-setup.service systemd-vconsole-setup.service
+ConditionPathExists=/dev/tty0
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/loadkeys /usr/local/share/macserver/vt-keys.map
+
+[Install]
+WantedBy=multi-user.target
