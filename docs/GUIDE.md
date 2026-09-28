@@ -132,8 +132,10 @@ like [btop](https://github.com/aristocratos/btop), with the things a server need
 - **Network**: download above, upload below, with speeds and totals.
 - **Connections**: Internet (and Wi-Fi signal), Tailscale, the public API, Claude,
   clock and updates, each with an **OK / WARN / DOWN / OFF** tag, and your addresses.
-- **Services**: every Supabase container with its CPU, memory and status. A stopped
+- **Services**: every Supabase container with its CPU (and its trend), memory and status. A stopped
   one turns red and moves to the top.
+- **Events**: a running log of what happened: services stopping or starting, updates,
+  devices joining Tailscale, CPU or temperature spikes, network bursts.
 
 **Text size.** The default fits about 230 x 64 characters on the Mac's screen. To
 change it, add `DASHBOARD_FONT_PX=16` (smaller, more detail) or `22` (bigger) to

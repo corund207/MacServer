@@ -302,3 +302,16 @@ automatic security updates) held the dpkg lock, so the screen fell back to the t
 dashboard. `apt_quiet` now waits up to 10 minutes (`DPkg::Lock::Timeout=600`).
 Verified in WSL: with the lock held for 5 s, apt waited and then succeeded.
 Also confirmed on the Mac: all setup steps done, automatic updates on.
+
+## 2026-09-28: dashboard samples every 500 ms, busier panels
+
+SAMPLE_S 0.5 (history 2400 samples = 20 min). Added: CPU tasks/context switches/
+interrupts per second and frequency; memory panel splits into a memory graph and a
+mirrored disk read/write graph; network panel shows tailscale0 traffic; services
+table gains a per-service CPU TREND sparkline (from the collector's 30 s samples);
+an EVENTS panel beside the services on screens 170+ columns wide, fed by status diffs
+(services, Tailscale, devices online, public API, MacServer updates, Claude, Debian
+updates) and live edges (CPU busy, hot, download burst, offline). "→" joins GLYPHS
+(checked present in Lat15). A frame takes about 25 ms to build here.
+Verified: 42 tests (event diffing and edge logic, busy panels); previews reviewed.
+This change is meant to reach the Mac by the self-updater, not by hand.

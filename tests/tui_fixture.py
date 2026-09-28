@@ -41,6 +41,7 @@ def machine(temp_c=62, tick=0):
     busy = [27, 41, 18, 22]      # busy jiffies per thread in that second (of 100)
     lines = [f"cpu  {sum(busy) * tick} 0 0 {sum(100 - b for b in busy) * tick} 0 0 0 0 0 0"]
     lines += [f"cpu{i} {b * tick} 0 0 {(100 - b) * tick} 0 0 0 0 0 0" for i, b in enumerate(busy)]
+    lines += [f"intr {90_000_000 + tick * 4_100} 0 0", f"ctxt {250_000_000 + tick * 12_300}"]
     write("proc/stat", "\n".join(lines) + "\n")
     info = ""
     for i in range(4):
@@ -53,7 +54,8 @@ def machine(temp_c=62, tick=0):
     write("proc/diskstats", f"259 0 nvme0n1 900 0 {4000000 + tick * 2400} 0 700 0 {9000000 + tick * 600} 0 0 0 0\n")
     write("proc/net/route", "Iface\tDestination\tGateway\nwlp3s0\t00000000\t0101A8C0\n")
     write("proc/net/dev", f"h1\nh2\n    lo: 1 0 0 0 0 0 0 0 1 0\n"
-                          f"wlp3s0: {3_412_000_000 + tick * 1_240_000} 0 0 0 0 0 0 0 {812_000_000 + tick * 86_000} 0\n")
+                          f"wlp3s0: {3_412_000_000 + tick * 1_240_000} 0 0 0 0 0 0 0 {812_000_000 + tick * 86_000} 0\n"
+                          f"tailscale0: {95_000_000 + tick * 42_000} 0 0 0 0 0 0 0 {61_000_000 + tick * 18_000} 0\n")
     write("proc/net/wireless", "h1\nh2\nwlp3s0: 0000   58.  -52.  -256\n")
     write("proc/uptime", "273600.5 1000.0\n")
     write("sys/class/hwmon/hwmon0/name", "coretemp\n")
@@ -109,7 +111,26 @@ def screen(scenario="healthy", cols=160, rows=50, rich=True):
     sampler.prev_t -= 1.0            # about one second between the two readings
     sampler.sample()
     # Rates depend on the measured gap; pin them so tests never depend on timing.
-    sampler.now.update(rx=1_240_000, tx=86_000, rd=1_228_800, wr=307_200)
+    sampler.now.update(rx=1_240_000, tx=86_000, rd=1_228_800, wr=307_200, ts_rx=42_000, ts_tx=18_000,
+                       ctxt=12_300, intr=4_100)
+    # Per-service CPU history (the collector reports every 30 s) and a few events.
+    for name, _, cpu, _ in SERVICES:
+        sampler.svc_hist[name].extend(max(0.0, cpu * (0.6 + 0.8 * ((math.sin(i / 3 + len(name)) + 1) / 2)))
+                                      for i in range(60))
+    now = time.time()
+    ev = sampler.events
+    ev.items.clear()
+    log = [(3400, "info", "dashboard started"), (3395, "info", "watching 15 services (15 running)"),
+           (2710, "ok", "MacServer: now running e6db647 (Wait for the package lock)"),
+           (1985, "info", "4 device(s) online on the tailnet"),
+           (1320, "warn", "CPU busy: 91%"), (1260, "ok", "CPU back to normal"),
+           (840, "info", "download burst: 6.3 MB/s"), (610, "info", "Claude session started"),
+           (95, "info", "3 device(s) online on the tailnet")]
+    if trouble:
+        log += [(240, "bad", "service edge-functions: running → exited"), (30, "warn", "running hot: 93°C"),
+                (20, "bad", "public API not answering")]
+    for ago, level, text in sorted(log, reverse=True):     # oldest first, as they happen
+        ev.add(level, text, now - ago)
     if scenario == "setup":
         sampler.firstboot = "activating"
     h = sampler.hist
@@ -126,5 +147,6 @@ def screen(scenario="healthy", cols=160, rows=50, rich=True):
         h["temp"].append(52 + 10 * wave + (25 if trouble and i > 1100 else 0))
         h["rx"].append(30_000 + 1_100_000 * wave ** 4 + (3_600_000 if 1040 < i < 1070 else 0) + 90_000 * fast)
         h["tx"].append(12_000 + 240_000 * (1 - wave) ** 3 + 40_000 * fast)
-        h["io"].append(50_000 + 400_000 * fast ** 6)
+        h["rd"].append(20_000 + 900_000 * fast ** 6 + (2_400_000 if 1500 < i < 1530 else 0))
+        h["wr"].append(60_000 + 300_000 * ((math.sin(i / 11) + 1) / 2) ** 4)
     return tui.draw(tui.Canvas(cols, rows, rich), sampler, kiosk=True)

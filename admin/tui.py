@@ -31,12 +31,12 @@ PROC = Path(os.environ.get("MACSERVER_PROC", "/proc"))
 SYS = Path(os.environ.get("MACSERVER_SYS", "/sys"))
 DOCS = "github.com/corund207/MacServer"
 STUDIO_PORT = 8443
-SAMPLE_S = 1.0
-HISTORY = 1200        # samples kept per graph (20 minutes at one per second)
+SAMPLE_S = 0.5
+HISTORY = 2400        # samples kept per graph (20 minutes at two per second)
 
 # Characters drawn in console mode besides printable ASCII: all exist in the
 # Lat15-Terminus console font (tests/test_dashboard.py checks it against the font).
-GLYPHS = "─│╭╮╰╯├┤┬┴█▒░■●✗·°↑↓…▲▼"
+GLYPHS = "─│╭╮╰╯├┤┬┴█▒░■●✗·°↑↓→…▲▼"
 # Rich mode may also use these (the terminal draws braille itself).
 RICH_EXTRA = "◆⏵"
 
@@ -273,21 +273,102 @@ def firstboot_state():
         return ""
 
 
+def proc_counters():
+    """(context switches, interrupts, tasks running, tasks total) from /proc."""
+    ctxt = intr = 0
+    for line in read(PROC / "stat").splitlines():
+        if line.startswith("ctxt "):
+            ctxt = int(line.split()[1])
+        elif line.startswith("intr "):
+            intr = int(line.split()[1])
+    running = total = 0
+    m = re.search(r"(\d+)/(\d+)", read(PROC / "loadavg"))
+    if m:
+        running, total = int(m.group(1)), int(m.group(2))
+    return ctxt, intr, running, total
+
+
+class Events:
+    """What happened lately, newest first: services, updates, devices, spikes."""
+
+    def __init__(self):
+        self.items = collections.deque(maxlen=200)
+        self.flags = set()
+
+    def add(self, level, text, when=None):
+        self.items.appendleft((when or time.time(), level, text))
+
+    def edge(self, key, on, level, text, off_text=None):
+        """Log once when a condition starts (and optionally when it ends)."""
+        if on and key not in self.flags:
+            self.flags.add(key)
+            self.add(level, text)
+        elif not on and key in self.flags:
+            self.flags.discard(key)
+            if off_text:
+                self.add("ok", off_text)
+
+
+def status_events(events, old, new):
+    """Compare two status snapshots and log the differences."""
+    if not new:
+        return
+    if not old:
+        up = sum(1 for c in new.get("containers", []) if c.get("state") == "running")
+        events.add("info", f"watching {len(new.get('containers', []))} services ({up} running)")
+        return
+    before = {c["name"]: c.get("state") for c in old.get("containers", [])}
+    for c in new.get("containers", []):
+        name, state = c["name"], c.get("state")
+        short = name.split(".")[-1].replace("supabase-", "")
+        if name not in before:
+            events.add("info", f"service {short} appeared ({state})")
+        elif before[name] != state:
+            events.add("ok" if state == "running" else "bad", f"service {short}: {before[name]} → {state}")
+    ts_old, ts_new = old.get("tailscale") or {}, new.get("tailscale") or {}
+    if ts_old.get("state") != ts_new.get("state"):
+        events.add("ok" if ts_new.get("state") == "Running" else "bad", f"Tailscale {ts_new.get('state', '?')}")
+    if ts_old.get("peers_online") != ts_new.get("peers_online") and ts_new.get("peers_online") is not None:
+        events.add("info", f"{ts_new['peers_online']} device(s) online on the tailnet")
+    if old.get("public_ok") != new.get("public_ok") and new.get("public_domain"):
+        events.add("ok" if new.get("public_ok") else "bad",
+                   f"public API {'answering' if new.get('public_ok') else 'not answering'}")
+    mu_old, mu_new = old.get("macserver_update") or {}, new.get("macserver_update") or {}
+    if mu_new and (mu_old.get("state"), mu_old.get("latest")) != (mu_new.get("state"), mu_new.get("latest")):
+        level = {"updated": "ok", "up-to-date": "ok", "rolled-back": "bad", "skipped": "warn",
+                 "refused": "warn", "error": "warn"}.get(mu_new.get("state"), "info")
+        events.add(level, f"MacServer: {mu_new.get('message', mu_new.get('state'))}")
+    cl_old, cl_new = (old.get("claude") or {}).get("state"), (new.get("claude") or {}).get("state")
+    if cl_old != cl_new and cl_new:
+        events.add("info", "Claude session started" if cl_new == "active" else "Claude session ended")
+    u_old = (old.get("host") or {}).get("updates_pending", 0)
+    u_new = (new.get("host") or {}).get("updates_pending", 0)
+    if u_new > u_old:
+        events.add("warn", f"{u_new} Debian update(s) waiting")
+
+
 class Sampler:
-    """Live numbers once per second, with history for the graphs."""
+    """Live numbers twice a second, with history for the graphs, and events."""
 
     def __init__(self):
         self.model, _, self.core_of = cpu_info()
         self.prev_cpu = cpu_times()
         self.iface = default_iface()
         self.prev_net = net_bytes(self.iface)
+        self.prev_ts = net_bytes("tailscale0")
         self.prev_io = disk_io()
+        self.prev_counters = proc_counters()
         self.prev_t = time.monotonic()
         self.hist = collections.defaultdict(lambda: collections.deque(maxlen=HISTORY))
-        self.now = {"cpu": 0.0, "cores": [], "rx": 0.0, "tx": 0.0, "rd": 0.0, "wr": 0.0}
+        self.svc_hist = collections.defaultdict(lambda: collections.deque(maxlen=120))
+        self.now = {"cpu": 0.0, "cores": [], "rx": 0.0, "tx": 0.0, "rd": 0.0, "wr": 0.0,
+                    "ts_rx": 0.0, "ts_tx": 0.0, "ctxt": 0.0, "intr": 0.0}
         self.status = None
         self.status_read = -1e9
+        self.status_stamp = None
         self.firstboot = ""
+        self.events = Events()
+        self.events.add("info", "dashboard started")
 
     def sample(self):
         t = time.monotonic()
@@ -308,10 +389,19 @@ class Sampler:
             self.now["rx"], self.now["tx"] = (rx - self.prev_net[0]) / dt, (tx - self.prev_net[1]) / dt
         self.iface, self.prev_net = iface, (rx, tx)
         self.now["rx_total"], self.now["tx_total"] = rx, tx
+        ts_rx, ts_tx = net_bytes("tailscale0")
+        if ts_rx >= self.prev_ts[0] and ts_tx >= self.prev_ts[1]:
+            self.now["ts_rx"], self.now["ts_tx"] = (ts_rx - self.prev_ts[0]) / dt, (ts_tx - self.prev_ts[1]) / dt
+        self.prev_ts = (ts_rx, ts_tx)
         rd, wr = disk_io()
         if rd >= self.prev_io[0] and wr >= self.prev_io[1]:
             self.now["rd"], self.now["wr"] = (rd - self.prev_io[0]) / dt, (wr - self.prev_io[1]) / dt
         self.prev_io = (rd, wr)
+        ctxt, intr, running, tasks = proc_counters()
+        if ctxt >= self.prev_counters[0] and intr >= self.prev_counters[1]:
+            self.now["ctxt"], self.now["intr"] = (ctxt - self.prev_counters[0]) / dt, (intr - self.prev_counters[1]) / dt
+        self.prev_counters = (ctxt, intr, running, tasks)
+        self.now["running"], self.now["tasks"] = running, tasks
         self.prev_t = t
         _, self.now["mhz"], _ = cpu_info()
         self.now["mem"] = memory()
@@ -329,13 +419,29 @@ class Sampler:
         h["mem"].append(100.0 * m["used"] / m["total"] if m["total"] else 0)
         h["rx"].append(self.now["rx"])
         h["tx"].append(self.now["tx"])
-        h["io"].append(self.now["rd"] + self.now["wr"])
+        h["rd"].append(self.now["rd"])
+        h["wr"].append(self.now["wr"])
         if self.now["temp"] is not None:
             h["temp"].append(self.now["temp"])
+        ev, temp = self.events, self.now["temp"]
+        ev.edge("cpu", self.now["cpu"] >= 85 or ("cpu" in ev.flags and self.now["cpu"] >= 60), "warn",
+                f"CPU busy: {self.now['cpu']:.0f}%", "CPU back to normal")
+        ev.edge("hot", temp is not None and (temp >= 85 or ("hot" in ev.flags and temp >= 75)), "warn",
+                f"running hot: {temp or 0:.0f}°C", "temperature back to normal")
+        ev.edge("net", self.now["rx"] >= 5e6, "info", f"download burst: {fmt_bytes(self.now['rx'], True)}")
+        ev.edge("offline", not iface, "bad", "network connection lost", "network connected")
         if t - self.status_read >= 5:
-            self.status = load_status()
+            new = load_status()
             self.firstboot = firstboot_state()
             self.status_read = t
+            stamp = (new or {}).get("generated_at")
+            if stamp != self.status_stamp:
+                status_events(self.events, self.status, new)
+                for c in (new or {}).get("containers", []):
+                    if c.get("cpu") is not None:
+                        self.svc_hist[c["name"]].append(c["cpu"])
+                self.status_stamp = stamp
+            self.status = new
 
 
 # --- canvas --------------------------------------------------------------------------
@@ -412,6 +518,14 @@ def fmt_bytes(n, rate=False):
         i += 1
     s = f"{n:.0f} {units[i]}" if i == 0 or n >= 100 else f"{n:.1f} {units[i]}"
     return s + ("/s" if rate else "")
+
+
+def fmt_count(n):
+    """1234 -> 1.2k, 1234567 -> 1.2M."""
+    for div, unit in ((1e6, "M"), (1e3, "k")):
+        if n >= div:
+            return f"{n / div:.1f}{unit}"
+    return f"{n:.0f}"
 
 
 def fmt_duration(s):
@@ -668,11 +782,15 @@ def cpu_panel(c, sampler, x, y, w, h):
         if n > 0 and graph_rows > 0 and c.rich:
             graph(c, sx + 5, row + 1, side_w - 6, graph_rows, hist, 100, "cpu")
         row += rows_here
-    if row < y + h - 1:
+    if row < y + h - 2:
         la = now.get("load") or [0, 0, 0]
         fans = now.get("fans") or []
         info = f"load {la[0]:.2f} {la[1]:.2f} {la[2]:.2f}" + (f"   fan {fans[0]} rpm" if fans else "")
-        c.put(sx + 1, y + h - 2, clip(info, side_w - 1), C["dim"])
+        c.put(sx + 1, y + h - 3, clip(info, side_w - 1), C["dim"])
+        freq = now.get("mhz")
+        busy = (f"tasks {now.get('running', 0)}/{now.get('tasks', 0)}   ctx {fmt_count(now['ctxt'])}/s   "
+                f"irq {fmt_count(now['intr'])}/s" + (f"   {freq / 1000:.2f} GHz" if freq else ""))
+        c.put(sx + 1, y + h - 2, clip(busy, side_w - 1), C["dim"])
 
 
 def mem_panel(c, sampler, x, y, w, h):
@@ -696,13 +814,24 @@ def mem_panel(c, sampler, x, y, w, h):
         meter(c, xx, row, mw, frac, g if label != "Disk /" else "mem" if frac > 0.8 else "disk")
         c.put(xx + mw + 1, row, f"{frac * 100:3.0f}%", C["text"])
         row += 1
-    if row < y + h - 1:
+    gh = y + h - 1 - row
+    if gh >= 6:
+        # Memory use above; disk reads (up) and writes (down) mirrored below, like btop.
+        mh = gh // 2
+        graph(c, x + 1, row, inner, mh, sampler.hist["mem"], 100, "mem")
+        io_top = nice_top(list(sampler.hist["rd"])[-inner * 2:] + list(sampler.hist["wr"])[-inner * 2:], 1_000_000)
+        rh = (gh - mh) // 2
+        graph(c, x + 1, row + mh, inner, rh, sampler.hist["rd"], io_top, "disk")
+        graph(c, x + 1, row + mh + rh, inner, gh - mh - rh, sampler.hist["wr"], io_top, "mem", down=True)
+        xx = c.put(x + 2, row + mh, "▲ read ", C["accent"])
+        xx = c.put(xx, row + mh, f"{fmt_bytes(sampler.now['rd'], True):>9}", C["bright"], bold=True)
+        c.put(xx + 3, row + mh, f"▼ write {fmt_bytes(sampler.now['wr'], True)}", C["mem"])
+        c.put(x + w - 3 - len(fmt_bytes(io_top, True)), row + mh, fmt_bytes(io_top, True), C["dim"])
+    elif gh >= 1:
         io = f"disk read {fmt_bytes(sampler.now['rd'], True)}  write {fmt_bytes(sampler.now['wr'], True)}"
         c.put(x + 2, row, clip(io, inner - 2), C["dim"])
-        row += 1
-    gh = y + h - 1 - row
-    if gh >= 2:
-        graph(c, x + 1, row, inner, gh, sampler.hist["mem"], 100, "mem")
+        if gh >= 3:
+            graph(c, x + 1, row + 1, inner, gh - 1, sampler.hist["mem"], 100, "mem")
 
 
 def net_panel(c, sampler, x, y, w, h):
@@ -724,6 +853,10 @@ def net_panel(c, sampler, x, y, w, h):
     xx = c.put(xx, y + h - 2, f"{fmt_bytes(now['tx'], True):>10}", C["bright"], bold=True)
     c.put(xx + 2, y + h - 2, f"total {fmt_bytes(now.get('tx_total'))}", C["dim"])
     c.put(x + w - 3 - len(fmt_bytes(up_top, True)), y + h - 2, fmt_bytes(up_top, True), C["dim"])
+    if gh >= 6:   # the tailnet's share of the traffic, on the line between the two graphs
+        mid = y + 1 + top_h
+        xx = c.put(x + 2, mid, "tailnet ", C["conn"], bold=True)
+        c.put(xx, mid, f"▼ {fmt_bytes(now['ts_rx'], True)}  ▲ {fmt_bytes(now['ts_tx'], True)}", C["bright"])
 
 
 def conn_panel(c, sampler, x, y, w, h):
@@ -765,7 +898,11 @@ def services_panel(c, sampler, x, y, w, h):
         item["short"] = re.sub(r"-\d+$", "", short)
     name_w = min(max(len(i["short"]) for i in items) + 4, 30)
     cpu_top = nice_top([i.get("cpu") or 0 for i in items], 5)
-    cols = [("SERVICE", name_w), ("GROUP", 12), ("STATE", 11), (f"CPU (bar = {cpu_top}%)", 24), ("MEMORY", 11)]
+    trend_w = 18 if w >= 110 else 0         # CPU of each service over the last 15 minutes
+    cols = [("SERVICE", name_w), ("GROUP", 12), ("STATE", 11), (f"CPU (bar = {cpu_top}%)", 24)]
+    if trend_w:
+        cols.append(("TREND", trend_w))
+    cols.append(("MEMORY", 11))
     fixed = sum(cw for _, cw in cols)
     status_w = max(w - 4 - fixed, 0)
     xx = x + 2
@@ -796,11 +933,31 @@ def services_panel(c, sampler, x, y, w, h):
         else:
             c.put(xx, row, "-", C["dim"])
         xx += 24
+        if trend_w:
+            hist = sampler.svc_hist.get(item["name"])
+            if hist:
+                graph(c, xx, row, trend_w - 2, 1, hist, cpu_top, "cpu")
+            else:
+                c.put(xx, row, "·" * (trend_w - 2), C["faint"] if c.rich else C["off"])
+            xx += trend_w
         c.put(xx, row, fmt_bytes(item.get("mem")) if item.get("mem") is not None else "-", C["text"])
         xx += 11
         c.put(xx, row, clip(item.get("status", ""), status_w), C["dim"])
     if len(shown) < len(items):
         c.put(x + 2, y + 2 + len(shown), f"… {len(items) - len(shown)} more", C["dim"])
+
+
+EVENT_COLOUR = {"ok": C["ok"], "warn": C["warn"], "bad": C["bad"], "info": C["accent"]}
+
+
+def events_panel(c, sampler, x, y, w, h):
+    items = list(sampler.events.items)
+    box(c, x, y, w, h, "events", C["accent"], f"{len(items)} logged")
+    for n, (when, level, text) in enumerate(items[: h - 2]):
+        row = y + 1 + n
+        xx = c.put(x + 2, row, time.strftime("%H:%M:%S", time.localtime(when)), C["dim"])
+        xx = c.put(xx + 1, row, "●", EVENT_COLOUR.get(level, C["accent"]))
+        c.put(xx + 1, row, clip(text, x + w - 2 - xx - 1), C["bright"] if level in ("bad", "warn") else C["text"])
 
 
 def setup_panel(c, sampler, x, y, w, h):
@@ -861,7 +1018,10 @@ def draw(c, sampler, kiosk=True):
         conn_panel(c, sampler, mw + nw, y, w - mw - nw, mid_h)
         y += mid_h
         bottom_h = avail + 1 - y
-        (setup_panel if setup else services_panel)(c, sampler, 0, y, w, bottom_h)
+        ew = w * 34 // 100 if w >= 170 else 0          # events beside the services on big screens
+        (setup_panel if setup else services_panel)(c, sampler, 0, y, w - ew, bottom_h)
+        if ew:
+            events_panel(c, sampler, w - ew, y, ew, bottom_h)
     else:
         mw = w // 2
         mem_panel(c, sampler, 0, y, mw, mid_h)

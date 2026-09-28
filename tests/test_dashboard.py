@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 import string
@@ -87,6 +88,45 @@ class DashboardTests(unittest.TestCase):
             self.assertEqual((tui_fixture.BASE / "vt").read_text(), "2\n")
         finally:
             tui.VT_REQUEST = original
+
+    def test_events_from_status_changes(self):
+        ev = tui.Events()
+        old = {"containers": [{"name": "supabase-db", "state": "running"}, {"name": "supabase-auth", "state": "running"}],
+               "tailscale": {"state": "Running", "peers_online": 2}, "public_ok": True, "public_domain": "api.x",
+               "macserver_update": {"state": "up-to-date", "latest": "a", "message": "running the newest version"},
+               "claude": {"state": "inactive"}, "host": {"updates_pending": 0}}
+        new = json.loads(json.dumps(old))
+        new["containers"][1]["state"] = "exited"
+        new["tailscale"]["peers_online"] = 3
+        new["public_ok"] = False
+        new["macserver_update"] = {"state": "updated", "latest": "b", "message": "now running b"}
+        new["claude"]["state"] = "active"
+        new["host"]["updates_pending"] = 2
+        tui.status_events(ev, old, new)
+        texts = [t for _, _, t in ev.items]
+        for expected in ("service auth: running → exited", "3 device(s) online on the tailnet",
+                         "public API not answering", "MacServer: now running b", "Claude session started",
+                         "2 Debian update(s) waiting"):
+            self.assertIn(expected, texts)
+        self.assertEqual(dict((t, lvl) for _, lvl, t in ev.items)["service auth: running → exited"], "bad")
+        tui.status_events(ev, new, new)                      # nothing changed: nothing logged
+        self.assertEqual(len(ev.items), len(texts))
+
+    def test_events_log_edges_once(self):
+        ev = tui.Events()
+        for on in (True, True, True, False, False, True):
+            ev.edge("cpu", on, "warn", "CPU busy", "CPU back to normal")
+        self.assertEqual([t for _, _, t in reversed(ev.items)], ["CPU busy", "CPU back to normal", "CPU busy"])
+
+    def test_busy_panels(self):
+        text = tui_fixture.screen("trouble", 232, 64).text()
+        for expected in ("EVENTS", "service edge-functions: running → exited", "TREND", "tailnet",
+                         "ctx 12.3k/s", "irq 4.1k/s", "tasks 2/412", "▲ read", "▼ write 307 KB/s"):
+            self.assertIn(expected, text)
+        lines = [line for line in text.splitlines() if "EVENTS" in line or ":" in line[-60:]]
+        self.assertTrue(lines)
+        self.assertEqual(tui.fmt_count(12_300), "12.3k")
+        self.assertEqual(tui.SAMPLE_S, 0.5)
 
     def test_helpers(self):
         self.assertEqual(tui.clip("abcdef", 4), "abc…")
