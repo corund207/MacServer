@@ -294,3 +294,11 @@ date, refuses rewritten history, rolls back a broken update, no automatic retry,
 `upgrade` installs on request, off switch, status file readable. Live read-only
 `--check` against GitHub correctly waited on a commit without the full CI.
 Not verified: a real update on the Mac (the first will come from this push).
+
+## 2026-09-28: apt waits for the package lock
+
+On the Mac, `--redo host` could not install cage/foot: another apt-get (Debian's
+automatic security updates) held the dpkg lock, so the screen fell back to the text
+dashboard. `apt_quiet` now waits up to 10 minutes (`DPkg::Lock::Timeout=600`).
+Verified in WSL: with the lock held for 5 s, apt waited and then succeeded.
+Also confirmed on the Mac: all setup steps done, automatic updates on.

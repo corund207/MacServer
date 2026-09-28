@@ -145,7 +145,8 @@ apt_key() {  # apt_key NAME URL FINGERPRINT [KEYRING_DIR]
   ok "$name signing key verified ($fpr)"
 }
 
-apt_quiet() { DEBIAN_FRONTEND=noninteractive apt-get -y -q -o Dpkg::Options::=--force-confold "$@"; }
+# Waits up to 10 minutes for the package lock (automatic security updates often hold it).
+apt_quiet() { DEBIAN_FRONTEND=noninteractive apt-get -y -q -o DPkg::Lock::Timeout=600 -o Dpkg::Options::=--force-confold "$@"; }
 
 # --- hardware and network facts ---------------------------------------------------
 
