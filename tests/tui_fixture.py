@@ -104,8 +104,10 @@ def screen(scenario="healthy", cols=160, rows=50, rich=True):
     tui.disk = lambda: (41_200_000_000, 233_000_000_000)
     sampler = tui.Sampler()
     machine(temp, tick=1)
-    sampler.prev_t -= 1.0            # exactly one second between the two readings
+    sampler.prev_t -= 1.0            # about one second between the two readings
     sampler.sample()
+    # Rates depend on the measured gap; pin them so tests never depend on timing.
+    sampler.now.update(rx=1_240_000, tx=86_000, rd=1_228_800, wr=307_200)
     if scenario == "setup":
         sampler.firstboot = "activating"
     h = sampler.hist
