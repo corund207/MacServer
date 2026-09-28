@@ -225,3 +225,31 @@ utils/generate-keys.sh and add-new-auth-keys.sh (`--update-env`), run.sh start.
 
 Not verified: the rest of the supabase step and the steps after it (admin, claude,
 public) on real hardware; they have not run end to end anywhere yet.
+
+## 2026-09-28: btop-style dashboard in a kiosk terminal
+
+The owner asked for the screen to look like btop, high resolution. The bare Linux
+console cannot (16 colours, no braille in any console font), so tty1 now runs a
+kiosk: `host/macserver-console` starts `cage -s` (Wayland kiosk, pixman software
+rendering, VT switching kept) with `foot` (`host/foot.ini`: JetBrains Mono at
+`DASHBOARD_FONT_PX`, default 18 px = about 232x64 cells on 2560x1600; key bindings
+for new terminals, URL launching and pasting disabled) running `dashboard --kiosk`.
+If cage fails at once, the same account falls back to the text-console dashboard.
+The host step installs `cage foot fonts-jetbrains-mono` (Debian main).
+
+`admin/tui.py` rewritten without curses: its own truecolour/16-colour renderer,
+btop layout (top bar with status and battery; CPU panel with braille graph and
+per-core meters, temperatures and graphs; memory with meters, disk I/O and graph;
+network with mirrored download/upload graphs; connections with pills and addresses;
+a services table with per-container CPU and memory from `docker stats`, stopped
+ones first; setup panel while setup runs). Samples every second, 20 minutes kept.
+
+Verified: 38 unit tests (both looks x 3 scenarios x 6 sizes, only allowed
+characters, braille and console graph maths, colours, `--once`, console glyphs vs
+the Lat15 font; collector stats parsing); previews reviewed at the Mac's real grid;
+the real kiosk (cage + foot + dashboard) ran on WSLg for 75 s without error and was
+captured with grim from cage's own socket; the text-console fallback ran through the
+real agetty autologin and ignored Ctrl+C/Ctrl+Z/q/Ctrl+D; `foot --check-config` passes.
+
+Not verified: cage on the Mac's i915 + DRM through logind (the fallback covers a
+failure), the exact grid at 18 px on the Retina panel, hwmon labels on the Mac.

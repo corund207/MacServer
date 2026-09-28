@@ -1,3 +1,18 @@
 #!/bin/sh
-# Login shell of the macserver-console account (tty1): the always-on dashboard.
-exec /usr/local/lib/macserver/dashboard --kiosk
+# Login shell of the macserver-console account on tty1: the always-on dashboard.
+# The full-colour version runs in a kiosk terminal (cage + foot) when the graphics
+# work; otherwise the text-console version, so the screen is never empty.
+DASH=/usr/local/lib/macserver/dashboard
+FOOT_INI=/usr/local/share/macserver/foot.ini
+if [ -z "${MACSERVER_TEXT_CONSOLE:-}" ] && command -v cage >/dev/null 2>&1 &&
+   command -v foot >/dev/null 2>&1 && [ -f "$FOOT_INI" ]; then
+    # Software rendering: a dashboard needs no GPU, and it avoids driver trouble.
+    export WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1
+    started=$(date +%s)
+    # -s: Ctrl + Option + F2 still switches to the login screen.
+    cage -s -- foot -c "$FOOT_INI" "$DASH" --kiosk 2>>"${XDG_RUNTIME_DIR:-/tmp}/macserver-kiosk.log"
+    # cage only returns if the graphics could not start or it crashed. After a long
+    # run, start it again; if it failed straight away, use the text console.
+    if [ $(( $(date +%s) - started )) -gt 30 ]; then exec /usr/local/lib/macserver/console; fi
+fi
+exec "$DASH" --kiosk

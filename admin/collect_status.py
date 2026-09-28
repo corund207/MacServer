@@ -135,6 +135,36 @@ def tailscale(status_text):
             "peers_online": sum(1 for p in peers.values() if p.get("Online"))}
 
 
+SIZE_UNITS = {"B": 1, "KB": 1e3, "MB": 1e6, "GB": 1e9, "TB": 1e12,
+              "KIB": 1024, "MIB": 1024 ** 2, "GIB": 1024 ** 3, "TIB": 1024 ** 4}
+
+
+def parse_size(text):
+    m = re.match(r"\s*([\d.]+)\s*([a-zA-Z]+)", text or "")
+    if not m:
+        return 0
+    return int(float(m.group(1)) * SIZE_UNITS.get(m.group(2).upper(), 1))
+
+
+def container_stats(stats_json_lines):
+    """CPU % and memory per container from `docker stats --no-stream`."""
+    stats = {}
+    for line in (stats_json_lines or "").splitlines():
+        try:
+            item = json.loads(line)
+            cpu = float(item.get("CPUPerc", "0").rstrip("%") or 0)
+        except ValueError:
+            continue
+        stats[item.get("Name", "")] = {"cpu": cpu, "mem": parse_size(item.get("MemUsage", "").split("/")[0])}
+    return stats
+
+
+def with_stats(items, stats):
+    for item in items:
+        item.update(stats.get(item["name"], {"cpu": None, "mem": None}))
+    return items
+
+
 def public_ok(domain):
     """Does the public API route answer? None when there is no public route."""
     if not domain:
@@ -174,7 +204,8 @@ def collect():
             "reboot_required": Path("/run/reboot-required").exists(),
         },
         "tailscale": tailscale(run("tailscale", "status", "--json")),
-        "containers": containers(run("docker", "ps", "-a", "--format", "{{json .}}")),
+        "containers": with_stats(containers(run("docker", "ps", "-a", "--format", "{{json .}}")),
+                                 container_stats(run("docker", "stats", "--no-stream", "--format", "{{json .}}", timeout=30))),
         "public_domain": conf.get("PUBLIC_DOMAIN", ""),
         "public_ok": public_ok(conf.get("PUBLIC_DOMAIN", "")),
         "clock_synced": (run("timedatectl", "show", "-p", "NTPSynchronized", "--value") or "").strip() == "yes",

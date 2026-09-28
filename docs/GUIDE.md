@@ -122,15 +122,26 @@ Macs with a T2 chip only start macOS unless you allow otherwise.
 
 ![The MacServer dashboard](images/dashboard.png)
 
-The dashboard stays on screen all the time and never goes dark. It shows:
+The dashboard stays on screen all the time and never goes dark. It looks and works
+like [btop](https://github.com/aristocratos/btop), with the things a server needs:
 
-- **Header**: the server's name, an overall status (green = all good) and the time.
-- **System**: CPU, memory, disk, temperature and battery.
-- **Connections**: Internet, Tailscale, the public API, Claude, clock and updates,
-  each with an **OK / WARN / DOWN / OFF** tag.
-- **Supabase**: every service; a red one has stopped.
-- **Charts**: the last few minutes of CPU, memory, temperature, network and battery.
-- **Bottom**: your addresses, and how to log in.
+- **Top bar**: the server's name, an overall status (green = all good), battery,
+  the time and uptime.
+- **CPU**: a live graph of the last few minutes, and each core's load and temperature.
+- **Memory**: used, available, cached, swap and disk, with a graph; disk activity.
+- **Network**: download above, upload below, with speeds and totals.
+- **Connections**: Internet (and Wi-Fi signal), Tailscale, the public API, Claude,
+  clock and updates, each with an **OK / WARN / DOWN / OFF** tag, and your addresses.
+- **Services**: every Supabase container with its CPU, memory and status. A stopped
+  one turns red and moves to the top.
+
+**Text size.** The default fits about 230 x 64 characters on the Mac's screen. To
+change it, add `DASHBOARD_FONT_PX=16` (smaller, more detail) or `22` (bigger) to
+`/etc/macserver/macserver.conf`, then run `sudo ./install.sh --redo host` from the
+MacServer folder and log out of the Mac's screen.
+
+If the Mac's graphics ever fail, the screen falls back to a simpler text version of
+the same dashboard by itself.
 
 You can't type into the dashboard; it's safe to leave on. To use the Mac's own
 screen for commands, press **Ctrl + ⌥ Option + F2** (hold **fn** too if the

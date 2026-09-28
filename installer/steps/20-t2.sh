@@ -66,6 +66,14 @@ install_console() {
     useradd --system --create-home --home-dir /var/lib/macserver-console \
       --shell /usr/local/lib/macserver/console macserver-console
   touch /var/lib/macserver-console/.hushlogin
+  # The full-colour dashboard runs in a tiny kiosk (cage) with a modern terminal (foot).
+  apt_quiet install --no-install-recommends cage foot fonts-jetbrains-mono >/dev/null ||
+    warn "could not install the kiosk terminal; the screen uses the text-console dashboard"
+  local px; px=$(conf_get DASHBOARD_FONT_PX 18)
+  [[ $px =~ ^[0-9]{1,2}$ ]] || px=18
+  install -d -m 0755 /usr/local/share/macserver
+  sed "s/@FONT_PX@/$px/" "$SRC/host/foot.ini" > /usr/local/share/macserver/foot.ini
+  chmod 0644 /usr/local/share/macserver/foot.ini
   put_file "$SRC/host/getty-dashboard.conf" /etc/systemd/system/getty@tty1.service.d/60-macserver-dashboard.conf 0644
   put_file "$SRC/host/profile-macserver.sh" /etc/profile.d/macserver.sh 0644
   if [[ -d /etc/default/grub.d ]] && ! cmp -s "$SRC/host/grub-t2.cfg" /etc/default/grub.d/60-macserver-t2.cfg; then

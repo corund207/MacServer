@@ -55,11 +55,21 @@ inputs as CI's cache key).
 The Mac's screen dashboard (`admin/tui.py`) can be drawn without the Mac:
 
 ```sh
-python3 tests/tui_preview.py dashboard.png healthy        # or: setup, trouble
-python3 tests/tui_preview.py small.png healthy 100 30     # other screen sizes
+python3 tests/tui_preview.py dashboard.png healthy            # or: setup, trouble
+python3 tests/tui_preview.py dashboard.png healthy --px 16    # another font size
+python3 tests/tui_preview.py console.png healthy --console    # the text-console fallback
 ```
 
-It renders sample data with the Mac's console font (Lat15-Terminus 16x32, from
-`console-setup-linux`) and the 16 console colours, so the PNG shows what the Retina
-screen will show. `docs/images/dashboard.png` comes from it. Only characters in
-`tui.GLYPHS` may be drawn; `tests/test_dashboard.py` checks them against the font.
+The default renders what the kiosk shows on the 2560x1600 panel: JetBrains Mono
+(`fonts-jetbrains-mono`, drawn with `python3-pil`), 24-bit colour, and braille and
+box lines drawn the way foot draws them. `--console` renders the fallback with the
+Lat15-Terminus console font (`console-setup-linux`) and 16 colours; only
+`tui.GLYPHS` may appear there, which `tests/test_dashboard.py` checks against the
+font. `docs/images/dashboard.png` comes from the default render.
+
+On the Mac, tty1 runs `host/macserver-console`: `cage -s` (a one-window Wayland
+kiosk, software rendering) with `foot` (`host/foot.ini`, font size from
+`DASHBOARD_FONT_PX`) running `dashboard --kiosk`. If cage fails straight away it
+falls back to the text-console dashboard. To try the real kiosk in WSL (WSLg):
+`WAYLAND_DISPLAY=wayland-0 XDG_RUNTIME_DIR=/mnt/wslg/runtime-dir cage -- foot -c foot.ini python3 admin/tui.py --kiosk`,
+and capture only its output with `grim` pointed at cage's own socket.

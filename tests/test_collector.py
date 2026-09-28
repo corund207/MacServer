@@ -42,6 +42,15 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(collector.claude_session("", "", False),
                          {"installed": False, "state": "inactive", "url": "", "problem": ""})
 
+    def test_container_stats(self):
+        lines = "\n".join([json.dumps({"Name": "supabase-db", "CPUPerc": "3.50%", "MemUsage": "212.4MiB / 7.6GiB"}),
+                           "junk", json.dumps({"Name": "supabase-auth", "CPUPerc": "--", "MemUsage": ""})])
+        stats = collector.container_stats(lines)
+        self.assertEqual(stats["supabase-db"], {"cpu": 3.5, "mem": int(212.4 * 1024 ** 2)})
+        self.assertNotIn("supabase-auth", stats)
+        merged = collector.with_stats([{"name": "supabase-db"}, {"name": "x"}], stats)
+        self.assertEqual(merged[1], {"name": "x", "cpu": None, "mem": None})
+
     def test_tailscale(self):
         data = {"BackendState": "Running", "Self": {"DNSName": "macserver.tail1.ts.net.",
                                                     "TailscaleIPs": ["100.64.0.1"], "Online": True}}
