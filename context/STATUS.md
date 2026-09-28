@@ -165,3 +165,30 @@ Not verified: the real `claude remote-control` output format under `script` (the
 collector looks for a claude.ai/code link; the page otherwise says to find the
 session at claude.ai/code), the page in a browser over `tailscale serve`, and whether
 `tailscale serve` passes an `Origin` header matching `https://<TAILNET_NAME>`.
+
+## 2026-09-28: designed dashboard TUI (replaces the text dashboard)
+
+`admin/tui.py` (Python stdlib curses, installed as `/usr/local/lib/macserver/dashboard`)
+replaces `admin/dashboard.sh`: header with an overall status badge and clock; SYSTEM
+bars (CPU, memory, disk, temperature + fan, battery); CONNECTIONS with OK/WARN/DOWN/OFF
+badges (Internet + Wi-Fi signal, Tailscale + devices online, public API reachability,
+Claude session, clock sync, updates); SUPABASE container dots; six area charts
+(CPU, memory, temperature, network in/out, battery; 10 s per column, up to 2 h kept
+in memory); addresses and how to log in. Adapts from 160x50 down to 40x12. Live
+numbers come from /proc and /sys every 2 s; the rest from status.json, which gains
+`tailscale.peers_online`, `public_ok` and `clock_synced`.
+
+The Mac's console font limits the characters: none of Debian's console fonts have
+the ▁▂▃ sparkline blocks, ○ or ✓. The dashboard draws only `tui.GLYPHS`, which
+`tests/test_dashboard.py` checks against Lat15-Terminus32x16 (CI installs
+console-setup-linux for it). `CODESET="Lat15"` is now explicit.
+
+Verified: 8 dashboard tests (3 scenarios x 5 sizes, only font characters, no keys on
+screen, setup-running is not an error, chart and scale maths, `--once`), collector
+tests; `tests/tui_preview.py` renders the screen to PNG with the real font and
+console palette (docs/images/dashboard.png) and the layout was reviewed from those
+renders; the kiosk ran through the real agetty autologin with TERM=linux, kept
+redrawing and ignored Ctrl+C, Ctrl+Z, q and Ctrl+D.
+
+Not verified: on the Mac's physical console (real colours/brightness of the Retina
+panel), and hwmon names/Wi-Fi signal on the MacBook Air itself.

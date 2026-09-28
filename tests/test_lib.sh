@@ -35,27 +35,4 @@ put_file "$tmp/new" "$tmp/dest" 0644
 echo "second" > "$tmp/new"; put_file "$tmp/new" "$tmp/dest" 0644
 [[ $(cat "$tmp/dest.macserver-orig") == original ]] || fail put_file keeps first original
 
-# The console dashboard renders status.json without root and without secrets.
-cat > "$tmp/status.json" <<EOF
-{"generated_at": $(date +%s), "setup_done": true,
- "host": {"model": "MacBookAir8,2", "kernel": "6.18.54-1-t2-trixie", "t2_kernel": true,
-          "disk": {"total": 250000000000, "used": 20000000000}, "load": [0.1, 0.2, 0.3],
-          "sensors": {"cpu_temp_c": 45, "fans_rpm": []}, "battery": {"percent": 80, "status": "Charging"},
-          "updates_pending": 0, "reboot_required": false},
- "tailscale": {"state": "Running", "name": "macserver.tail1234.ts.net"},
- "containers": [{"name": "supabase-db", "state": "running", "status": "Up"},
-                {"name": "supabase-auth", "state": "exited", "status": "Exited (1)"}],
- "public_domain": "", "public_keys": {"ANON_KEY": "public-anon"},
- "claude": {"installed": true, "state": "active", "url": "https://claude.ai/code/session_x", "problem": ""}}
-EOF
-out=$(MACSERVER_STATUS=$tmp/status.json bash "$ROOT/admin/dashboard.sh" --once | sed 's/\x1b\[[0-9;]*[a-zA-Z]//g')
-grep -q 'Admin page      https://macserver.tail1234.ts.net/' <<<"$out" || fail dashboard admin url
-grep -q '1 of 2 containers running' <<<"$out" || fail dashboard container count
-grep -q 'stopped  supabase-auth' <<<"$out" || fail dashboard stopped container
-grep -q 'Claude     session running' <<<"$out" || fail dashboard claude session
-! grep -q 'Setup has not finished' <<<"$out" || fail dashboard setup state
-! grep -q 'public-anon' <<<"$out" || fail dashboard shows keys
-out=$(MACSERVER_STATUS=$tmp/missing.json bash "$ROOT/admin/dashboard.sh" --once)
-grep -q 'Setup has not finished' <<<"$out" || fail dashboard without status
-
 echo "lib tests passed"

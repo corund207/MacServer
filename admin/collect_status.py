@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.request
 
 SUPABASE_ENV = Path("/opt/macserver/supabase/.env")
 CONF = Path("/etc/macserver/macserver.conf")
@@ -128,8 +129,21 @@ def tailscale(status_text):
     except ValueError:
         return {"state": "unknown"}
     me = data.get("Self") or {}
+    peers = data.get("Peer") or {}
     return {"state": data.get("BackendState", "unknown"), "name": (me.get("DNSName") or "").rstrip("."),
-            "ips": me.get("TailscaleIPs") or [], "online": bool(me.get("Online"))}
+            "ips": me.get("TailscaleIPs") or [], "online": bool(me.get("Online")),
+            "peers_online": sum(1 for p in peers.values() if p.get("Online"))}
+
+
+def public_ok(domain):
+    """Does the public API route answer? None when there is no public route."""
+    if not domain:
+        return None
+    try:
+        with urllib.request.urlopen(f"https://{domain}/auth/v1/health", timeout=5) as response:
+            return response.status == 200
+    except (OSError, ValueError):
+        return False
 
 
 def collect():
@@ -162,6 +176,8 @@ def collect():
         "tailscale": tailscale(run("tailscale", "status", "--json")),
         "containers": containers(run("docker", "ps", "-a", "--format", "{{json .}}")),
         "public_domain": conf.get("PUBLIC_DOMAIN", ""),
+        "public_ok": public_ok(conf.get("PUBLIC_DOMAIN", "")),
+        "clock_synced": (run("timedatectl", "show", "-p", "NTPSynchronized", "--value") or "").strip() == "yes",
         "site_url": conf.get("SITE_URL", ""),
         "api_url": env.get("SUPABASE_PUBLIC_URL", ""),
         "public_keys": {k: env[k] for k in PUBLIC_KEYS if env.get(k)},

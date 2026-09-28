@@ -1,6 +1,7 @@
 # Large console font for the MacBook Air's Retina screen.
 ACTIVE_CONSOLES="/dev/tty[1-6]"
 CHARMAP="UTF-8"
-CODESET="guess"
+# The MacServer dashboard is drawn for, and tested against, this font (Lat15 Terminus).
+CODESET="Lat15"
 FONTFACE="Terminus"
 FONTSIZE="16x32"

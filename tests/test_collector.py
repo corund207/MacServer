@@ -46,6 +46,9 @@ class ParserTests(unittest.TestCase):
         data = {"BackendState": "Running", "Self": {"DNSName": "macserver.tail1.ts.net.",
                                                     "TailscaleIPs": ["100.64.0.1"], "Online": True}}
         self.assertEqual(collector.tailscale(json.dumps(data))["name"], "macserver.tail1.ts.net")
+        data["Peer"] = {"a": {"Online": True}, "b": {"Online": False}, "c": {"Online": True}}
+        self.assertEqual(collector.tailscale(json.dumps(data))["peers_online"], 2)
+        self.assertIsNone(collector.public_ok(""))
         self.assertEqual(collector.tailscale(None), {"state": "unknown"})
 
     def test_hwmon_and_battery(self):
