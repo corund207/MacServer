@@ -16,6 +16,12 @@ jobs:
         run: sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q console-setup-linux
       - name: Shell syntax, ShellCheck, library and Python tests
         run: bash tests/run.sh
+      - name: Supabase pin matches its tag
+        run: |
+          source installer/lib.sh
+          actual=$(git ls-remote https://github.com/supabase/supabase.git "refs/tags/$SUPABASE_REF^{}" | cut -f1)
+          echo "tag $SUPABASE_REF -> commit $actual, pinned $SUPABASE_COMMIT"
+          test "$actual" = "$SUPABASE_COMMIT"
       - name: Firewall rules parse
         run: |
           sudo apt-get install -y -q nftables

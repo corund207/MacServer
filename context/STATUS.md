@@ -15,7 +15,7 @@ installer built around the MacBook Air's T2 chip.
   journald, sysctl, battery limit unit.
 - `admin/`: root status collector plus a read-only admin page behind `tailscale serve`.
 - `gateway/`: Caddy path filter plus cloudflared (pinned by digest).
-- Pins: Supabase `self-hosted/v0.8.2` = `47111f95…`; APT key fingerprints for
+- Pins: Supabase `self-hosted/v0.8.2` = commit `564eab8a…` (was wrongly the tag object `47111f95…` until 2026-09-28); APT key fingerprints for
   t2linux, Docker and Tailscale; Caddy 2.11.4, cloudflared 2026.9.3.
 
 ### Verified
@@ -211,3 +211,17 @@ SHA-256 check). `iso/build.sh` now rebuilds the cached base when its inputs chan
 Verified: the script ran end to end on this PC (after fixing a helper that shadowed
 `wsl` and stderr handling in Windows PowerShell); it rebuilt the base with
 CODESET=Lat15. Guide anchors checked against headings.
+
+## 2026-09-28: Supabase pin fixed (found on the real Mac)
+
+On the Mac, `sudo bash install.sh` stopped at the supabase step: "does not match the
+pinned commit". `SUPABASE_COMMIT` held the annotated tag object (`47111f95…`), but
+the installer compares the clone's HEAD, which is the tagged commit (`564eab8a…`).
+The step could never pass anywhere, which is also why first boot on the Mac ended at
+a bare login instead of a finished server. No test reached the supabase step (the VM
+test stops after host). Now pinned to the commit, and CI checks with `git ls-remote`
+that the pin equals `refs/tags/$SUPABASE_REF^{}`. Checked at the tag: docker/.env.example,
+utils/generate-keys.sh and add-new-auth-keys.sh (`--update-env`), run.sh start.
+
+Not verified: the rest of the supabase step and the steps after it (admin, claude,
+public) on real hardware; they have not run end to end anywhere yet.

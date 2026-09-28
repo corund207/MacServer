@@ -15,7 +15,9 @@ STUDIO_TAILNET_PORT=8443
 
 # Pinned upstream sources. Update deliberately, with a review of the diff.
 SUPABASE_REF=self-hosted/v0.8.2
-SUPABASE_COMMIT=47111f95a43ffcc20ab288e29c48ce0b80174bd6
+# The commit the tag points to (git ls-remote ... "refs/tags/$SUPABASE_REF^{}"), not the
+# annotated tag object itself: the installer compares it with the clone's HEAD.
+SUPABASE_COMMIT=564eab8ad7840b13324f68b1bfac074ef8d51c21
 T2_KEY_FPR=9F9873A566A73E27CFF0294FE2E496114ACDBFD4
 DOCKER_KEY_FPR=9DC858229FC7DD38854AE2D88D81803C0EBFCD88
 TAILSCALE_KEY_FPR=2596A99EAAB33821893C0A79458CA832957F5868
