@@ -24,8 +24,13 @@ if [[ -n $FIRMWARE ]]; then ISO=$OUT/macserver-$VERSION-personal.iso; else ISO=$
 source "$ROOT/installer/lib.sh"
 [[ $EUID -eq 0 ]] || die "run as root"
 
-if [[ ! -f $BASE/filesystem.squashfs ]]; then
+# Rebuild the base when its inputs changed (the same inputs as CI's cache key).
+base_sum=$({ find "$ROOT/iso/base" -type f | sort | xargs cat; cat "$ROOT/host/t2.sources" "$ROOT/host/t2.pref"
+             grep "^T2_KEY_FPR=" "$ROOT/installer/lib.sh"; } | sha256sum | cut -c1-16)
+if [[ ! -f $BASE/filesystem.squashfs || $(cat "$BASE/inputs.sum" 2>/dev/null) != "$base_sum" ]]; then
+  rm -rf "$BASE"
   bash "$ROOT/iso/base/build-base.sh" "$BASE"
+  echo "$base_sum" > "$BASE/inputs.sum"
 fi
 
 head1 "Image tools"

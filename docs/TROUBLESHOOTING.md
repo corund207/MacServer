@@ -4,7 +4,31 @@ Start with `sudo macserver doctor` and `sudo ./install.sh --status`. Any install
 step can be repeated with `sudo ./install.sh --redo STEP`.
 
 **The Mac will not boot the USB stick.** Set Startup Security Utility to *No
-Security* and allow external boot media (README step 1), then hold ⌥ Option at power on.
+Security* and allow external boot media ([guide, part 4](GUIDE.md#4-let-the-mac-start-from-usb-once)), then hold ⌥ Option at power on.
+
+**The USB installer says "not connected" although Wi-Fi shows Deactivate.** Read the
+reason under "No Internet connection yet". The installer sets the clock from the
+network by itself (NTP by IP address, then a web server's Date header); if the
+network blocks both, the reason mentions a certificate or a WRONG clock: choose
+**Set the date and time by hand**. The log is `/tmp/macserver-setup.log` (menu:
+Open a shell).
+
+**The screen is black.** Press Shift. After a restart the screen can stay dark at
+the disk passphrase prompt: type the passphrase and press Enter.
+
+**The dashboard shows "Setup has not finished".** Log in (Ctrl + Option + F2) and
+run `sudo /opt/macserver-src/install.sh`; it continues where it stopped. The
+first-boot log is `/var/log/macserver-firstboot.log`.
+
+**The dashboard is not on the screen (a login prompt instead).** Run
+`sudo ./install.sh --redo host` from a current MacServer checkout (see the
+[guide, part 11](GUIDE.md#11-update-macserver-on-an-installed-mac)), then log out.
+The dashboard itself: `systemctl status getty@tty1`, and `macserver dashboard` to
+see errors in a terminal.
+
+**Start Claude session does nothing, or asks to sign in.** Sign in once as your user:
+`claude`, then `claude remote-control` (answer y, Ctrl+C). Details:
+`journalctl -u macserver-claude -n 50`.
 
 **The built-in keyboard does not work at the disk passphrase prompt.** It works only
 after the `t2` step and reboot, because the step adds the T2 keyboard driver (`t2bce_vhci`) to the boot image.

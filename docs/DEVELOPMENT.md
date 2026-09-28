@@ -44,3 +44,22 @@ This downloads macOS Sonoma Recovery from Apple, extracts `/usr/share/firmware`,
 renames it with t2linux's renamer. The result is `build/macserver-local-personal.iso`.
 It loads the firmware at startup and opens the Wi-Fi picker straight away. Never
 share or publish it; CI never builds one (`tests/test_repo.py` checks this).
+
+`iso\make-personal-usb.ps1` wraps both commands for Windows and copies the result to
+`Downloads\macserver-personal-wifi.iso` with a checksum check. `iso/build.sh`
+rebuilds the cached base whenever its inputs change (`build/base/inputs.sum`, the same
+inputs as CI's cache key).
+
+## Dashboard previews
+
+The Mac's screen dashboard (`admin/tui.py`) can be drawn without the Mac:
+
+```sh
+python3 tests/tui_preview.py dashboard.png healthy        # or: setup, trouble
+python3 tests/tui_preview.py small.png healthy 100 30     # other screen sizes
+```
+
+It renders sample data with the Mac's console font (Lat15-Terminus 16x32, from
+`console-setup-linux`) and the 16 console colours, so the PNG shows what the Retina
+screen will show. `docs/images/dashboard.png` comes from it. Only characters in
+`tui.GLYPHS` may be drawn; `tests/test_dashboard.py` checks them against the font.

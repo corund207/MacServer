@@ -1,7 +1,7 @@
 # Manual install
 
 Use this path if you would rather install Debian 13 yourself instead of using the
-MacServer USB image. Do README step 1 (Startup Security Utility) first. You need a
+MacServer USB image. Do [part 4 of the guide](GUIDE.md#4-let-the-mac-start-from-usb-once) (Startup Security Utility) first. You need a
 **USB keyboard** (the built-in one works only once the T2 kernel is installed) and a
 cable or phone connection (see [NETWORK.md](NETWORK.md)). Use the Debian 13 `amd64`
 netinst image, or DVD-1 for an offline install.

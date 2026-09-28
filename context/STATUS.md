@@ -192,3 +192,22 @@ redrawing and ignored Ctrl+C, Ctrl+Z, q and Ctrl+D.
 
 Not verified: on the Mac's physical console (real colours/brightness of the Retina
 panel), and hwmon names/Wi-Fi signal on the MacBook Air itself.
+
+## 2026-09-28: one simple guide; one-command personal USB image
+
+`docs/GUIDE.md` is now the single step-by-step path, in plain language: Tailscale,
+make the USB stick, Startup Security, install (Wi-Fi picker, clock, questions,
+ERASE), first start (passphrase, QR code, the dashboard explained), admin page and
+Studio, connecting an app (URL + publishable key, public route, RLS), Claude,
+everyday commands, updating an installed Mac, and a problem table. README is a
+short front page with the dashboard screenshot. TROUBLESHOOTING gains the
+"not connected"/clock, black screen, setup-not-finished, missing dashboard and
+Claude cases. Note: no release is published, so the guide builds the personal image.
+
+`iso\make-personal-usb.ps1` builds the personal image from Windows in one command
+(WSL check, rsync, Apple Wi-Fi firmware once, image, copy to Downloads with a
+SHA-256 check). `iso/build.sh` now rebuilds the cached base when its inputs change.
+
+Verified: the script ran end to end on this PC (after fixing a helper that shadowed
+`wsl` and stderr handling in Windows PowerShell); it rebuilt the base with
+CODESET=Lat15. Guide anchors checked against headings.
