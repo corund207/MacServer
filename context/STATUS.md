@@ -123,3 +123,21 @@ account into the kiosk dashboard on a pseudo-terminal.
 
 Not verified: the dashboard on the Mac's physical tty1 (font, layout at 16x32), and
 VT switching with the Mac keyboard's Ctrl + Option + F2.
+
+## 2026-09-28: Claude Code on the server, with a MacServer skill
+
+New install step `claude` (after `admin`): downloads the native Claude Code binary
+(`@anthropic-ai/claude-code-linux-x64` 2.1.284 from the npm registry), refuses it
+unless the tarball's SHA-512 matches the pin in `installer/lib.sh`, installs it to
+`/usr/local/lib/claude-code/<version>` with `/usr/local/bin/claude`, and turns the
+self-updater off (`DISABLE_AUTOUPDATER=1` in `/etc/environment`). It installs the
+`macserver` skill (`host/claude/SKILL.md`) to the owner's `~/.claude/skills/` and a
+`~/macserver-workspace` with a CLAUDE.md. The USB installer now records
+`ADMIN_USER` in macserver.conf; `admin_user` falls back to SUDO_USER or the sudo group.
+
+Verified in WSL (isolated mount namespace): download + checksum + install,
+idempotent re-run, skill owned by the owner, and a wrong checksum refuses to install;
+the binary reports 2.1.284. Repo test checks the pin format and the checksum call.
+
+Not verified: signing in on the Mac (needs the owner's claude.ai account), and
+that Claude Code picks up the skill there.

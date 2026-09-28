@@ -79,6 +79,9 @@ From any device on your tailnet:
 - **Supabase Studio:** `https://macserver.<your-tailnet>.ts.net:8443/`. Get the login
   with `sudo macserver keys`.
 - **Shell:** `ssh <user>@macserver` (Tailscale SSH, no keys to copy).
+- **Claude Code:** installed on the server with a `macserver` skill that knows what the
+  Mac runs and its rules. Sign in once (`ssh <user>@macserver`, then `claude`), then
+  ask it to help connect your apps and backends. Its version is pinned by MacServer.
 
 Connect an app:
 

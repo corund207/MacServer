@@ -533,6 +533,7 @@ EOF
   install -d -m 0755 "$TARGET/etc/macserver"
   {
     echo "HOSTNAME=$HOSTNAME_NEW"
+    echo "ADMIN_USER=$USERNAME_NEW"
     if [[ ${A[ALLOW_NON_T2]:-no} == yes ]]; then echo "ALLOW_NON_T2=1"; fi
     echo "INSTALLED_BY=usb-installer"
   } > "$TARGET/etc/macserver/macserver.conf"

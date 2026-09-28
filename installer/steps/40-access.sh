@@ -43,6 +43,39 @@ step_admin() {
   fi
 }
 
+step_claude() {
+  local user home dir=/usr/local/lib/claude-code/$CLAUDE_CODE_VERSION tgz
+  user=$(admin_user) || { warn "no owner account found; skipping Claude Code"; return 0; }
+  home=$(getent passwd "$user" | cut -d: -f6)
+  if [[ ! -x $dir/claude ]]; then
+    say "Downloading Claude Code $CLAUDE_CODE_VERSION (about 70 MB)..."
+    tgz=$(mktemp)
+    curl -fsSL --retry 3 -o "$tgz" \
+      "https://registry.npmjs.org/@anthropic-ai/claude-code-linux-x64/-/claude-code-linux-x64-$CLAUDE_CODE_VERSION.tgz" ||
+      { rm -f "$tgz"; die "could not download Claude Code"; }
+    if ! echo "$CLAUDE_CODE_SHA512  $tgz" | sha512sum -c --quiet >/dev/null 2>&1; then
+      rm -f "$tgz"; die "the Claude Code download does not match its pinned SHA-512; not installing it"
+    fi
+    install -d -m 0755 "$dir"
+    tar -xzf "$tgz" -C "$dir" --strip-components=1 --no-same-owner package/claude
+    rm -f "$tgz"
+    chmod 0755 "$dir/claude"
+  fi
+  install -d -m 0755 /usr/local/bin
+  ln -sfn "$dir/claude" /usr/local/bin/claude
+  # Updates come with MacServer (a new pinned version), not from the self-updater.
+  grep -qx 'DISABLE_AUTOUPDATER=1' /etc/environment 2>/dev/null || echo 'DISABLE_AUTOUPDATER=1' >> /etc/environment
+
+  # The macserver skill for every session of the owner, and a workspace to start in.
+  install -d -m 0755 -o "$user" -g "$user" "$home/.claude" "$home/.claude/skills" \
+    "$home/.claude/skills/macserver" "$home/macserver-workspace"
+  install -m 0644 -o "$user" -g "$user" "$SRC/host/claude/SKILL.md" "$home/.claude/skills/macserver/SKILL.md"
+  [[ -f $home/macserver-workspace/CLAUDE.md ]] ||
+    install -m 0644 -o "$user" -g "$user" "$SRC/host/claude/CLAUDE.md" "$home/macserver-workspace/CLAUDE.md"
+  ok "Claude Code $(/usr/local/bin/claude --version 2>/dev/null | cut -d' ' -f1) installed with the macserver skill"
+  say "Sign in once as $user: run 'claude' and follow the login link (needs a claude.ai plan)."
+}
+
 step_public() {
   cat <<'EOF'
 Your apps on the Internet can reach Supabase through a Cloudflare Tunnel. The Mac
@@ -107,6 +140,7 @@ ${C_B}MacServer is running.${C_0}
   Private API URL   https://$name:$STUDIO_TAILNET_PORT
   Public API URL    ${domain:+https://$domain}${domain:-not enabled (sudo macserver public setup)}
   Shell access      ssh $(logname 2>/dev/null || echo USER)@${name%%.*}          (Tailscale SSH)
+  Claude Code       ssh in, then: cd ~/macserver-workspace && claude   (sign in once)
 
   App keys          sudo macserver keys
   Health            sudo macserver status

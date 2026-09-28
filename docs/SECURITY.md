@@ -52,6 +52,9 @@ Health data comes from a root collector that writes a JSON file containing no se
 - Supabase is cloned at tag `self-hosted/v0.8.2`, and the installer refuses it unless
   the tag resolves to the pinned commit.
 - Gateway images are pinned by version and digest.
+- Claude Code is the native linux-x64 binary from the npm registry
+  (`@anthropic-ai/claude-code-linux-x64`), pinned by version and the SHA-512 of its
+  tarball (`installer/lib.sh`). No Node.js, no install script; its self-updater is off.
 
 ## Secrets
 

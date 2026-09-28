@@ -29,6 +29,14 @@ class RepoTests(unittest.TestCase):
         for image in images:
             self.assertRegex(image, r":[\w.-]+@sha256:[0-9a-f]{64}$")
 
+    def test_claude_code_pinned_and_checked(self):
+        lib = (ROOT / "installer/lib.sh").read_text()
+        self.assertRegex(lib, r"(?m)^CLAUDE_CODE_VERSION=\d+\.\d+\.\d+$")
+        self.assertRegex(lib, r"(?m)^CLAUDE_CODE_SHA512=[0-9a-f]{128}$")
+        step = (ROOT / "installer/steps/40-access.sh").read_text()
+        self.assertIn('echo "$CLAUDE_CODE_SHA512  $tgz" | sha512sum -c', step)
+        self.assertNotRegex(step, r"curl[^\n]*\|\s*(ba)?sh")
+
     def test_no_host_ports_in_gateway(self):
         self.assertNotIn("ports:", (ROOT / "gateway/compose.yml").read_text())
 

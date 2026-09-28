@@ -19,6 +19,10 @@ SUPABASE_COMMIT=47111f95a43ffcc20ab288e29c48ce0b80174bd6
 T2_KEY_FPR=9F9873A566A73E27CFF0294FE2E496114ACDBFD4
 DOCKER_KEY_FPR=9DC858229FC7DD38854AE2D88D81803C0EBFCD88
 TAILSCALE_KEY_FPR=2596A99EAAB33821893C0A79458CA832957F5868
+# Claude Code native binary for linux-x64 from the npm registry, pinned by version
+# and the SHA-512 of the package tarball (its npm "integrity").
+CLAUDE_CODE_VERSION=2.1.284
+CLAUDE_CODE_SHA512=8638cf80de2ef03be7cd9a960d89d4e71c5093292e52b914a1579ebad54b5e3ae1c78a9e44f9b0819ebd045007995e3614145d891c1b2db88313d9e441d004f2
 FALLBACK_DNS=(9.9.9.9 149.112.112.112)
 
 if [[ -t 1 ]]; then
@@ -253,3 +257,13 @@ sync_clock() {
 
 # https_works: can this machine fetch from Debian over HTTPS (DNS + route + clock)?
 https_works() { timeout 15 curl -fsI https://deb.debian.org/debian/dists/trixie/Release >/dev/null 2>&1; }
+
+# admin_user: the owner's login account (set by the USB installer, else the sudo user,
+# else the first member of the sudo group).
+admin_user() {
+  local u
+  u=$(conf_get ADMIN_USER "")
+  [[ -z $u && -n ${SUDO_USER:-} && $SUDO_USER != root ]] && u=$SUDO_USER
+  [[ -z $u ]] && u=$(getent group sudo | cut -d: -f4 | cut -d, -f1)
+  [[ -n $u ]] && id "$u" >/dev/null 2>&1 && echo "$u"
+}
