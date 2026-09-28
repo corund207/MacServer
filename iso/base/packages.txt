@@ -38,6 +38,8 @@ iproute2
 iputils-ping
 procps
 util-linux
+util-linux-extra
+tzdata
 tar
 xz-utils
 zstd

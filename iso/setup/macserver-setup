@@ -126,6 +126,67 @@ needs an Internet connection (cable, phone tethering or Wi-Fi)." 16
 
 online() { can_resolve && timeout 15 curl -fsI "$MIRROR/dists/$SUITE/Release" >/dev/null 2>&1; }
 
+# The live system has no time sync, and a Mac whose battery ran flat can wake with
+# its clock years off. sync_clock (installer/lib.sh) fixes it from the network.
+fix_clock() {
+  local before
+  before=$(date +%s)
+  echo "Checking the clock..."
+  if sync_clock; then
+    if (( $(date +%s) - before > 120 || before - $(date +%s) > 120 )); then
+      log "clock was wrong ($(date -u -d "@$before" '+%F %T') UTC); set to $(date -u '+%F %T') UTC"
+      echo "Clock was wrong ($(date -u -d "@$before" '+%F %H:%M') UTC); set from the network to $(date -u '+%F %H:%M') UTC"
+    fi
+    return 0
+  fi
+  log "could not get the time from the network (clock: $(date -u '+%F %T') UTC)"
+  return 1
+}
+
+# clock_suspect: the clock is before this installer was made, so it must be wrong.
+clock_suspect() { (( $(date +%s) < 1767225600 )); }   # 2026-01-01
+
+# net_problem: short text saying why the connection check fails.
+net_problem() {
+  local err clock
+  clock="Clock: $(date -u '+%Y-%m-%d %H:%M') UTC"
+  if clock_suspect; then clock+=" (WRONG: fix it with 'Set the date and time by hand')"; fi
+  if ! can_resolve; then
+    if can_reach_ip; then echo "Name lookups (DNS) fail, although the Internet is reachable."
+    else echo "No route to the Internet (not connected, or the network blocks this Mac)."; fi
+    echo "$clock"
+    return
+  fi
+  err=$(timeout 15 curl -sS -o /dev/null "$MIRROR/dists/$SUITE/Release" 2>&1 | head -1)
+  err=${err#curl: }
+  if [[ $err == *certificate* || $err == *SSL* ]]; then
+    echo "Connected, but the secure (HTTPS) check fails: certificate error."
+    echo "This almost always means the clock is wrong."
+  else
+    echo "Connected, but downloading from Debian fails: ${err:-unknown error}"
+  fi
+  echo "$clock"
+}
+
+# set_clock_by_hand: ask for the local date/time and time zone, then set both clocks.
+set_clock_by_hand() {
+  local when zone t
+  when=$(whiptail --title "$TITLE" --inputbox "The date and time where you are now (YYYY-MM-DD HH:MM):" 10 78 \
+    "$(date '+%Y-%m-%d %H:%M')" 3>&1 1>&2 2>&3) || return 0
+  zone=$(whiptail --title "$TITLE" --inputbox "Your time zone (for example Europe/Berlin or America/New_York; UTC if unsure):" 10 78 \
+    UTC 3>&1 1>&2 2>&3) || return 0
+  if [[ $zone != UTC && ! -f /usr/share/zoneinfo/$zone ]]; then
+    whiptail --title "$TITLE" --msgbox "Unknown time zone '$zone'." 8 60; return 0
+  fi
+  if [[ ! $when =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{2}:[0-9]{2}$ ]] ||
+     ! t=$(TZ=$zone date -d "$when" +%s 2>/dev/null); then
+    whiptail --title "$TITLE" --msgbox "'$when' is not a date and time like 2026-09-27 14:30." 8 70; return 0
+  fi
+  set_clock "$t"
+  log "clock set by hand to $(date -u '+%F %T') UTC ($when $zone)"
+  whiptail --title "$TITLE" --msgbox "Clock set to $(TZ=$zone date '+%Y-%m-%d %H:%M %Z') ($(date -u '+%H:%M') UTC)." 8 70
+}
+
 use_fixed_dns() {
   install -d /etc/NetworkManager/conf.d
   printf '[global-dns-domain-*]\nservers=%s\n' "$(IFS=,; echo "${FALLBACK_DNS[*]}")" > /etc/NetworkManager/conf.d/60-macserver-dns.conf
@@ -174,30 +235,39 @@ load_bundled_firmware() {
 setup_network() {
   local choice offered_wifi=0
   systemctl start NetworkManager 2>/dev/null || true
+  local problem=''
   while :; do
     echo "Checking the Internet connection..."
-    for _ in $(seq 20); do online && break; sleep 1; done
+    # Give a new link up to 20 seconds to get an address and DNS.
+    for _ in $(seq 10); do can_resolve || can_reach_ip && break; sleep 2; done
+    # Fix the clock first: with a wrong clock every HTTPS check fails.
+    if can_resolve || can_reach_ip; then fix_clock || true; fi
     if online; then log "online"; return 0; fi
-    if can_reach_ip; then
+    if ! can_resolve && can_reach_ip; then
       use_fixed_dns
-      if online; then return 0; fi
+      fix_clock || true
+      if online; then log "online with fixed DNS"; return 0; fi
     fi
-    (( AUTO )) && fail "no Internet connection"
+    problem=$(net_problem)
+    log "offline: $problem"
+    (( AUTO )) && fail "no Internet connection: $problem"
     # With firmware present, go straight to the Wi-Fi picker the first time.
-    if (( ! offered_wifi )) && wifi_firmware_present; then
+    if (( ! offered_wifi )) && wifi_firmware_present && ! can_resolve; then
       offered_wifi=1
       whiptail --title "$TITLE" --msgbox "Next, pick your Wi-Fi network and type its password.
 
-(Arrow keys to move, Enter to choose, then 'Back' to return here.)" 11 70
+(Arrow keys to move, Enter to choose. When it shows 'Deactivate' next to your
+network, you are connected: choose Quit to continue.)" 12 78
       nmtui-connect || true
       continue
     fi
     choice=$(whiptail --title "$TITLE" --menu "No Internet connection yet.
+$problem
 
-Plug in a USB-C Ethernet adapter, or connect a phone by USB with tethering on
-(iPhone: Personal Hotspot on, unlock it, tap Trust). Or use Wi-Fi." 20 78 5 \
+Use Wi-Fi, or plug in a USB-C Ethernet adapter or a phone with USB tethering." 22 78 6 \
       retry "Check again" \
       wifi "Connect to Wi-Fi" \
+      clock "Set the date and time by hand" \
       usbfw "Load Wi-Fi firmware from a USB drive (firmware.tar)" \
       iphone "Pair an iPhone (if tethering does not start)" \
       shell "Open a shell (type exit to come back)" 3>&1 1>&2 2>&3) || continue
@@ -216,6 +286,7 @@ it must come from Apple:
       usbfw)
         if firmware_from_usb; then reload_wifi; nmtui-connect || true
         else whiptail --title "$TITLE" --msgbox "No firmware.tar found on any drive." 8 60; fi ;;
+      clock) set_clock_by_hand ;;
       iphone) idevicepair pair || true; sleep 3 ;;
       shell) clear; bash -l || true ;;
       *) ;;
@@ -358,6 +429,7 @@ fetch_wifi_firmware() {
 }
 
 install_debian() {
+  fix_clock || true
   progress 10 "Downloading and installing Debian 13 (the slow part: 5-15 minutes)"
   debootstrap --arch=amd64 --include=ca-certificates,locales,gnupg "$SUITE" "$TARGET" "$MIRROR" >> "$LOG" 2>&1
 
@@ -427,7 +499,7 @@ EOF
   in_target apt-get update >> "$LOG" 2>&1
   in_target apt-get install -y -q --no-install-recommends \
     linux-t2-lts grub-efi-amd64 initramfs-tools cryptsetup cryptsetup-initramfs \
-    systemd-sysv systemd-timesyncd sudo network-manager wpasupplicant iw \
+    systemd-sysv systemd-timesyncd util-linux-extra sudo network-manager wpasupplicant iw \
     console-setup keyboard-configuration kbd zram-tools \
     curl jq git python3 nftables unattended-upgrades apt-listchanges pciutils usbutils \
     lm-sensors smartmontools intel-microcode firmware-realtek firmware-linux-free \
@@ -468,7 +540,7 @@ EOF
     (umask 077; printf '%s' "$TS_KEY" > "$TARGET/etc/macserver/tailscale-authkey")
   fi
   install -m 0644 "$SRC/host/macserver-firstboot.service" "$TARGET/etc/systemd/system/macserver-firstboot.service"
-  in_target systemctl enable macserver-firstboot.service NetworkManager >> "$LOG" 2>&1
+  in_target systemctl enable macserver-firstboot.service NetworkManager systemd-timesyncd >> "$LOG" 2>&1
 
   progress 88 "Installing the boot loader"
   {

@@ -194,3 +194,62 @@ add_initrd_modules() {
   touch "$file"
   for m in "${T2_INITRD_MODULES[@]}"; do grep -qx "$m" "$file" || echo "$m" >> "$file"; done
 }
+
+# --- clock --------------------------------------------------------------------------
+# A Mac whose battery ran flat can wake with its clock years off, and then every
+# HTTPS certificate looks invalid. These helpers get the time without HTTPS and,
+# for the first sources, without DNS. (Package signatures are still verified by
+# apt/debootstrap; the clock only has to be close enough for TLS.)
+
+# sntp_time IP: Unix time from an NTP server over UDP 123 (no DNS needed).
+sntp_time() {
+  timeout 8 python3 - "$1" <<'PY'
+import socket, struct, sys
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+s.settimeout(4)
+s.sendto(b"\x1b" + 47 * b"\0", (sys.argv[1], 123))
+data = s.recv(48)
+if len(data) < 48 or data[0] & 0x7 != 4 or data[1] == 0:   # server mode, synchronised
+    sys.exit(1)
+print(struct.unpack("!I", data[40:44])[0] - 2208988800)
+PY
+}
+
+# http_time URL: Unix time from a web server's Date header (plain HTTP).
+http_time() {
+  local stamp
+  stamp=$(curl -sI --max-time 8 "$1" 2>/dev/null | tr -d '\r' | sed -n 's/^[Dd]ate: //p' | head -1)
+  [[ -n $stamp ]] && date -d "$stamp" +%s 2>/dev/null
+}
+
+# network_time: Unix time from the first source that answers.
+NTP_IPS=(162.159.200.1 162.159.200.123 216.239.35.0 216.239.35.4)   # time.cloudflare.com, time.google.com
+TIME_URLS=(http://deb.debian.org/ http://www.google.com/ http://www.cloudflare.com/)
+network_time() {
+  local src t
+  for src in "${NTP_IPS[@]}"; do
+    t=$(sntp_time "$src" 2>/dev/null) && (( t > 1735689600 )) && { echo "$t"; return 0; }
+  done
+  for src in "${TIME_URLS[@]}"; do
+    t=$(http_time "$src") && (( t > 1735689600 )) && { echo "$t"; return 0; }
+  done
+  return 1
+}
+
+# set_clock UNIX_TIME: set the system clock and the Mac's hardware clock (UTC).
+set_clock() {
+  date -s "@$1" >/dev/null
+  if command -v hwclock >/dev/null; then hwclock --systohc --utc 2>/dev/null || true; fi
+}
+
+# sync_clock: fix the clock from the network if it is more than 2 minutes off.
+sync_clock() {
+  local t now
+  t=$(network_time) || return 1
+  now=$(date +%s)
+  if (( t - now > 120 || now - t > 120 )); then set_clock "$t"; fi
+  return 0
+}
+
+# https_works: can this machine fetch from Debian over HTTPS (DNS + route + clock)?
+https_works() { timeout 15 curl -fsI https://deb.debian.org/debian/dists/trixie/Release >/dev/null 2>&1; }

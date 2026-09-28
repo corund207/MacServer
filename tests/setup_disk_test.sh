@@ -88,6 +88,8 @@ check_that "hostname set" grep -qx ci-macserver "$R/etc/hostname"
 check_that "time zone set" test "$(readlink "$R/etc/localtime")" = /usr/share/zoneinfo/Europe/London
 check_that "first-boot setup enabled" test -L "$R/etc/systemd/system/multi-user.target.wants/macserver-firstboot.service"
 check_that "NetworkManager enabled" test -L "$R/etc/systemd/system/multi-user.target.wants/NetworkManager.service"
+check_that "network time sync enabled" test -L "$R/etc/systemd/system/sysinit.target.wants/systemd-timesyncd.service"
+check_that "hwclock installed" test -x "$R/usr/sbin/hwclock"
 check_that "MacServer sources copied" test -x "$R/opt/macserver-src/install.sh"
 check_that "MacServer config written" grep -q '^HOSTNAME=ci-macserver' "$R/etc/macserver/macserver.conf"
 check_that "t2linux repo pinned to T2 packages" test -f "$R/etc/apt/preferences.d/t2.pref"

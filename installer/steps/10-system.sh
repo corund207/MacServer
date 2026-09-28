@@ -56,8 +56,18 @@ fix_dns() {
   fi
 }
 
+# check_https: DNS works; make sure HTTPS does too. A wrong clock (a Mac whose battery
+# ran flat) makes every certificate look invalid, so set the clock and try again.
+check_https() {
+  https_works && return 0
+  say "HTTPS fails (clock: $(date -u '+%F %T') UTC); setting the clock from the network..."
+  sync_clock || true
+  https_works || die "DNS works but HTTPS downloads fail (clock: $(date -u '+%F %T') UTC). Check the date and the network (see docs/NETWORK.md)."
+  ok "clock set from the network: $(date -u '+%F %T') UTC"
+}
+
 step_network() {
-  if can_resolve; then ok "Internet and DNS work"; return 0; fi
+  if can_resolve; then check_https; ok "Internet and DNS work"; return 0; fi
   if ! can_reach_ip; then
     warn "no Internet connection."
     say "Connect a USB-C Ethernet adapter, an Android phone (USB tethering) or an iPhone"
@@ -69,6 +79,7 @@ step_network() {
   fix_dns || return 1
   can_resolve || die "DNS still fails after the fix. See docs/NETWORK.md."
   ok "DNS fixed"
+  check_https
 }
 
 step_base() {

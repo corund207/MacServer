@@ -71,3 +71,34 @@ built-in keyboard would not have worked at the passphrase prompt).
 Still needs the real MacBook Air: USB boot with Startup Security set, t2bce keyboard at
 the LUKS prompt, Wi-Fi firmware download via get-apple-firmware, iPhone tethering in
 the live system, t2fanrd, battery threshold, first-boot Tailscale QR flow.
+
+## 2026-09-27: wrong clock on the Mac breaks the installer's Internet check
+
+Found on the real MacBook Air (personal Wi-Fi image): the Wi-Fi firmware loads and
+`nmtui-connect` connects, but the installer said "not connected" because the clock
+was wrong (flat battery), so every HTTPS certificate looked invalid. Setting it by
+hand from a `curl -sI` Date header failed, most likely because the header ends in a
+carriage return that `date -s` rejects.
+
+Fixed:
+- `installer/lib.sh`: `sync_clock` gets the time over SNTP from Cloudflare/Google
+  NTP by IP (no DNS, no TLS), then from plain-HTTP Date headers; it also writes the
+  Mac's hardware clock (`hwclock --systohc --utc`). `https_works` checks Debian over HTTPS.
+- `macserver-setup`: sets the clock as soon as there is any route and again before
+  debootstrap; says on screen when it corrected the clock; the "not connected"
+  menu shows the clock and names certificate errors; new menu item "Set the date
+  and time by hand" (local time + time zone). Live image gains `util-linux-extra`
+  (hwclock) and `tzdata`.
+- Installed system: `util-linux-extra` installed, `systemd-timesyncd` enabled
+  explicitly; first-boot `step_network` sets the clock and retries when DNS works
+  but HTTPS does not.
+
+Verified locally in WSL2: `tests/run.sh` + ShellCheck 0.11 clean; disk stage (24
+checks, now including timesyncd enabled and hwclock present); personal image
+rebuilt with a fresh base; FULL_UEFI=1 VM test with the VM clock at 2019-06-01.
+Observed: systemd moves a pre-build clock up to its build date (2026-04-13), so the
+live system woke about five months behind; the installer printed "Clock was wrong
+... set from the network" and the install finished. The VM test now requires that line.
+
+Not verified yet: the new image on the real Mac (does its Wi-Fi network pass NTP on
+UDP 123 or plain HTTP?), and the manual clock menu (only exercised by hand-reading).

@@ -2,7 +2,9 @@
 # End-to-end test of the USB installer image in QEMU, failing fast with the console
 # streamed into the log:
 #  1. boot the image with a hands-off answers drive; it installs an encrypted
-#     Debian 13 + T2 kernel + MacServer on a virtual NVMe disk and powers off;
+#     Debian 13 + T2 kernel + MacServer on a virtual NVMe disk and powers off
+#     (the VM clock starts in 2019, like a Mac whose battery ran flat; systemd moves
+#     it up to its build date, and the installer must set it from the network);
 #  2. boot the installed disk under UEFI, type the passphrase on the serial console
 #     and wait for MacServer's first-boot setup to pass preflight and network.
 #
@@ -66,14 +68,14 @@ echo "== Phase 1: hands-off install from the image"
 # reserves index 0 for itself and needs none.
 # shellcheck disable=SC2054  # commas belong to the QEMU options
 if [[ ${FULL_UEFI:-0} == 1 ]]; then
-  qpid=$(vm install \
+  qpid=$(vm install -rtc base=2019-06-01 \
     -drive if=pflash,format=raw,readonly=on,file="$CODE" -drive if=pflash,format=raw,file="$W/vars.fd" \
     -drive file="$ISO",media=cdrom,if=none,id=cd -device ide-cd,drive=cd,bootindex=0 \
     -drive file="$W/answers.img",format=raw,if=none,id=ans -device virtio-blk-pci,drive=ans,bootindex=2)
 else
   xorriso -osirrox on -indev "$ISO" -extract /live/vmlinuz "$W/vmlinuz" -extract /live/initrd.img "$W/initrd.img" 2>&1 | tail -3
   [[ -s $W/vmlinuz && -s $W/initrd.img ]] || { echo "could not extract the kernel from the image"; exit 1; }
-  qpid=$(vm install -kernel "$W/vmlinuz" -initrd "$W/initrd.img" \
+  qpid=$(vm install -rtc base=2019-06-01 -kernel "$W/vmlinuz" -initrd "$W/initrd.img" \
     -append "boot=live $T2OPTS console=ttyS0,115200 macserver.auto=1" \
     -drive file="$ISO",media=cdrom,if=none,id=cd -device ide-cd,drive=cd \
     -drive file="$W/answers.img",format=raw,if=none,id=ans -device virtio-blk-pci,drive=ans)
@@ -86,6 +88,7 @@ fi
 watch_console install.log \
   "Hands-off install@300" \
   "${fw_step[@]}" \
+  "Clock was wrong (@300" \
   "[ 10%]@600" \
   "[ 55%]@1200" \
   "MACSERVER-SETUP-DONE@1200"
