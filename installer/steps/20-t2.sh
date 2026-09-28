@@ -74,8 +74,13 @@ install_console() {
   fi
   systemctl daemon-reload
   # During first boot the dashboard starts when setup ends; otherwise start it now.
+  # Never restart tty1 under someone logged in there: that would end their session
+  # (and this installer, if it runs there). getty restarts by itself after they log out.
   # (--no-block: getty@tty1 is ordered after first-boot setup, which may be us.)
-  if [[ $(systemctl show -p ActiveState --value macserver-firstboot.service 2>/dev/null) != activating ]]; then
+  local tty1_user; tty1_user=$(who | awk '$2 == "tty1" { print $1; exit }')
+  if [[ -n $tty1_user && $tty1_user != macserver-console ]]; then
+    say "The dashboard takes over the Mac's screen when $tty1_user logs out there (type: exit)."
+  elif [[ $(systemctl show -p ActiveState --value macserver-firstboot.service 2>/dev/null) != activating ]]; then
     systemctl restart --no-block getty@tty1.service 2>/dev/null || true
   fi
   ok "the screen shows the MacServer dashboard and stays on (log in: Ctrl + Option + F2)"
