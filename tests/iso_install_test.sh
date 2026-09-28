@@ -6,7 +6,8 @@
 #     (the VM clock starts in 2019, like a Mac whose battery ran flat; systemd moves
 #     it up to its build date, and the installer must set it from the network);
 #  2. boot the installed disk under UEFI, type the passphrase on the serial console
-#     and wait for MacServer's first-boot setup to pass preflight and network.
+#     and wait for MacServer's first-boot setup to pass preflight, network, base
+#     and host (which puts the always-on dashboard on the screen).
 #
 #   tests/iso_install_test.sh IMAGE.iso            quick: phase 1 boots the kernel directly
 #   FULL_UEFI=1 tests/iso_install_test.sh IMAGE.iso phase 1 boots the image's own UEFI menu
@@ -102,7 +103,8 @@ watch_console boot.log \
   "Please unlock disk=>$PASS@300" \
   "MacServer installer@300" \
   "Debian 13 x86_64, UEFI@120" \
-  "Internet and DNS work@180"
+  "Internet and DNS work@180" \
+  "the screen shows the MacServer dashboard@900"
 rc=$?
 set -e
 kill "$qpid" 2>/dev/null || true

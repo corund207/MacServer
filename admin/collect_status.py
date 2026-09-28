@@ -114,6 +114,7 @@ def collect():
     upgradable = run("apt-get", "-s", "-o", "Debug::NoLocking=1", "upgrade", timeout=60)
     return {
         "generated_at": int(time.time()),
+        "setup_done": Path("/var/lib/macserver/firstboot.done").exists(),
         "host": {
             "model": read("/sys/class/dmi/id/product_name", "unknown"),
             "kernel": os.uname().release,

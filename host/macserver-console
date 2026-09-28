@@ -1,0 +1,3 @@
+#!/bin/sh
+# Login shell of the macserver-console account (tty1): the always-on dashboard.
+exec /usr/local/lib/macserver/dashboard --kiosk

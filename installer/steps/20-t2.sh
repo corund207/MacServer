@@ -56,6 +56,29 @@ step_host() {
   systemctl enable macserver-battery.service >/dev/null
   systemctl restart systemd-journald
   ok "logs capped at 500 MB, clock sync on, battery limit service installed"
+  install_console
+}
+
+# install_console: the Mac's screen always shows the dashboard (tty1) and never blanks.
+install_console() {
+  install_tools
+  id macserver-console >/dev/null 2>&1 ||
+    useradd --system --create-home --home-dir /var/lib/macserver-console \
+      --shell /usr/local/lib/macserver/console macserver-console
+  touch /var/lib/macserver-console/.hushlogin
+  put_file "$SRC/host/getty-dashboard.conf" /etc/systemd/system/getty@tty1.service.d/60-macserver-dashboard.conf 0644
+  put_file "$SRC/host/profile-macserver.sh" /etc/profile.d/macserver.sh 0644
+  if [[ -d /etc/default/grub.d ]] && ! cmp -s "$SRC/host/grub-t2.cfg" /etc/default/grub.d/60-macserver-t2.cfg; then
+    put_file "$SRC/host/grub-t2.cfg" /etc/default/grub.d/60-macserver-t2.cfg 0644
+    update-grub >/dev/null 2>&1 || warn "update-grub failed; the screen may still blank after a restart"
+  fi
+  systemctl daemon-reload
+  # During first boot the dashboard starts when setup ends; otherwise start it now.
+  # (--no-block: getty@tty1 is ordered after first-boot setup, which may be us.)
+  if [[ $(systemctl show -p ActiveState --value macserver-firstboot.service 2>/dev/null) != activating ]]; then
+    systemctl restart --no-block getty@tty1.service 2>/dev/null || true
+  fi
+  ok "the screen shows the MacServer dashboard and stays on (log in: Ctrl + Option + F2)"
 }
 
 step_reboot() {

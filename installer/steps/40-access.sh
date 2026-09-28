@@ -6,6 +6,8 @@ install_tools() {
   install -m 0644 "$SRC/installer/lib.sh" /usr/local/lib/macserver/lib.sh
   install -m 0644 "$SRC/installer/steps/"*.sh -t /usr/local/lib/macserver/
   install -m 0755 "$SRC/admin/collect_status.py" /usr/local/lib/macserver/collect_status.py
+  install -m 0755 "$SRC/admin/dashboard.sh" /usr/local/lib/macserver/dashboard
+  install -m 0755 "$SRC/host/macserver-console" /usr/local/lib/macserver/console
   install -d -m 0755 /usr/local/share/macserver
   cp -a "$SRC/host" "$SRC/gateway" /usr/local/share/macserver/
   install -m 0755 "$SRC/macserver" /usr/local/sbin/macserver

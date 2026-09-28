@@ -61,7 +61,12 @@ checksum, and write the image to the stick with [balenaEtcher](https://etcher.ba
 5. Remove the stick and restart. Type the disk passphrase on the Mac's keyboard.
 6. First-boot setup runs on the screen (about 15 minutes; it downloads Supabase).
    When a **QR code** appears, scan it with your phone and sign in to Tailscale to
-   add the server to your tailnet. Setup then finishes and shows your addresses.
+   add the server to your tailnet. Setup then finishes and the screen switches to
+   the **MacServer dashboard**: health, addresses and what to do next. It stays on
+   and never blanks. To log in on the Mac itself, press **Ctrl + ⌥ Option + F2**
+   (hold fn too if the brightness changes); **Ctrl + ⌥ Option + F1** returns to the
+   dashboard. Logging in also prints the dashboard; `macserver dashboard` opens the
+   live one.
 
 Prefer to install Debian yourself? See [docs/MANUAL-INSTALL.md](docs/MANUAL-INSTALL.md).
 

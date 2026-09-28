@@ -17,6 +17,7 @@ usage() {
 Usage: sudo macserver COMMAND
 
   status            health of the Mac, Tailscale and every container
+  dashboard         full-screen live dashboard (the one on the Mac's screen)
   keys              API keys and the Studio password (secret: do not share)
   logs [SERVICE]    follow Supabase logs (e.g. auth, rest, db, storage)
   restart           restart Supabase and the public route
@@ -100,6 +101,7 @@ main() {
   local cmd=${1:-}; shift || true
   case $cmd in
     status) cmd_status ;;
+    dashboard) exec "$LIB/dashboard" ;;
     keys) need_root keys; cmd_keys ;;
     logs) need_root logs; supabase_compose logs -f --tail 100 "$@" ;;
     restart) need_root restart; (cd "$SUPABASE_DIR" && sh run.sh restart); [[ -f $GATEWAY_DIR/compose.yml ]] && gateway_compose restart; ok "restarted" ;;

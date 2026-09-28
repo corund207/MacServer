@@ -102,3 +102,24 @@ live system woke about five months behind; the installer printed "Clock was wron
 
 Not verified yet: the new image on the real Mac (does its Wi-Fi network pass NTP on
 UDP 123 or plain HTTP?), and the manual clock menu (only exercised by hand-reading).
+
+## 2026-09-28: always-on console dashboard
+
+Found on the real Mac: after install and first login the owner got a bare shell
+prompt, and the screen went black after 2 minutes (`consoleblank=120`).
+
+Now: tty1 autologins the unprivileged `macserver-console` account, whose login
+shell is `admin/dashboard.sh --kiosk` (read-only, reads `status.json`, ignores keys,
+Ctrl+C trapped). It shows setup state, health, addresses, the docs link and how to
+log in (Ctrl + Option + F2). `consoleblank=0` plus `setterm --blank 0 --powerdown 0`
+keep the screen on. Logging in prints the dashboard once (`/etc/profile.d/macserver.sh`);
+`macserver dashboard` is the live view. The status collector adds `setup_done`.
+Installed by `install_console` at the end of the `host` step.
+
+Verified: `tests/run.sh` (dashboard renders fixtures, hides keys, shows "Setup has
+not finished" without data), ShellCheck; VM test phase 2 now runs first boot through
+the host step on a real systemd boot; in WSL, the exact agetty line autologs a test
+account into the kiosk dashboard on a pseudo-terminal.
+
+Not verified: the dashboard on the Mac's physical tty1 (font, layout at 16x32), and
+VT switching with the Mac keyboard's Ctrl + Option + F2.
