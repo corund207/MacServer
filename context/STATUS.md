@@ -369,3 +369,21 @@ graphs lose the sample-to-sample spikes; the graphs and the CPU-busy/hot events 
 the smoothed values, and the raw ones are kept in `Sampler.raw`. Test: a reading
 jumping 10/90% shows a swing under 40 points around 50%, and a real jump to 100% is
 shown above 95% within 12 samples (6 s).
+
+## 2026-09-28: faster updates
+
+- The Mac checks every 2 minutes (was 15; `git ls-remote` is not rate limited and
+  the check-runs API is only asked when a new commit exists). `autoupdate` joined the
+  steps an update re-applies, so timer changes reach installed Macs; in unattended
+  mode that step keeps the owner's AUTO_UPDATE choice.
+- The updater keeps a bare copy of the repository (`/opt/macserver-src.git`, fetched
+  each check), checks fast-forward there, and requires only `checks` unless the
+  change since the running commit touches iso/, installer/, host/, install.sh or the
+  workflows (then also disk-install, image, vm-test).
+- Both workflows cancel superseded runs on the same branch.
+- Found: every installer-image run rebuilt the base (about 2 min) because cached bases
+  predated `build/base/inputs.sum` and an exact cache hit is never re-saved. The
+  cache key gained `v2`, so the next run saves a base with the file.
+Expected: dashboard/docs changes on the Mac about 2-3 minutes after a push;
+installer changes about 5-7. Verified: 13 updater checks (quick-only install while
+the VM test runs; installer change waits for it). Timings to confirm on the next runs.

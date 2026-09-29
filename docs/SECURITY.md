@@ -56,11 +56,13 @@ keep `ADMIN_LOGINS` to yourself. The session log is private to the owner (mode 0
 
 ## Supply chain
 
-- **MacServer updates itself** (`installer/self-update.sh`, every 15 minutes, root).
+- **MacServer updates itself** (`installer/self-update.sh`, every 2 minutes, root).
   It follows `main` on github.com/corund207/MacServer over HTTPS and installs a commit
-  only when every required CI job for that exact commit (`checks`, `disk-install`,
-  `image`, `vm-test`) completed successfully, and only if it is a fast-forward of the
-  running version (a rewritten history is refused). It backs up the database, re-runs
+  only when the required CI jobs for that exact commit completed successfully:
+  `checks` always, plus `disk-install`, `image` and `vm-test` when the change since
+  the running version touches `iso/`, `installer/`, `host/`, `install.sh` or the
+  workflows (or when the running version is unknown). It installs only a fast-forward
+  of the running version (a rewritten history is refused). It backs up the database, re-runs
   the host, admin and claude steps, checks health and rolls back on failure; a
   rolled-back commit is not retried automatically. It never touches Supabase's
   version, Docker, the firewall or data. Trust: whoever can push to `main` and pass

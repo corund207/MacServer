@@ -6,7 +6,7 @@
 # health, and rolls back on failure. Supabase, Docker and the firewall are not
 # touched; `sudo macserver update` handles packages and containers.
 #
-#   self-update           what the timer runs (every 15 minutes; obeys AUTO_UPDATE)
+#   self-update           what the timer runs (every 2 minutes; obeys AUTO_UPDATE)
 #   self-update --now     check and install now, even with AUTO_UPDATE=off
 #   self-update --check   only report what would happen
 set -Eeuo pipefail
@@ -18,8 +18,11 @@ API=${MACSERVER_UPDATE_API:-https://api.github.com/repos/$REPO}
 SRC_DIR=/opt/macserver-src
 # CI jobs that must have passed for a commit (ci.yml and installer-image.yml).
 REQUIRED_CHECKS=(checks disk-install image vm-test)
+# Changes to these need the full install test; anything else (dashboard, admin page,
+# docs, tests) only the quick checks. Health check and rollback protect either way.
+INSTALL_PATHS='^(iso/|installer/|host/|install\.sh$|\.github/workflows/)'
 # Install steps re-applied after an update, when they were done before.
-UPDATE_STEPS=(host admin claude)
+UPDATE_STEPS=(host admin claude autoupdate)
 STATUS_RUN=/run/macserver/self-update.json
 STATUS_KEEP=/var/lib/macserver/self-update.json
 LOCK=/run/macserver-self-update.lock
@@ -62,11 +65,41 @@ if [[ $latest == "$current" ]]; then
   exit 0
 fi
 
+bad=$(jq -r 'select(.state == "rolled-back") | .latest' "$STATUS_KEEP" 2>/dev/null || true)
+if [[ $mode == timer && $bad == "$latest" ]]; then
+  report skipped "${latest:0:7} failed its health check before; waiting for a newer version" "$latest"
+  exit 0
+fi
+
+# A local copy of the repository, refreshed with a cheap fetch on every check.
+cache=$SRC_DIR.git
+if [[ -d $cache ]]; then
+  git -C "$cache" fetch --quiet "$REPO_URL" "+refs/heads/main:refs/heads/main" 2>/dev/null ||
+    { report error "could not download from GitHub" "$latest"; exit 0; }
+else
+  git clone --quiet --bare "$REPO_URL" "$cache" 2>/dev/null ||
+    { rm -rf "$cache"; report error "could not download from GitHub" "$latest"; exit 0; }
+fi
+git -C "$cache" cat-file -e "$latest^{commit}" 2>/dev/null ||
+  { report error "GitHub did not provide ${latest:0:7}" "$latest"; exit 0; }
+# Only fast-forwards: refuse a rewritten history.
+if [[ -n $current ]] && ! git -C "$cache" merge-base --is-ancestor "$current" "$latest" 2>/dev/null; then
+  report refused "GitHub history was rewritten (${current:0:7} is not in ${latest:0:7}); update by hand" "$latest"
+  exit 0
+fi
+
+# Which CI jobs must pass: all of them when the change touches how the Mac is
+# installed (or when the running version is unknown); otherwise the quick checks.
+required=(checks)
+if [[ -z $current ]] || git -C "$cache" diff --name-only "$current" "$latest" | grep -qE "$INSTALL_PATHS"; then
+  required=("${REQUIRED_CHECKS[@]}")
+fi
+
 # Every required CI job for this exact commit must have completed successfully.
 runs=$(curl -fsS --max-time 20 -H "Accept: application/vnd.github+json" "$API/commits/$latest/check-runs?per_page=100" 2>/dev/null) ||
   { report error "could not ask GitHub for the CI results" "$latest"; exit 0; }
 pending='' failed=''
-for check in "${REQUIRED_CHECKS[@]}"; do
+for check in "${required[@]}"; do
   result=$(jq -r --arg n "$check" '[.check_runs[] | select(.name == $n)] | max_by(.started_at) // {} |
     if .status == null then "missing" elif .status != "completed" then "pending" else .conclusion end' <<<"$runs")
   case $result in
@@ -83,27 +116,17 @@ if [[ -n $pending ]]; then
   report waiting-ci "a new version is being tested ($pending ); it installs when CI passes" "$latest"
   exit 0
 fi
-bad=$(jq -r 'select(.state == "rolled-back") | .latest' "$STATUS_KEEP" 2>/dev/null || true)
-if [[ $mode == timer && $bad == "$latest" ]]; then
-  report skipped "${latest:0:7} failed its health check before; waiting for a newer version" "$latest"
-  exit 0
-fi
 if [[ $mode == --check ]]; then
-  report available "version ${latest:0:7} passed CI and will install" "$latest"
+  report available "version ${latest:0:7} passed CI (${required[*]}) and will install" "$latest"
   exit 0
 fi
 
-# Fetch the exact commit CI tested; refuse anything that is not a fast-forward.
+# The exact commit CI tested, from the local copy.
 next=$SRC_DIR.next
 rm -rf "$next"
-if ! git clone --quiet "$REPO_URL" "$next" || ! git -C "$next" checkout --quiet --detach "$latest"; then
+if ! git clone --quiet "$cache" "$next" || ! git -C "$next" checkout --quiet --detach "$latest"; then
   rm -rf "$next"
-  report error "could not download ${latest:0:7} from GitHub" "$latest"
-  exit 0
-fi
-if [[ -n $current ]] && ! git -C "$next" merge-base --is-ancestor "$current" "$latest"; then
-  rm -rf "$next"
-  report refused "GitHub history was rewritten (${current:0:7} is not in ${latest:0:7}); update by hand" "$latest"
+  report error "could not prepare ${latest:0:7}" "$latest"
   exit 0
 fi
 

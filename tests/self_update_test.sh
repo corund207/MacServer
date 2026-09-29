@@ -32,14 +32,16 @@ git clone -q --bare "$W/origin" "$W/remote.git"
 set_main() { git -C "$W/remote.git" update-ref refs/heads/main "$1"; }
 
 # Saved CI answers per commit: all | failed | pending
-ci() {  # ci SHA all|failed|pending
+ci() {  # ci SHA all|failed|pending|quick   (quick: only the fast "checks" job is done)
   local conclusion=success status=completed
   [[ $2 == failed ]] && conclusion=failure
   [[ $2 == pending ]] && { status=in_progress; conclusion=null; }
   mkdir -p "$W/api/commits/$1"
   jq -n --arg s "$status" --argjson c "$( [[ $conclusion == null ]] && echo null || echo "\"$conclusion\"")" \
+    --arg quick "$( [[ $2 == quick ]] && echo yes)" \
     '{check_runs: [ {name: "checks"}, {name: "disk-install"}, {name: "image"}, {name: "vm-test"} ]
-      | map(. + {status: $s, conclusion: $c, started_at: "2026-09-28T00:00:00Z"})}' \
+      | map(. + {status: $s, conclusion: $c, started_at: "2026-09-28T00:00:00Z"})
+      | map(if $quick == "yes" and .name != "checks" then . + {status: "in_progress", conclusion: null} else . end)}' \
     > "$W/api/commits/$1/check-runs"      # curl ignores the ?query for file:// addresses
 }
 export MACSERVER_UPDATE_REPO=$W/remote.git MACSERVER_UPDATE_API=file://$W/api
@@ -89,6 +91,23 @@ $U >/dev/null || true
 check "does not retry the broken version by itself" '[[ $(state) == skipped ]] && head_is $v2'
 $U --now >/dev/null || true
 check "installs it when asked (upgrade)" '[[ $(state) == updated ]] && head_is $v3'
+
+echo "== a dashboard-only change needs only the quick checks"
+echo 4 > "$W/origin/VERSION"; mkdir -p "$W/origin/admin"; echo "# tweak" >> "$W/origin/admin/tui.py"
+git -C "$W/origin" checkout -q main 2>/dev/null || true
+g add -A >/dev/null; g commit -qm v4; v4=$(g rev-parse HEAD)
+git -C "$W/remote.git" fetch -q "$W/origin" "+main:main"; ci "$v4" quick
+$U >/dev/null || true
+check "installs while the VM test still runs" '[[ $(state) == updated ]] && head_is $v4'
+
+echo "== an installer change waits for the full install test"
+echo "# tweak" >> "$W/origin/installer/lib.sh"; g add -A >/dev/null; g commit -qm v5; v5=$(g rev-parse HEAD)
+git -C "$W/remote.git" fetch -q "$W/origin" "+main:main"; ci "$v5" quick
+$U >/dev/null || true
+check "waits for the VM test" '[[ $(state) == waiting-ci ]] && head_is $v4'
+ci "$v5" all
+$U >/dev/null || true
+check "then installs" '[[ $(state) == updated ]] && head_is $v5'
 
 echo "== turned off"
 echo AUTO_UPDATE=off > /etc/macserver/macserver.conf

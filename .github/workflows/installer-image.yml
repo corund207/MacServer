@@ -12,6 +12,12 @@ on:
     branches: [main, usb-installer]
     tags: ['v*']
 
+# A newer push supersedes older runs on the same branch: Macs only install the newest
+# commit, so finishing old runs would only delay it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -46,7 +52,8 @@ jobs:
         id: base
         run: |
           sum=$({ find iso/base -type f | sort | xargs cat; cat host/t2.sources host/t2.pref; grep "^T2_KEY_FPR=" installer/lib.sh; } | sha256sum | cut -c1-16)
-          echo "key=macserver-base-$sum-$(date -u +%G-w%V)" >> "$GITHUB_OUTPUT"
+          # v2: bases that carry build/base/inputs.sum (older cached bases were rebuilt every run)
+          echo "key=macserver-base-v2-$sum-$(date -u +%G-w%V)" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: build/base

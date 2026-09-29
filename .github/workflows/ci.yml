@@ -4,6 +4,12 @@ on:
   push:
   pull_request:
 
+# A newer push supersedes older runs on the same branch: Macs only install the newest
+# commit, so finishing old runs would only delay it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

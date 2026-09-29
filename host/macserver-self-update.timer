@@ -1,10 +1,10 @@
 [Unit]
-Description=MacServer: check GitHub for a new version every 15 minutes
+Description=MacServer: check GitHub for a new version every 2 minutes
 
 [Timer]
-OnBootSec=10min
-OnUnitActiveSec=15min
-RandomizedDelaySec=2min
+OnBootSec=3min
+OnUnitActiveSec=2min
+RandomizedDelaySec=20s
 
 [Install]
 WantedBy=timers.target

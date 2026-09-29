@@ -259,11 +259,12 @@ Good habits:
 
 ## 11. Updates to MacServer itself
 
-MacServer keeps itself up to date. About every 15 minutes it checks GitHub for a new
-version, and installs it only after every automatic test has passed for it,
-including a full install in a virtual machine. It backs up the database first,
-checks everything still works afterwards, and goes back to the old version by itself
-if not. The dashboard shows the result on the **MacServer** line.
+MacServer keeps itself up to date. Every 2 minutes it checks GitHub for a new
+version, and installs it once its automatic tests have passed: a change to the dashboard,
+admin page or docs needs the quick tests (about a minute); a change to how the Mac is
+installed also needs a full install in a virtual machine (about 5 minutes). It backs up
+the database first, checks everything still works afterwards, and goes back to the old
+version by itself if not. The dashboard shows the result on the **MacServer** line.
 
 | Command | What it does |
 | --- | --- |
