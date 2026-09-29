@@ -340,3 +340,22 @@ view, warning glow, space toggle, edge-only frames; all scenarios x sizes x look
 previews reviewed; the kiosk ran a critical incident through real agetty login.
 Not verified on the Mac: the applesmc fan attributes under the T2 kernel (the
 controller exits cleanly if none exist; install_fans only enables it when they do).
+
+## 2026-09-28: fan fix on the real Mac (T2 fans are not in hwmon)
+
+On the MacBookAir8,2 the CPU hit 97 C and the dashboard's fan reading was blank.
+Over Tailscale SSH: the SMC fan controls are on the ACPI device
+(`/sys/devices/pci0000:00/.../APP0001:00/fan1_{input,min,max,manual,output}`, min
+2700, max 8000 rpm), not in /sys/class/hwmon, so the MacServer controller had found
+no fans, stayed off, and left t2fanrd in charge, which held the fan at its 2700 rpm
+minimum (manual=1, output=2700). Emergency action on the Mac: stopped t2fanrd, set
+fan1_manual=1 and fan1_output=fan1_max; the fan went to 7614 rpm. (A first attempt
+from PowerShell had its `$` expanded locally, created two empty files /fan1_manual
+and /fan1_output on the Mac; both were removed.)
+
+Fix: `fan_control.smc()` looks on APP0001:00 first (the paths t2fanrd uses), then
+applesmc hwmon; the dashboard reads the fan there too; FAN_MIN_PCT defaults to 100
+(owner: always full speed); without a temperature reading the fans run at full speed
+instead of being handed back; `fan-control --check` tells the installer whether fans
+exist. Tests: a fake T2 layout copied from the real Mac, default full speed, no-temp
+full speed (50 tests total).

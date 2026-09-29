@@ -1,12 +1,12 @@
 [Unit]
-Description=MacServer: fans at 60% or more, faster with CPU load and heat
+Description=MacServer: fans at full speed (FAN_MIN_PCT), controlled from the Apple SMC
 After=multi-user.target
 Conflicts=t2fanrd.service
 
 [Service]
 ExecStart=/usr/bin/python3 /usr/local/lib/macserver/fan-control
 # If it stops for any reason, the Mac's own automatic fan control takes over.
-ExecStopPost=/bin/sh -c 'for f in /sys/class/hwmon/hwmon*/fan*_manual; do [ -e "$$f" ] && echo 0 > "$$f"; done; true'
+ExecStopPost=/bin/sh -c 'for f in /sys/devices/pci*/*/*/*/APP0001:00/fan*_manual /sys/class/hwmon/hwmon*/fan*_manual; do [ -e "$$f" ] && echo 0 > "$$f"; done; true'
 Restart=on-failure
 RestartSec=5
 Nice=-5

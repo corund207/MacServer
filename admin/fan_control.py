@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""MacServer fan control: the Mac's fans never run below FAN_MIN_PCT (default 60%)
-of their top speed, and rise towards 100% as CPU load or temperature rises.
+"""MacServer fan control: the Mac's fans never run below FAN_MIN_PCT (default 100%:
+always full speed) of their top speed, and rise towards 100% with CPU load and heat.
 
-Runs as root from macserver-fans.service. It sets the Apple SMC fans (applesmc
-hwmon: fanN_manual / fanN_output) every 2 seconds and writes what it did to
-/run/macserver/fans.json for the dashboard. When it stops, or cannot read the
-temperature, it hands the fans back to the Mac's automatic control.
+Runs as root from macserver-fans.service. It sets the Apple SMC fans (T2 Macs:
+…/APP0001:00/fanN_manual and fanN_output) every 2 seconds and writes what it did to
+/run/macserver/fans.json for the dashboard. Without a temperature reading it runs
+the fans at full speed; when it stops, the Mac's automatic control takes over.
 
 Settings in /etc/macserver/macserver.conf:
-  FAN_MIN_PCT=60     lowest fan speed, percent of the fan's maximum (30..100)
+  FAN_MIN_PCT=100    lowest fan speed, percent of the fan's maximum (30..100)
   FAN_MODE=curve     curve = this controller; auto = leave the fans to the Mac
 """
 import json
@@ -44,9 +44,17 @@ def conf():
 
 
 def smc():
-    """The applesmc hwmon directory, or None."""
+    """The directory holding the Apple SMC fan controls, or None. On T2 Macs they sit on
+    the SMC's ACPI device (…/APP0001:00/fan1_*, where t2fanrd finds them); on older
+    Macs on the applesmc hwmon device."""
+    for pattern in ("devices/pci*/*/*/*/APP0001:00", "devices/pci*/*/*/APP0001:00",
+                    "devices/pci*/*/*/*/*/APP0001:00", "bus/acpi/devices/APP0001:00",
+                    "devices/platform/applesmc.768"):
+        for path in sorted(SYS.glob(pattern)):
+            if list(path.glob("fan*_output")):
+                return path
     for mon in sorted((SYS / "class/hwmon").glob("hwmon*")):
-        if read(mon / "name") == "applesmc":
+        if read(mon / "name") == "applesmc" and list(mon.glob("fan*_output")):
             return mon
     return None
 
@@ -135,9 +143,9 @@ def step(mon, state):
     """One control step. state carries the previous CPU reading and target."""
     c = conf()
     try:
-        min_pct = min(max(float(c.get("FAN_MIN_PCT", 60)), 30.0), 100.0)
+        min_pct = min(max(float(c.get("FAN_MIN_PCT", 100)), 30.0), 100.0)
     except ValueError:
-        min_pct = 60.0
+        min_pct = 100.0
     mode = c.get("FAN_MODE", "curve")
     busy, total = cpu_busy()
     pb, pt = state.get("cpu", (busy, total))
@@ -146,12 +154,16 @@ def step(mon, state):
     temp = cpu_temp()
     info = {"at": int(time.time()), "mode": mode, "min_pct": min_pct, "load": round(load * 100, 1),
             "temp": temp, "fans": []}
-    if mode != "curve" or temp is None:
+    if mode != "curve":
         set_auto(mon)
-        info["mode"] = "auto" if mode != "curve" else "auto (no temperature reading)"
+        info["mode"] = "auto"
         state["target"] = None
     else:
-        pct = target_pct(min_pct, load, temp, state.get("target"))
+        # No temperature reading: full speed is the safe choice (a hot Mac must not
+        # be left to a lazy automatic curve).
+        pct = 100.0 if temp is None else target_pct(min_pct, load, temp, state.get("target"))
+        if temp is None:
+            info["mode"] = "full (no temperature reading)"
         state["target"] = pct
         info["target_pct"] = pct
         for n, lo, hi in fans(mon):
@@ -165,6 +177,10 @@ def step(mon, state):
 
 
 def main():
+    if sys.argv[1:] == ["--check"]:          # for the installer: are there fans to control?
+        mon = smc()
+        print(mon or "no controllable fans")
+        return 0 if mon and fans(mon) else 1
     mon = smc()
     if mon is None or not fans(mon):
         report({"at": int(time.time()), "mode": "none", "fans": [], "message": "no Apple SMC fans found"})

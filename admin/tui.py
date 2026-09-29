@@ -225,6 +225,12 @@ def sensors():
                 fans.append(int(read(f, "0")))
             except ValueError:
                 pass
+    if not fans:   # T2 Macs: the fans are on the SMC's ACPI device, not in hwmon
+        for f in sorted(SYS.glob("devices/pci*/*/*/*/APP0001:00/fan*_input")):
+            try:
+                fans.append(int(read(f, "0")))
+            except ValueError:
+                pass
     for name in ("coretemp", "k10temp", "acpitz", "applesmc"):
         if temps.get(name):
             return max(temps[name]), core_temps, fans

@@ -60,12 +60,12 @@ step_host() {
   install_fans
 }
 
-# install_fans: fans at FAN_MIN_PCT (default 60%) or more, faster with load and heat.
+# install_fans: fans at FAN_MIN_PCT (default 100%: always full speed), from the Apple SMC.
 install_fans() {
   install -D -m 0755 "$SRC/admin/fan_control.py" /usr/local/lib/macserver/fan-control
   put_file "$SRC/host/macserver-fans.service" /etc/systemd/system/macserver-fans.service 0644
   systemctl daemon-reload
-  if ! compgen -G '/sys/class/hwmon/hwmon*/fan*_output' >/dev/null; then
+  if ! python3 /usr/local/lib/macserver/fan-control --check >/dev/null 2>&1; then
     ok "no controllable fans found; the Mac's own fan control stays in charge"
     return 0
   fi
@@ -73,7 +73,7 @@ install_fans() {
   systemctl disable --now t2fanrd.service >/dev/null 2>&1 || true
   systemctl enable macserver-fans.service >/dev/null
   systemctl restart macserver-fans.service
-  ok "fans: at least $(conf_get FAN_MIN_PCT 60)% of full speed, faster with load and heat (FAN_MIN_PCT, FAN_MODE=auto)"
+  ok "fans: at least $(conf_get FAN_MIN_PCT 100)% of full speed (set FAN_MIN_PCT, or FAN_MODE=auto)"
 }
 
 # install_console: the Mac's screen always shows the dashboard (tty1) and never blanks.

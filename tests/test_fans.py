@@ -48,6 +48,7 @@ class FanTests(unittest.TestCase):
     def test_step_sets_the_fans_and_reports(self):
         smc = fc.smc()
         state = {"cpu": (0, 0)}
+        (BASE / "macserver.conf").write_text("FAN_MIN_PCT=60\n")          # the curve, above a 60% floor
         mac(temp_c=45, busy=50, total=100)                           # 50% load since the last reading
         info = fc.step(smc, state)
         self.assertEqual(info["target_pct"], 80.0)
@@ -68,10 +69,34 @@ class FanTests(unittest.TestCase):
         fc.step(smc, {"cpu": (0, 0)})
         self.assertEqual((BASE / "sys/class/hwmon/hwmon1/fan1_manual").read_text().strip(), "0")
         (BASE / "macserver.conf").write_text("")
-        (BASE / "sys/class/hwmon/hwmon0/temp1_input").unlink()           # no temperature: hand back
+        (BASE / "sys/class/hwmon/hwmon0/temp1_input").unlink()           # no temperature: full speed
         info = fc.step(smc, {"cpu": (0, 0)})
-        self.assertTrue(info["mode"].startswith("auto"))
-        self.assertEqual((BASE / "sys/class/hwmon/hwmon1/fan1_manual").read_text().strip(), "0")
+        self.assertTrue(info["mode"].startswith("full"))
+        self.assertEqual((BASE / "sys/class/hwmon/hwmon1/fan1_manual").read_text().strip(), "1")
+        self.assertEqual((BASE / "sys/class/hwmon/hwmon1/fan1_output").read_text().strip(), "6000")
+
+    def test_default_is_full_speed(self):
+        mac(temp_c=40, busy=0, total=100)
+        info = fc.step(fc.smc(), {"cpu": (0, 0)})
+        self.assertEqual(info["target_pct"], 100.0)
+
+    def test_finds_the_t2_fans_on_the_smc_acpi_device(self):
+        # T2 Macs: no fans in hwmon; they are on …/APP0001:00 (as on the real MacBookAir8,2).
+        import shutil
+        shutil.rmtree(BASE / "sys/class/hwmon/hwmon1")
+        d = "sys/devices/pci0000:00/firmware_node/subsystem/devices/APP0001:00"
+        for name, value in (("fan1_input", 3266), ("fan1_min", 2700), ("fan1_max", 8000),
+                            ("fan1_manual", 1), ("fan1_output", 2700)):
+            write(f"{d}/{name}", value)
+        try:
+            smc = fc.smc()
+            self.assertEqual(smc, BASE / d)
+            self.assertEqual(fc.fans(smc), [("1", 2700, 8000)])
+            fc.step(smc, {"cpu": (0, 0)})
+            self.assertEqual((BASE / d / "fan1_output").read_text().strip(), "8000")
+        finally:                                                           # restore for other tests
+            shutil.rmtree(BASE / "sys/devices")
+            mac()
 
 
 if __name__ == "__main__":
