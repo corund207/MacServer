@@ -12,6 +12,7 @@ GATEWAY_DIR=$MACSERVER_OPT/gateway
 ADMIN_DIR=$MACSERVER_OPT/admin
 ADMIN_PORT=8090
 STUDIO_TAILNET_PORT=8443
+TERMINAL_PORT=8091
 RESOLVED_CONF=/etc/systemd/resolved.conf.d/60-macserver.conf
 
 # Pinned upstream sources. Update deliberately, with a review of the diff.

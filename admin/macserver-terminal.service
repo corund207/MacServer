@@ -1,0 +1,18 @@
+[Unit]
+Description=MacServer web terminal (127.0.0.1:8091, published on the tailnet at /term by tailscale serve)
+After=network.target
+
+# User=, Group= and HOME come from the drop-in the installer writes: the shell is the
+# owner's login shell, with the owner's rights (sudo still asks for the password), the
+# same as Tailscale SSH. It is deliberately not sandboxed like the admin page: a sandbox
+# would also confine the shell. NoNewPrivileges is left off so that sudo works in it.
+[Service]
+ExecStart=/usr/bin/python3 /opt/macserver/admin/terminal.py --port 8091 --conf /etc/macserver/macserver.conf
+Restart=on-failure
+RestartSec=3
+# Stopping the service hangs up every open shell with it.
+KillMode=control-group
+UMask=0022
+
+[Install]
+WantedBy=multi-user.target

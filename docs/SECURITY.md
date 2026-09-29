@@ -68,6 +68,24 @@ Claude app, signed in with the owner's claude.ai account. Anyone on the allowlis
 therefore start a Claude session with the owner's rights (but not their sudo password):
 keep `ADMIN_LOGINS` to yourself. The session log is private to the owner (mode 0600).
 
+### Web terminal (`/term`)
+
+The admin page's **terminal** tab is a login shell in the browser. It is the one part of
+the page that is not read-only, and it is deliberately not sandboxed: `macserver-terminal`
+runs `admin/terminal.py` as the **owner's account** (the same drop-in pattern as the Claude
+session), on `127.0.0.1:8091`, and `tailscale serve` mounts it at `/term` on the admin
+page's own HTTPS address. It gives exactly what Tailscale SSH gives (the owner's shell; `sudo`
+still asks for the password), so the same rule applies: keep `ADMIN_LOGINS` to yourself.
+
+The gate is the admin page's (loopback plus an allowlisted `Tailscale-User-Login`), plus
+two checks that browsers make necessary for WebSockets: `Origin` must be exactly
+`https://<TAILNET_NAME>` and `Sec-Fetch-Site` must be same-origin, so a page on another
+site cannot open a shell through the owner's browser. At most four shells are open at once;
+closing the WebSocket, or stopping the service, hangs up the shell's whole process group.
+The terminal page alone gets a relaxed style policy (xterm.js styles itself inline) and
+is framed only by the admin page; xterm.js is vendored and pinned by SHA-256 in
+`tests/test_admin.py`.
+
 ## Supply chain
 
 - **MacServer updates itself** (`installer/self-update.sh`, every 2 minutes, root).

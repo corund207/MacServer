@@ -8,25 +8,107 @@
 <script src="/app.js" defer></script>
 </head>
 <body>
-<header>
-  <h1>MacServer</h1>
-  <p id="summary" role="status">Loading…</p>
-  <p class="viewer" id="viewer"></p>
+<header id="top">
+  <div class="brand"><span class="logo">▟█▙</span> <b id="host-name">macserver</b></div>
+  <nav id="tabs" aria-label="Views">
+    <button type="button" data-tab="overview" class="on">1 overview</button>
+    <button type="button" data-tab="network">2 network</button>
+    <button type="button" data-tab="terminal">3 terminal</button>
+  </nav>
+  <div class="tophead">
+    <span id="summary" role="status">Loading…</span>
+    <span id="clock" class="dim"></span>
+  </div>
 </header>
+
 <main>
-  <section aria-labelledby="h-host"><h2 id="h-host">Mac</h2><dl id="host"></dl></section>
-  <section aria-labelledby="h-connect"><h2 id="h-connect">Connect your app</h2><dl id="connect"></dl></section>
-  <section aria-labelledby="h-claude"><h2 id="h-claude">Claude on this server</h2>
-    <p id="claude-state">Loading…</p>
-    <p class="actions"><button type="button" id="claude-start" class="primary" hidden>Start Claude session</button>
-      <a id="claude-open" class="primary" hidden target="_blank" rel="noopener noreferrer">Open session</a>
-      <button type="button" id="claude-stop" hidden>Stop session</button></p>
-    <p class="note">Claude Code runs on this Mac with the <code>macserver</code> skill, so it knows the server and its rules. You continue the session in claude.ai/code or the Claude app.</p>
-  </section>
-  <section aria-labelledby="h-services" class="wide"><h2 id="h-services">Services</h2>
-    <table><thead><tr><th scope="col">Container</th><th scope="col">Group</th><th scope="col">State</th><th scope="col">Details</th></tr></thead><tbody id="services"></tbody></table>
-  </section>
+  <div id="view-overview" class="view">
+    <div class="grid">
+      <section class="box b-cpu" data-title="cpu">
+        <div class="cpu-body">
+          <div class="cpu-graph"><canvas id="g-cpu" aria-label="CPU history"></canvas></div>
+          <div id="cores" class="cores"></div>
+        </div>
+        <div id="cpu-foot" class="foot"></div>
+      </section>
+
+      <section class="box b-mem" data-title="mem">
+        <div id="mem-rows"></div>
+      </section>
+
+      <section class="box b-net" data-title="net">
+        <div class="two"><div><div class="lbl">▼ download <b id="rx-now"></b></div><canvas id="g-rx"></canvas></div>
+        <div><div class="lbl">▲ upload <b id="tx-now"></b></div><canvas id="g-tx"></canvas></div></div>
+        <div id="net-foot" class="foot"></div>
+      </section>
+
+      <section class="box b-proc" data-title="proc">
+        <div class="scroll"><table id="proc-table">
+          <thead><tr>
+            <th data-sort="pid" scope="col">pid</th><th data-sort="name" scope="col">program</th>
+            <th data-sort="user" scope="col">user</th><th data-sort="rss" scope="col" class="r">mem</th>
+            <th data-sort="cpu" scope="col" class="r on">cpu%</th></tr></thead>
+          <tbody id="procs"></tbody></table></div>
+        <div id="proc-foot" class="foot"></div>
+      </section>
+
+      <section class="box b-svc" data-title="services">
+        <div class="scroll"><table>
+          <thead><tr><th scope="col">container</th><th scope="col">state</th><th scope="col" class="r">cpu%</th><th scope="col" class="r">mem</th></tr></thead>
+          <tbody id="services"></tbody></table></div>
+        <pre id="svc-detail" class="detail" hidden></pre>
+      </section>
+
+      <section class="box b-sys" data-title="system">
+        <dl id="host"></dl>
+      </section>
+
+      <section class="box b-connect" data-title="connect">
+        <dl id="connect"></dl>
+      </section>
+
+      <section class="box b-claude" data-title="claude">
+        <p id="claude-state">Loading…</p>
+        <p class="actions"><button type="button" id="claude-start" class="primary" hidden>Start Claude session</button>
+          <a id="claude-open" class="primary" hidden target="_blank" rel="noopener noreferrer">Open session</a>
+          <button type="button" id="claude-stop" hidden>Stop session</button></p>
+      </section>
+    </div>
+  </div>
+
+  <div id="view-network" class="view" hidden>
+    <div class="grid">
+      <section class="box b-lat" data-title="latency">
+        <div id="lat-rows"></div>
+      </section>
+      <section class="box b-req" data-title="requests / 2 s">
+        <canvas id="g-req" aria-label="API requests"></canvas>
+        <div id="req-foot" class="foot"></div>
+      </section>
+      <section class="box b-listen" data-title="listening">
+        <div class="scroll"><table><thead><tr><th scope="col">port</th><th scope="col">address</th><th scope="col">scope</th><th scope="col">program</th></tr></thead>
+          <tbody id="listeners"></tbody></table></div>
+      </section>
+      <section class="box b-flows" data-title="connections">
+        <div class="scroll"><table><thead><tr><th scope="col">dir</th><th scope="col">peer</th><th scope="col">service</th><th scope="col" class="r">n</th></tr></thead>
+          <tbody id="flows"></tbody></table></div>
+        <div id="flow-foot" class="foot"></div>
+      </section>
+      <section class="box b-paths" data-title="top paths / clients">
+        <div class="two"><ul id="top-paths" class="list"></ul><ul id="top-clients" class="list"></ul></div>
+      </section>
+      <section class="box b-logs" data-title="problems">
+        <ul id="problems" class="list"></ul>
+      </section>
+    </div>
+  </div>
+
+  <div id="view-terminal" class="view" hidden>
+    <section class="box b-term" data-title="terminal">
+      <iframe id="term-frame" title="Terminal" allow="clipboard-read; clipboard-write"></iframe>
+    </section>
+  </div>
 </main>
-<footer>Read-only, except starting and stopping the Claude session. Manage the server with <code>sudo macserver</code> over Tailscale SSH.</footer>
+<footer><span id="viewer"></span> · <span class="dim">keys: 1 2 3 switch view</span></footer>
 </body>
 </html>

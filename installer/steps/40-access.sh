@@ -19,7 +19,7 @@ step_admin() {
   id macserver-admin >/dev/null 2>&1 ||
     useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin macserver-admin
   install -d -m 0755 "$ADMIN_DIR"
-  install -m 0644 "$SRC/admin/server.py" "$ADMIN_DIR/server.py"
+  install -m 0644 "$SRC/admin/server.py" "$SRC/admin/terminal.py" -t "$ADMIN_DIR/"
   install -d -m 0755 "$ADMIN_DIR/static"
   install -m 0644 "$SRC/admin/static/"* -t "$ADMIN_DIR/static/"
   local unit
@@ -37,10 +37,32 @@ step_admin() {
      tailscale serve --bg --https="$STUDIO_TAILNET_PORT" http://127.0.0.1:8000 >/dev/null; then
     ok "admin page:        https://$name/"
     ok "Supabase Studio:   https://$name:$STUDIO_TAILNET_PORT/  (tailnet only)"
+    terminal_setup "$name" || warn "the web terminal was not set up; the rest of the admin page is unaffected"
   else
     warn "tailscale serve failed. Enable MagicDNS and HTTPS Certificates at"
     warn "https://login.tailscale.com/admin/dns, then run: sudo ./install.sh --redo admin"
     return 1
+  fi
+}
+
+# terminal_setup NAME: the browser terminal. It runs as the owner (like the Claude session),
+# listens on 127.0.0.1, and is mounted at /term on the admin page's HTTPS address.
+terminal_setup() {
+  local name=$1 user home group
+  user=$(admin_user) || { warn "no owner account found; skipping the web terminal"; return 0; }
+  home=$(getent passwd "$user" | cut -d: -f6)
+  group=$(id -gn "$user")
+  put_file "$SRC/admin/macserver-terminal.service" /etc/systemd/system/macserver-terminal.service 0644
+  install -d -m 0755 /etc/systemd/system/macserver-terminal.service.d
+  printf '[Service]\nUser=%s\nGroup=%s\nWorkingDirectory=%s\nEnvironment=HOME=%s\n' \
+    "$user" "$group" "$home" "$home" > /etc/systemd/system/macserver-terminal.service.d/60-owner.conf
+  systemctl daemon-reload
+  systemctl enable --now macserver-terminal.service >/dev/null
+  systemctl restart macserver-terminal.service
+  if tailscale serve --bg --https=443 --set-path /term "http://127.0.0.1:$TERMINAL_PORT" >/dev/null; then
+    ok "web terminal:      https://$name/#terminal  (a shell as $user, tailnet only)"
+  else
+    warn "could not publish the web terminal; the rest of the admin page is unaffected"
   fi
 }
 

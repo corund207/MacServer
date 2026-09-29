@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MacServer terminal</title>
+<link rel="stylesheet" href="/xterm.css">
+<style>
+  html, body { height: 100%; margin: 0; background: #0b0e11; }
+  #wrap { position: absolute; inset: 0; padding: 6px 8px; }
+  #term { height: 100%; }
+  #note { position: absolute; right: 12px; top: 8px; z-index: 5; font: 12px ui-monospace, Menlo, Consolas, monospace;
+    color: #8b949e; pointer-events: none; }
+  #note.bad { color: #f85149; }
+</style>
+<script src="/xterm.js"></script>
+<script src="/xterm-addon-fit.js"></script>
+<script src="/terminal.js" defer></script>
+</head>
+<body>
+<div id="wrap"><div id="note">connecting…</div><div id="term"></div></div>
+</body>
+</html>

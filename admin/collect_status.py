@@ -9,8 +9,9 @@ import collections
 import ipaddress
 import json
 import os
-import re
 from pathlib import Path
+import pwd
+import re
 import shutil
 import socket
 import stat
@@ -206,6 +207,155 @@ def cgroup_stats(ids, prev, now, root=CGROUP_ROOT):
         cpu = round(max(usec - before, 0) / (span * 1e6) * 100, 2) if before is not None and span > 0 else 0.0
         stats[name] = {"cpu": cpu, "mem": max(memory - cache, 0)}
     return stats, {"at": now, "cpu": cpu_now}
+
+
+LIVE_PROCS, LIVE_PROCS_BY_MEM = 10, 6   # the busiest by CPU, plus the biggest by memory
+SKIP_IFACES = re.compile(r"^(lo|veth\w*)$")
+SKIP_DISKS = re.compile(r"^(loop|ram|zram|dm-|sr|md)\d*")
+
+
+def cpu_times(stat_text):
+    """{"cpu": (busy, total), "cpu0": ...} from /proc/stat, in clock ticks."""
+    out = {}
+    for line in stat_text.splitlines():
+        name, _, rest = line.partition(" ")
+        if not re.fullmatch(r"cpu\d*", name):
+            continue
+        f = [int(x) for x in rest.split()[:8]]
+        if len(f) < 4:
+            continue
+        idle = f[3] + (f[4] if len(f) > 4 else 0)   # idle + iowait
+        total = sum(f)
+        out[name] = (total - idle, total)
+    return out
+
+
+def net_bytes(dev_text):
+    out = {}
+    for line in dev_text.splitlines()[2:]:
+        name, _, rest = line.partition(":")
+        name, f = name.strip(), rest.split()
+        if len(f) >= 9 and name and not SKIP_IFACES.match(name):
+            out[name] = (int(f[0]), int(f[8]))   # rx bytes, tx bytes
+    return out
+
+
+def disk_bytes(diskstats_text, block_root="/sys/block"):
+    """Bytes read and written by the whole disks (not partitions, loops or RAM disks)."""
+    read_b = write_b = 0
+    for line in diskstats_text.splitlines():
+        f = line.split()
+        if len(f) < 10 or SKIP_DISKS.match(f[2]) or not Path(block_root, f[2]).exists():
+            continue
+        read_b += int(f[5]) * 512
+        write_b += int(f[9]) * 512
+    return read_b, write_b
+
+
+def process_ticks(proc_root, page_size):
+    """{pid: {name, user, ticks, start, rss, state, threads}} for every process. Only the
+    short process name is reported: command lines can carry secrets."""
+    out = {}
+    for entry in Path(proc_root).iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            text = (entry / "stat").read_text()
+            uid = (entry / "stat").stat().st_uid
+        except OSError:
+            continue   # it exited while we looked
+        head, _, tail = text.rpartition(")")    # the name may contain spaces and parentheses
+        f = tail.split()
+        if len(f) < 22:
+            continue
+        try:
+            user = pwd.getpwuid(uid).pw_name
+        except KeyError:
+            user = str(uid)
+        out[int(entry.name)] = {"name": head.partition("(")[2][:24], "user": user, "state": f[0],
+                                "ticks": int(f[11]) + int(f[12]), "start": int(f[19]),
+                                "rss": int(f[21]) * page_size, "threads": int(f[17])}
+    return out
+
+
+def meminfo_fields(text):
+    fields = {}
+    for line in text.splitlines():
+        name, _, rest = line.partition(":")
+        if rest.split():
+            fields[name] = int(rest.split()[0]) * 1024
+    return fields
+
+
+def cpu_freqs(root="/sys/devices/system/cpu"):
+    out = []
+    for n in range(os.cpu_count() or 1):
+        khz = read(f"{root}/cpu{n}/cpufreq/scaling_cur_freq")
+        out.append(round(int(khz) / 1000) if khz and khz.strip().isdigit() else None)
+    return out
+
+
+def live_stats(prev, now, proc_root="/proc", sys_root="/sys", tick_hz=None, page_size=None):
+    """What a btop-style view needs: CPU % (total and per core), network and disk rates,
+    memory and swap, and the busiest processes. Rates need the previous reading, so the
+    first run reports zeros. Returns (stats, reading to pass as `prev` next time)."""
+    tick_hz = tick_hz or os.sysconf("SC_CLK_TCK")
+    page_size = page_size or os.sysconf("SC_PAGE_SIZE")
+    p = Path(proc_root)
+    cpu = cpu_times(read(p / "stat", ""))
+    net = net_bytes(read(p / "net/dev", ""))
+    disk = disk_bytes(read(p / "diskstats", ""), f"{sys_root}/block")
+    procs = process_ticks(p, page_size)
+    span = now - prev.get("at", now)
+    known = span > 0
+
+    def pct(name):
+        before = prev.get("cpu", {}).get(name)
+        if not known or before is None or cpu[name][1] <= before[1]:
+            return 0.0
+        return round(100 * (cpu[name][0] - before[0]) / (cpu[name][1] - before[1]), 1)
+
+    def rate(after, before):
+        return round(max(after - before, 0) / span) if known and before is not None else 0
+
+    cores = sorted((n for n in cpu if n != "cpu"), key=lambda n: int(n[3:]))
+    rx = tx = 0
+    ifaces = {}
+    for name, (r, t) in net.items():
+        old = prev.get("net", {}).get(name)
+        ifaces[name] = {"rx": rate(r, old[0] if old else None), "tx": rate(t, old[1] if old else None)}
+        rx += ifaces[name]["rx"]
+        tx += ifaces[name]["tx"]
+    old_disk = prev.get("disk")
+    mem = meminfo_fields(read(p / "meminfo", ""))
+    mem_total = mem.get("MemTotal", 0)
+    busy = []
+    for pid, info in procs.items():
+        old = prev.get("procs", {}).get(str(pid))
+        cpu_pct = 0.0
+        if known and old and old[1] == info["start"]:
+            cpu_pct = round(100 * max(info["ticks"] - old[0], 0) / tick_hz / span, 1)
+        busy.append({"pid": pid, "name": info["name"], "user": info["user"], "state": info["state"],
+                     "cpu": cpu_pct, "rss": info["rss"], "threads": info["threads"],
+                     "mem": round(100 * info["rss"] / mem_total, 1) if mem_total else 0.0})
+    busy.sort(key=lambda x: (-x["cpu"], -x["rss"]))
+    stats = {
+        "span_s": round(span, 2) if known else 0,
+        "cpu": {"total": pct("cpu") if "cpu" in cpu else 0.0, "cores": [pct(n) for n in cores],
+                "freq_mhz": cpu_freqs(f"{sys_root}/devices/system/cpu")},
+        "mem": {"total": mem_total, "used": mem_total - mem.get("MemAvailable", mem_total),
+                "cached": mem.get("Cached", 0), "buffers": mem.get("Buffers", 0)},
+        "swap": {"total": mem.get("SwapTotal", 0), "used": mem.get("SwapTotal", 0) - mem.get("SwapFree", 0)},
+        "net": {"rx": rx, "tx": tx, "ifaces": ifaces},
+        "disk_io": {"read": rate(disk[0], old_disk[0] if old_disk else None),
+                    "write": rate(disk[1], old_disk[1] if old_disk else None)},
+        "tasks": {"total": len(procs), "running": sum(1 for i in procs.values() if i["state"] == "R"),
+                  "threads": sum(i["threads"] for i in procs.values())},
+        "procs": busy[:LIVE_PROCS] + sorted(busy[LIVE_PROCS:], key=lambda x: -x["rss"])[:LIVE_PROCS_BY_MEM],
+    }
+    reading = {"at": now, "cpu": cpu, "net": net, "disk": disk,
+               "procs": {str(pid): (i["ticks"], i["start"]) for pid, i in procs.items()}}
+    return stats, reading
 
 
 def cached(state, key, ttl, now, produce):
@@ -797,6 +947,10 @@ def collect(state=None):
         "claude": claude_session(read(CLAUDE_LOG, ""), unit_state("macserver-claude.service"),
                                  Path("/usr/local/bin/claude").exists()),
     }
+    try:   # likewise the live graphs: a failure here leaves the health data intact
+        data["live"], state["live"] = live_stats(state.get("live", {}), now)
+    except Exception as err:   # noqa: BLE001
+        data["live"] = {"error": repr(err)[:200]}
     try:   # the incident pages' extras must never cost the basic health data
         data["debug"] = debug_info(state, now, ps, ids, data["containers"], tailscale_peers(ts_text))
     except Exception as err:   # noqa: BLE001

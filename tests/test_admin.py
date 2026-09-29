@@ -93,6 +93,21 @@ class LiveServerTests(unittest.TestCase):
         self.assertEqual(self.request("/api/status", method="POST")[0].status, 405)
         self.assertEqual(self.request("/api/status", method="PUT")[0].status, 405)
 
+    def test_terminal_page_has_its_own_policy(self):
+        page, _ = self.request("/terminal.html")
+        policy = page.getheader("Content-Security-Policy")
+        self.assertEqual(page.status, 200)
+        self.assertIn("frame-ancestors 'self'", policy)
+        self.assertIn("wss://mac.tail1.ts.net", policy)
+        self.assertIn("style-src 'self' 'unsafe-inline'", policy)
+        main = self.request("/")[0].getheader("Content-Security-Policy")   # the rest stays strict
+        self.assertNotIn("unsafe-inline", main)
+        self.assertIn("frame-ancestors 'none'", main)
+        self.assertIn("frame-src 'self'", main)
+        for path in ("/terminal.js", "/xterm.js", "/xterm.css", "/xterm-addon-fit.js"):
+            self.assertEqual(self.request(path)[0].status, 200, path)
+        self.assertEqual(self.request("/terminal.html", login=None)[0].status, 403)
+
     def claude(self, action="start", login="admin@example.com", **headers):
         sent = {"Content-Type": "application/json", "Origin": "https://mac.tail1.ts.net",
                 "Sec-Fetch-Site": "same-origin"}
@@ -114,6 +129,25 @@ class LiveServerTests(unittest.TestCase):
         self.assertEqual(self.claude("start", Sec_Fetch_Site="cross-site"), 400)
         self.assertEqual(self.claude("start", Content_Type="text/plain"), 400)
         self.assertFalse(self.claude_request.exists())
+
+
+class VendoredTerminalTests(unittest.TestCase):
+    """xterm.js is copied from npm, not built here. A changed byte must be a decision."""
+    PINNED = {
+        "xterm.js": "1f991ac3b4b283ebf96e60ae23a00a52765dd3a2e46fa6fdda9f1aab032f7495",   # @xterm/xterm 5.5.0
+        "xterm.css": "ba8e6985669488981ccf40c0cefe3aba80722cb6c92de7ad628b0bd717faf2b6",  # @xterm/xterm 5.5.0
+        "xterm-addon-fit.js": "bdaefa370b1bfc42ee88d46fe6072400902a4d4b2d45cd93438dda9b23c97089",  # @xterm/addon-fit 0.10.0
+    }
+
+    def test_files_match_their_pinned_hashes(self):
+        import hashlib
+        for name, digest in self.PINNED.items():
+            data = (ROOT / "admin/static" / name).read_bytes()
+            self.assertEqual(hashlib.sha256(data).hexdigest(), digest, name)
+
+    def test_every_served_file_exists(self):
+        for name, _ in server.FILES.values():
+            self.assertTrue((ROOT / "admin/static" / name).is_file(), name)
 
 
 if __name__ == "__main__":

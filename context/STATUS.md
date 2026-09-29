@@ -519,3 +519,32 @@ For the owner: in the Tailscale admin console, turn off key expiry for `macserve
 (it expires about 2027-03-28; re-authenticating then needs someone at the Mac).
 PlaneSight's compose file hard-codes Quad9 (`dns:`) and builds with `network: host`
 because Tailscale's resolver used to be in the way; both can go now.
+
+## 2026-09-29: admin page as a btop-style console, with a web terminal
+
+- The admin page is now three views: **overview** (btop layout: CPU history graph and
+  per-core meters, memory/swap/disk meters and disk I/O, network graphs, sortable process
+  table, containers with a click-through detail), **network** (latency, requests per 2 s,
+  listeners, connections, top paths and clients, everything wrong in one list) and
+  **terminal**. Keys 1/2/3 switch views; the tab is kept in the URL hash.
+- `collect_status.py` reports a `live` section: CPU % (total and per core), network and
+  disk-I/O rates, memory and swap, tasks and the busiest processes (by CPU plus by memory).
+  Rates come from the previous run's counters in the collector state file; the page keeps
+  the 4-minute history. Only process *names* are reported, never command lines.
+- `admin/terminal.py` + `macserver-terminal.service`: a WebSocket-to-pty bridge (standard
+  library only), a login shell as the owner, mounted at `/term` by `tailscale serve`.
+  Security model in `docs/SECURITY.md`. Installed by `step_admin` (which self-update reruns).
+- Vendored xterm.js 5.5.0 and addon-fit 0.10.0 (MIT), pinned by hash in `tests/test_admin.py`.
+
+### Verified
+
+- `tests/run.sh` in WSL Debian (Python 3.13): 88 tests, including a real shell over a
+  real WebSocket, hangup on close, resize, the origin/login gate, and the collector's rates
+  against a fake `/proc`.
+- `node --check` on both scripts.
+
+### Not verified
+
+- The page has not been looked at in a browser, and `tailscale serve --set-path /term`
+  has not been run on the Mac (whether the mount prefix is stripped is handled either way:
+  the service accepts `/ws` and `/term/ws`). ShellCheck was not available locally; CI runs it.

@@ -18,18 +18,28 @@ from pathlib import Path
 import time
 
 STATIC = Path(__file__).resolve().parent / "static"
-FILES = {"/": ("index.html", "text/html; charset=utf-8"),
-         "/app.js": ("app.js", "text/javascript; charset=utf-8"),
-         "/style.css": ("style.css", "text/css; charset=utf-8")}
+HTML, JS, CSS = "text/html; charset=utf-8", "text/javascript; charset=utf-8", "text/css; charset=utf-8"
+FILES = {"/": ("index.html", HTML), "/app.js": ("app.js", JS), "/style.css": ("style.css", CSS),
+         "/terminal.html": ("terminal.html", HTML), "/terminal.js": ("terminal.js", JS),
+         "/xterm.js": ("xterm.js", JS), "/xterm.css": ("xterm.css", CSS),
+         "/xterm-addon-fit.js": ("xterm-addon-fit.js", JS)}
 SECURITY_HEADERS = {
-    "Content-Security-Policy": "default-src 'self'; img-src 'self' data:; frame-ancestors 'none'; "
-                               "base-uri 'none'; form-action 'none'",
+    "Content-Security-Policy": "default-src 'self'; img-src 'self' data:; frame-src 'self'; "
+                               "frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
     "Cache-Control": "no-store",
     "Cross-Origin-Opener-Policy": "same-origin",
     "Cross-Origin-Resource-Policy": "same-origin",
 }
+
+def terminal_policy(tailnet_name):
+    """The terminal page is the one page that needs more: xterm.js styles itself with inline
+    CSS, and it opens the WebSocket to /term. It is framed only by the admin page."""
+    return ("default-src 'self'; style-src 'self' 'unsafe-inline'; "
+            f"connect-src 'self' wss://{tailnet_name}; frame-ancestors 'self'; base-uri 'none'; form-action 'none'")
+
+
 STALE_AFTER_S = 20
 CLAUDE_ACTIONS = ("start", "stop")
 MAX_BODY = 256
@@ -73,12 +83,12 @@ class Handler(BaseHTTPRequestHandler):
     sys_version = ""
     config = {}
 
-    def send(self, status, body, content_type):
+    def send(self, status, body, content_type, policy=None):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         for name, value in SECURITY_HEADERS.items():
-            self.send_header(name, value)
+            self.send_header(name, policy if policy and name == "Content-Security-Policy" else value)
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
@@ -97,7 +107,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send(HTTPStatus.OK, json.dumps(data).encode(), "application/json")
         elif path in FILES:
             name, content_type = FILES[path]
-            self.send(HTTPStatus.OK, (STATIC / name).read_bytes(), content_type)
+            policy = terminal_policy(conf_value(self.config["conf"], "TAILNET_NAME")) if path == "/terminal.html" else None
+            self.send(HTTPStatus.OK, (STATIC / name).read_bytes(), content_type, policy)
         else:
             self.send(HTTPStatus.NOT_FOUND, b"Not found\n", "text/plain; charset=utf-8")
 
