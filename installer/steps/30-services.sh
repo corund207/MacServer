@@ -61,6 +61,7 @@ step_firewall() {
   systemctl enable nftables >/dev/null
   nft -f /etc/nftables.conf
   ok "firewall on (rules in /etc/nftables.conf; original saved as /etc/nftables.conf.macserver-orig)"
+  supabase_local_ports
 }
 
 step_docker() {
@@ -87,6 +88,40 @@ supabase_urls() {
   env_set "$env" SUPABASE_PUBLIC_URL "$public"
   env_set "$env" API_EXTERNAL_URL "$public/auth/v1"
   env_set "$env" SITE_URL "$site"
+}
+
+# supabase_local_ports: publish Supabase's ports on 127.0.0.1 only. Docker's daemon
+# "ip": "127.0.0.1" covers only the default bridge, not Compose networks, so on the
+# real Mac the database, pooler and API listened on every interface. An override file
+# pins them; tailscale serve and Caddy reach them on localhost. Safe to repeat:
+# Compose recreates the two containers only when their ports change.
+supabase_local_ports() {
+  [[ -f $SUPABASE_DIR/docker-compose.yml && -f $SUPABASE_DIR/.env ]] || return 0
+  cat > "$SUPABASE_DIR/docker-compose.macserver.yml" <<'EOF'
+# Written by MacServer: Supabase's published ports on 127.0.0.1 only.
+services:
+  api-gw:
+    ports: !override
+      - 127.0.0.1:${API_GW_HTTP_PORT:-${KONG_HTTP_PORT:-8000}}:8000/tcp
+  supavisor:
+    ports: !override
+      - 127.0.0.1:${POSTGRES_PORT}:5432
+      - 127.0.0.1:${POOLER_PROXY_PORT_TRANSACTION}:6543
+EOF
+  local files
+  files=$(env_get "$SUPABASE_DIR/.env" COMPOSE_FILE)
+  files=${files:-docker-compose.yml}
+  [[ :$files: == *:docker-compose.macserver.yml:* ]] ||
+    env_set "$SUPABASE_DIR/.env" COMPOSE_FILE "$files:docker-compose.macserver.yml"
+  if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx supabase-db; then
+    (cd "$SUPABASE_DIR" && docker compose up -d --wait >/dev/null 2>&1) ||
+      warn "could not re-apply Supabase's ports; run: cd $SUPABASE_DIR && sudo docker compose up -d"
+  fi
+  if ss -ltnH | awk '{print $4}' | grep -qE '^(0\.0\.0\.0|\[::\]):(5432|6543|8000)$'; then
+    warn "Supabase still listens on all interfaces (the firewall blocks the LAN)"
+  else
+    ok "Supabase's ports listen on 127.0.0.1 only"
+  fi
 }
 
 step_supabase() {
@@ -122,6 +157,7 @@ step_supabase() {
   supabase_urls
 
   say "Starting Supabase (the first start downloads about 3 GB of images)..."
+  supabase_local_ports
   (cd "$SUPABASE_DIR" && sh run.sh start)
   ok "Supabase is running (API and Studio on 127.0.0.1:8000 only)"
 }

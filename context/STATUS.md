@@ -406,3 +406,10 @@ self-updater re-applies the firewall step. Verified with a network-namespace tes
 answered from the LAN, with it the connection is blocked, and the container's
 outgoing traffic still works. On the Mac: ~/fix-supabase-ports.sh recreates the
 Supabase containers so they bind to 127.0.0.1 (needs the owner's sudo).
+Follow-up: recreating the containers did not help: Docker's daemon "ip" setting only
+covers the default bridge, not Compose networks, so Supabase's ports were never on
+127.0.0.1 (the repo test only checked daemon.json). `supabase_local_ports` now writes
+/opt/macserver/supabase/docker-compose.macserver.yml (api-gw 8000, supavisor 5432 and
+6543 on 127.0.0.1, `!override`) and adds it to COMPOSE_FILE; called by the supabase
+step and by the firewall step, which updates re-apply. Verified with `docker compose
+config` on Supabase v0.8.2's real files: all three ports host_ip 127.0.0.1.

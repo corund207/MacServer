@@ -42,6 +42,13 @@ class RepoTests(unittest.TestCase):
 
     def test_docker_binds_loopback(self):
         self.assertEqual(json.loads((ROOT / "host/docker-daemon.json").read_text())["ip"], "127.0.0.1")
+        # The daemon setting does not cover Compose networks: Supabase's published ports
+        # are pinned to 127.0.0.1 by an override (every port it publishes).
+        steps = (ROOT / "installer/steps/30-services.sh").read_text()
+        override = steps.split("docker-compose.macserver.yml\" <<'EOF'", 1)[1].split("\nEOF", 1)[0]
+        ports = re.findall(r"^\s+- (\S+)$", override, re.M)
+        self.assertEqual(len(ports), 3)
+        self.assertTrue(all(p.startswith("127.0.0.1:") for p in ports), ports)
 
     def test_firewall_default_drop_without_flushing_other_tables(self):
         rules = "\n".join(line for line in (ROOT / "host/nftables.conf").read_text().splitlines()
