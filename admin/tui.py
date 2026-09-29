@@ -35,6 +35,13 @@ DOCS = "github.com/corund207/MacServer"
 STUDIO_PORT = 8443
 SAMPLE_S = 0.5
 HISTORY = 2400        # samples kept per graph (20 minutes at two per second)
+# Smoothing per reading (share of each new sample taken): lower = calmer.
+SMOOTH = {"cpu": 0.35, "temp": 0.25, "mhz": 0.3, "rx": 0.3, "tx": 0.3, "ts_rx": 0.3, "ts_tx": 0.3,
+          "rd": 0.3, "wr": 0.3, "ctxt": 0.3, "intr": 0.3}
+
+
+def ema(prev, value, alpha):
+    return prev + alpha * (value - prev)
 
 # Characters drawn in console mode besides printable ASCII: all exist in the
 # Lat15-Terminus console font (tests/test_dashboard.py checks it against the font).
@@ -407,11 +414,30 @@ class Sampler:
         self.status = None
         self.status_read = -1e9
         self.status_stamp = None
+        self.smooth = {}                # smoothed readings (see smooth_readings)
+        self.raw = {}
         self.firstboot = ""
         self.force_overview = False     # Space during an incident shows the normal dashboard
         self.fans = None
         self.events = Events()
         self.events.add("info", "dashboard started")
+
+    def smooth_readings(self):
+        """Exponential moving average over what is shown and graphed: each reading moves
+        the value part of the way (SMOOTH) towards it, so numbers stay readable and graphs
+        smooth, while a real change still shows within a second or two."""
+        self.raw = dict(self.now)
+        for key, alpha in SMOOTH.items():
+            value = self.now.get(key)
+            if value is None:
+                continue
+            prev = self.smooth.get(key)
+            self.smooth[key] = value if prev is None else ema(prev, value, alpha)
+            self.now[key] = self.smooth[key]
+        cores, prev = self.now.get("cores") or [], self.smooth.get("cores")
+        if prev and len(prev) == len(cores):
+            cores = [ema(p, v, SMOOTH["cpu"]) for p, v in zip(prev, cores)]
+        self.smooth["cores"] = self.now["cores"] = cores
 
     def sample(self):
         t = time.monotonic()
@@ -454,6 +480,7 @@ class Sampler:
         self.now["signal"] = wifi_signal(iface)
         self.now["uptime"] = uptime_s()
         self.now["load"] = loadavg()
+        self.smooth_readings()
         m = self.now["mem"]
         h = self.hist
         h["cpu"].append(self.now["cpu"])

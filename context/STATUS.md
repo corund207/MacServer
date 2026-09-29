@@ -359,3 +359,13 @@ applesmc hwmon; the dashboard reads the fan there too; FAN_MIN_PCT defaults to 1
 instead of being handed back; `fan-control --check` tells the installer whether fans
 exist. Tests: a fake T2 layout copied from the real Mac, default full speed, no-temp
 full speed (50 tests total).
+
+## 2026-09-28: smoothed readings
+
+The dashboard smooths CPU (and each core), temperature, frequency, network, Tailscale,
+disk and interrupt/context-switch rates with an exponential moving average
+(`SMOOTH`, about a third of each new 500 ms sample), so numbers stay readable and
+graphs lose the sample-to-sample spikes; the graphs and the CPU-busy/hot events use
+the smoothed values, and the raw ones are kept in `Sampler.raw`. Test: a reading
+jumping 10/90% shows a swing under 40 points around 50%, and a real jump to 100% is
+shown above 95% within 12 samples (6 s).

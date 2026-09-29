@@ -161,6 +161,24 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(tui.fmt_count(12_300), "12.3k")
         self.assertEqual(tui.SAMPLE_S, 0.5)
 
+    def test_readings_are_smoothed(self):
+        tui_fixture.machine()
+        s = tui.Sampler()
+        shown = []
+        for i in range(40):                          # a jumpy CPU: 10%, 90%, 10%, 90% ...
+            s.now.update(cpu=10.0 if i % 2 else 90.0, cores=[10.0, 90.0], rx=0.0 if i % 2 else 2e6)
+            s.smooth_readings()
+            shown.append(s.now["cpu"])
+        swing = max(shown[-10:]) - min(shown[-10:])
+        self.assertLess(swing, 40)                   # raw swing is 80 points
+        self.assertAlmostEqual(sum(shown[-10:]) / 10, 50, delta=8)
+        self.assertEqual(s.raw["cpu"], 10.0)         # the raw reading is kept too
+        for _ in range(12):                          # a real change: shown within a few seconds
+            s.now.update(cpu=100.0, cores=[100.0, 100.0], rx=0.0)
+            s.smooth_readings()
+        self.assertGreater(s.now["cpu"], 95)
+        self.assertEqual(tui.ema(10, 20, 0.5), 15)
+
     def test_helpers(self):
         self.assertEqual(tui.clip("abcdef", 4), "abc…")
         self.assertEqual(tui.nice_top([3_440_000], 10_000), 5_000_000)
