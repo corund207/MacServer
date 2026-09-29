@@ -15,7 +15,8 @@ ROOT = Path(__file__).resolve().parents[1]
 BASE = Path(tempfile.mkdtemp(prefix="macserver-tui-"))
 atexit.register(shutil.rmtree, BASE, True)
 os.environ.update(MACSERVER_PROC=str(BASE / "proc"), MACSERVER_SYS=str(BASE / "sys"),
-                  MACSERVER_STATUS=str(BASE / "status.json"), MACSERVER_ROOT=str(BASE))
+                  MACSERVER_STATUS=str(BASE / "status.json"), MACSERVER_ROOT=str(BASE),
+                  MACSERVER_FANS_STATUS=str(BASE / "fans.json"))
 sys.path.insert(0, str(ROOT / "admin"))
 import tui  # noqa: E402
 
@@ -28,6 +29,12 @@ SERVICES = [("supabase-db", "supabase", 3.4, 412), ("supabase-auth", "supabase",
             ("supabase-envoy", "supabase", 0.7, 44), ("supabase-analytics", "supabase", 2.6, 480),
             ("supabase-vector", "supabase", 0.5, 57), ("gateway-caddy-1", "gateway", 0.1, 18),
             ("gateway-cloudflared-1", "gateway", 0.2, 24)]
+
+
+LOGS = ["2026-09-28T15:15:31Z worker boot: loading functions from /home/deno/functions",
+         "2026-09-28T15:15:32Z error: Module not found \"file:///home/deno/functions/main/index.ts\"",
+         "2026-09-28T15:15:32Z     at file:///home/deno/functions/main/index.ts:1:1",
+         "2026-09-28T15:15:32Z worker exited with code 1"]
 
 
 def write(rel, text):
@@ -78,15 +85,18 @@ def status(scenario):
         (BASE / "status.json").unlink(missing_ok=True)
         return
     trouble = scenario == "trouble"
+    warning = scenario == "warning"
     containers = []
     for name, project, cpu, mib in SERVICES:
         stopped = trouble and name == "supabase-edge-functions"
         containers.append({"name": name, "project": project, "state": "exited" if stopped else "running",
                            "status": "Exited (1) 4 minutes ago" if stopped else "Up 3 days (healthy)",
                            "cpu": None if stopped else cpu, "mem": None if stopped else mib * 1024 ** 2})
+        if stopped:
+            containers[-1]["logs"] = LOGS
     data = {
         "generated_at": time.time(), "setup_done": True,
-        "host": {"updates_pending": 4 if trouble else 0, "reboot_required": False},
+        "host": {"updates_pending": 4 if trouble or warning else 0, "reboot_required": warning},
         "tailscale": {"state": "Running", "name": "macserver.tail4f2a.ts.net", "peers_online": 3},
         "containers": containers,
         "public_domain": "api.example.com", "public_ok": not trouble, "clock_synced": True,
@@ -99,10 +109,14 @@ def status(scenario):
     (BASE / "status.json").write_text(json.dumps(data))
 
 
-def screen(scenario="healthy", cols=160, rows=50, rich=True):
-    """Draw the dashboard for a scenario with 20 minutes of made-up history."""
+def screen(scenario="healthy", cols=160, rows=50, rich=True, overview=False):
+    """Draw the dashboard for a scenario with 20 minutes of made-up history.
+    healthy | warning (notices only) | trouble (critical: incident view) | setup.
+    overview=True shows the normal dashboard during an incident (as Space does)."""
     trouble = scenario == "trouble"
     temp = 93 if trouble else 62
+    (BASE / "fans.json").write_text(json.dumps({"mode": "curve", "min_pct": 60, "target_pct": 64.0 if not trouble else 100.0,
+                                                  "fans": [{"fan": "1", "rpm": 2400, "max_rpm": 6000}]}))
     machine(temp, tick=0)
     status(scenario)
     tui.disk = lambda: (41_200_000_000, 233_000_000_000)
@@ -149,4 +163,9 @@ def screen(scenario="healthy", cols=160, rows=50, rich=True):
         h["tx"].append(12_000 + 240_000 * (1 - wave) ** 3 + 40_000 * fast)
         h["rd"].append(20_000 + 900_000 * fast ** 6 + (2_400_000 if 1500 < i < 1530 else 0))
         h["wr"].append(60_000 + 300_000 * ((math.sin(i / 11) + 1) / 2) ** 4)
-    return tui.draw(tui.Canvas(cols, rows, rich), sampler, kiosk=True)
+    for i in range(120):
+        h["fan"].append(2300 + 600 * ((math.sin(i / 13) + 1) / 2))
+    sampler.force_overview = overview
+    c = tui.Canvas(cols, rows, rich)
+    tui.draw(c, sampler, kiosk=True)
+    return c

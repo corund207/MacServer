@@ -18,9 +18,11 @@ SIZES = [(232, 64), (180, 50), (140, 40), (100, 30), (80, 24), (40, 12)]
 
 
 class DashboardTests(unittest.TestCase):
+    def setUp(self):
+        tui.set_theme(False)        # every test starts from the normal colours
     def test_every_scenario_size_and_mode_draws_only_allowed_characters(self):
         for rich, allowed in ((True, RICH_CHARS), (False, CONSOLE_CHARS)):
-            for scenario in ("healthy", "trouble", "setup"):
+            for scenario in ("healthy", "warning", "trouble", "setup"):
                 for cols, rows in SIZES:
                     with self.subTest(rich=rich, scenario=scenario, size=(cols, rows)):
                         c = tui_fixture.screen(scenario, cols, rows, rich=rich)
@@ -32,21 +34,52 @@ class DashboardTests(unittest.TestCase):
     def test_healthy(self):
         text = tui_fixture.screen("healthy", 232, 64).text()
         for expected in ("ALL SYSTEMS NORMAL", "15/15 running", "https://macserver.tail4f2a.ts.net/",
-                         "i5-8210Y", "27%", "41%", "62°C", "up to date · 6bc4f51", "fan 2400 rpm", "5.2 GB", "41.2 GB",
+                         "i5-8210Y", "27%", "41%", "62°C", "up to date · 6bc4f51", "2400 rpm", "target 64% · min 60%", "5.2 GB", "41.2 GB",
                          "1.2 MB/s", "86.0 KB/s", "BAT ▲  80%", "3.2W", "realtime", "cloudflared",
                          "press 2 to log in"):
             self.assertIn(expected, text)
         self.assertIn(chr(0x28FF), text)                 # braille graphs are drawn
         self.assertNotIn("public-anon-key", text)       # no keys on the screen, not even public ones
 
-    def test_trouble_is_loud(self):
-        text = tui_fixture.screen("trouble", 232, 64).text()
-        for expected in ("ISSUE(S)", "edge-functions", "exited", "DOWN", "93°C",
-                         "4 pending", "14/15 running"):
+    def test_critical_shows_the_red_incident_view(self):
+        c = tui_fixture.screen("trouble", 232, 64)
+        text = c.text()
+        self.assertEqual(c.alert, "critical")
+        for expected in ("▲ CRITICAL · 3 ISSUE(S) ▲", "INCIDENT", "1. service edge-functions is exited",
+                         "fix   sudo docker logs --tail 50 supabase-edge-functions", "sudo macserver restart",
+                         'error: Module not found', "public API not answering", "running hot (93°C)",
+                         "VITALS", "EVENTS", "SYSTEM STATE", "SERVICES  14/15 running",
+                         "space: incident / overview"):
             self.assertIn(expected, text)
-        # The stopped service is listed first.
+        self.assertIn("█", text.splitlines()[2])                    # the block-letter CRITICAL banner
+        self.assertEqual(c.cells[30][100][2], tui.RED_THEME[0]["bg"])    # the whole screen is red
+        tui.set_theme(False)
+
+    def test_space_shows_the_normal_dashboard_during_an_incident(self):
+        c = tui_fixture.screen("trouble", 232, 64, overview=True)
+        text = c.text()
+        for expected in ("SERVICES", "edge-functions", "exited", "14/15 running", "4 pending"):
+            self.assertIn(expected, text)
         services = [line for line in text.splitlines() if "supabase " in line and ("running" in line or "exited" in line)]
-        self.assertIn("edge-functions", services[0])
+        self.assertIn("edge-functions", services[0])                # the stopped service first
+        self.assertEqual(c.alert, "critical")                       # still red, still flashing
+        tui.set_theme(False)
+
+    def test_warning_pulses_the_edge_orange(self):
+        c = tui_fixture.screen("warning", 232, 64)
+        self.assertEqual(c.alert, "warning")
+        self.assertIn("1 NOTICE(S)", c.text())
+        self.assertNotIn("INCIDENT", c.text())
+        edge = c.cells[20][0][2]
+        self.assertNotEqual(edge, tui.C["bg"])
+        self.assertGreater(edge[0], edge[2])                        # orange-ish, not blue
+        pill_bg = next(cell[2] for cell in c.cells[0] if "N" in cell[0] and cell[2] == tui.C["warn"])
+        self.assertEqual(pill_bg, tui.C["warn"])                    # the status pill keeps its colour
+        frame = c.ring_ansi(tui.ring_colour("warning", 0.35))
+        self.assertIn("\x1b[21;1H", frame)                          # only edge cells are re-sent
+        self.assertLess(len(frame), len(c.ansi(full_frame=True)) // 4)
+        a, b = tui.ring_colour("critical", 0.0), tui.ring_colour("critical", 0.4)
+        self.assertNotEqual(a, b)                                   # critical flashes
 
     def test_setup_running_is_not_an_error(self):
         text = tui_fixture.screen("setup", 180, 50).text()
@@ -119,7 +152,7 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual([t for _, _, t in reversed(ev.items)], ["CPU busy", "CPU back to normal", "CPU busy"])
 
     def test_busy_panels(self):
-        text = tui_fixture.screen("trouble", 232, 64).text()
+        text = tui_fixture.screen("trouble", 232, 64, overview=True).text()
         for expected in ("EVENTS", "service edge-functions: running → exited", "TREND", "tailnet",
                          "ctx 12.3k/s", "irq 4.1k/s", "tasks 2/412", "▲ read", "▼ write 307 KB/s"):
             self.assertIn(expected, text)

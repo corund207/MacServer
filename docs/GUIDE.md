@@ -142,6 +142,20 @@ change it, add `DASHBOARD_FONT_PX=16` (smaller, more detail) or `22` (bigger) to
 `/etc/macserver/macserver.conf`, then run `sudo ./install.sh --redo host` from the
 MacServer folder and log out of the Mac's screen.
 
+**Alerts.** When something needs attention, the edge of the screen **pulses orange**.
+When something is broken (a service stopped, Tailscale or the network down, the public
+API not answering), the edge **flashes red**, the whole screen turns red, and it
+switches to the **incident view**: each problem with the reason, the command that
+fixes it, and the failing service's last log lines (passwords and keys hidden),
+next to live vitals and the event log. Press **space** to switch between the
+incident view and the normal dashboard. The screen returns to normal by itself
+once everything works again.
+
+**Fans.** The fans never run below 60% of full speed, and speed up as CPU load or
+temperature rises (full speed above 95 °C). The CPU panel shows the fan speed and
+target. Change the floor with `FAN_MIN_PCT=70` in `/etc/macserver/macserver.conf`, or
+give the fans back to the Mac with `FAN_MODE=auto`; it applies within seconds.
+
 If the Mac's graphics ever fail, the screen falls back to a simpler text version of
 the same dashboard by itself.
 

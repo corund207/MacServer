@@ -315,3 +315,28 @@ updates) and live edges (CPU busy, hot, download burst, offline). "→" joins GL
 (checked present in Lat15). A frame takes about 25 ms to build here.
 Verified: 42 tests (event diffing and edge logic, busy panels); previews reviewed.
 This change is meant to reach the Mac by the self-updater, not by hand.
+
+## 2026-09-28: fan control, alert glow, red incident view
+
+Fans: `admin/fan_control.py` (root, `macserver-fans.service`, installed by the host
+step; replaces t2fanrd, which it disables and `Conflicts=` with). Every 2 s: target =
+FAN_MIN_PCT (default 60, never below 30) + the rest scaled by the higher of CPU load
+and temperature (50-90 C); 100% at 95 C; rises at once, falls 3 points per step;
+writes applesmc fanN_manual/fanN_output; FAN_MODE=auto or no temperature reading
+hands the fans back; ExecStopPost resets fanN_manual=0. Reports to
+/run/macserver/fans.json; the CPU panel shows rpm, target, floor and a trend.
+
+Alerts: `incidents()` gives each problem a level, reason, fixes and logs. Warning =
+the screen edge pulses orange (edge-only frames about 8 per second between full
+redraws); critical (any "bad") = the edge flashes red, the whole theme turns red, and
+the incident view shows (block-letter CRITICAL banner, problems with why/fix/logs,
+system state, all services, live vitals, events). Space toggles incident/overview.
+The collector adds the last 8 log lines of stopped or unhealthy containers, with
+JWTs, bearer tokens, password/secret/token values, long keys and database URLs
+replaced by [hidden] (a test found and fixed a Bearer-token leak in the first version).
+
+Verified: 48 tests (fan curve/step/fallbacks against a fake SMC; redaction; incident
+view, warning glow, space toggle, edge-only frames; all scenarios x sizes x looks);
+previews reviewed; the kiosk ran a critical incident through real agetty login.
+Not verified on the Mac: the applesmc fan attributes under the T2 kernel (the
+controller exits cleanly if none exist; install_fans only enables it when they do).

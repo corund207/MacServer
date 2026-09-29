@@ -159,6 +159,45 @@ def container_stats(stats_json_lines):
     return stats
 
 
+SECRET_PATTERNS = [   # order matters: "Authorization: Bearer X" must lose X, not "Bearer"
+    re.compile(r"eyJ[\w-]+\.[\w-]+\.[\w-]*"),                                   # JWTs (API keys, sessions)
+    re.compile(r"(?i)bearer\s+\S+"),
+    re.compile(r"(?i)(password|passwd|secret|token|apikey|api_key|authorization)([\"'=: ]+)\S+"),
+    re.compile(r"[A-Za-z0-9+/_-]{32,}"),                                      # long keys and hashes
+    re.compile(r"postgres(ql)?://[^\s]+"),
+]
+
+
+def redact(line):
+    for pattern in SECRET_PATTERNS:
+        if pattern.groups >= 2:
+            line = pattern.sub(lambda m: f"{m.group(1)}{m.group(2)}[hidden]", line)
+        else:
+            line = pattern.sub("[hidden]", line)
+    return line
+
+
+def recent_logs(name, lines=8):
+    """Last lines of a container's log, cleaned of secrets, for the incident view."""
+    out = run("docker", "logs", "--tail", str(lines), name, timeout=10)
+    if out is None:
+        try:
+            done = subprocess.run(["docker", "logs", "--tail", str(lines), name], capture_output=True,
+                                  text=True, timeout=10, check=False)
+            out = done.stdout + done.stderr
+        except (OSError, subprocess.TimeoutExpired):
+            return []
+    return [redact(line)[:200] for line in out.splitlines()[-lines:] if line.strip()]
+
+
+def with_logs(items):
+    """Stopped or unhealthy services get their recent log lines."""
+    for item in items:
+        if item.get("state") != "running" or "unhealthy" in item.get("status", ""):
+            item["logs"] = recent_logs(item["name"])
+    return items
+
+
 def with_stats(items, stats):
     for item in items:
         item.update(stats.get(item["name"], {"cpu": None, "mem": None}))
@@ -215,8 +254,9 @@ def collect():
             "reboot_required": Path("/run/reboot-required").exists(),
         },
         "tailscale": tailscale(run("tailscale", "status", "--json")),
-        "containers": with_stats(containers(run("docker", "ps", "-a", "--format", "{{json .}}")),
-                                 container_stats(run("docker", "stats", "--no-stream", "--format", "{{json .}}", timeout=30))),
+        "containers": with_logs(with_stats(containers(run("docker", "ps", "-a", "--format", "{{json .}}")),
+                                           container_stats(run("docker", "stats", "--no-stream", "--format",
+                                                               "{{json .}}", timeout=30)))),
         "public_domain": conf.get("PUBLIC_DOMAIN", ""),
         "public_ok": public_ok(conf.get("PUBLIC_DOMAIN", "")),
         "macserver_update": self_update(),

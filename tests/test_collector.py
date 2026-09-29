@@ -51,6 +51,15 @@ class ParserTests(unittest.TestCase):
         merged = collector.with_stats([{"name": "supabase-db"}, {"name": "x"}], stats)
         self.assertEqual(merged[1], {"name": "x", "cpu": None, "mem": None})
 
+    def test_logs_are_redacted(self):
+        line = ('auth error: invalid token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc password=hunter2 '
+                'Authorization: Bearer sk_live_123 key=' + "A" * 40 + ' postgres://u:p@db:5432/x')
+        clean = collector.redact(line)
+        for secret in ("eyJhbGci", "hunter2", "sk_live_123", "A" * 40, "u:p@db"):
+            self.assertNotIn(secret, clean)
+        self.assertIn("auth error: invalid token", clean)
+        self.assertIn("password=[hidden]", clean)
+
     def test_tailscale(self):
         data = {"BackendState": "Running", "Self": {"DNSName": "macserver.tail1.ts.net.",
                                                     "TailscaleIPs": ["100.64.0.1"], "Online": True}}

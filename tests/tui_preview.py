@@ -99,7 +99,9 @@ def render_rich(canvas, path, px=18):
                 continue
             code = ord(ch)
             mx, my = x0 + cw // 2, y0 + chh // 2
-            if 0x2800 <= code <= 0x28ff:                   # braille: draw the dots
+            if ch == "█":                                  # foot draws full blocks edge to edge
+                d.rectangle([x0, y0, x0 + cw - 1, y0 + chh - 1], fill=fg)
+            elif 0x2800 <= code <= 0x28ff:                 # braille: draw the dots
                 bits = code - 0x2800
                 r = max(1.2, cw * 0.16)
                 spots = [(0, 0, 0x01), (0, 1, 0x02), (0, 2, 0x04), (1, 0, 0x08), (1, 1, 0x10), (1, 2, 0x20),
@@ -153,7 +155,7 @@ def main():
         render_console(tui_fixture.screen(scenario, cols, rows, rich=False), out)
     else:
         cols, rows = map(int, size.split("x")) if size else grid_for(px)
-        render_rich(tui_fixture.screen(scenario, cols, rows, rich=True), out, px)
+        render_rich(tui_fixture.screen(scenario, cols, rows, rich=True, overview="--overview" in args), out, px)
     print(f"wrote {out}: {cols}x{rows} characters, {scenario}, {'console' if console else f'rich {px}px'}")
 
 

@@ -17,6 +17,7 @@ collector; it holds no secrets).
 """
 import collections
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -27,6 +28,7 @@ import sys
 import time
 
 STATUS = Path(os.environ.get("MACSERVER_STATUS", "/run/macserver/status.json"))
+FANS = Path(os.environ.get("MACSERVER_FANS_STATUS", "/run/macserver/fans.json"))
 PROC = Path(os.environ.get("MACSERVER_PROC", "/proc"))
 SYS = Path(os.environ.get("MACSERVER_SYS", "/sys"))
 DOCS = "github.com/corund207/MacServer"
@@ -66,6 +68,39 @@ GRADIENTS = {k: [rgb(x) for x in v] for k, v in {
 
 STATE_COLOUR = {"ok": C["ok"], "warn": C["warn"], "bad": C["bad"], "off": C["off"]}
 STATE_TEXT = {"ok": "OK", "warn": "WARN", "bad": "DOWN", "off": "OFF"}
+
+
+def _red(colour):
+    """The same brightness, in red: the whole screen turns red during an incident."""
+    lum = 0.3 * colour[0] + 0.59 * colour[1] + 0.11 * colour[2]
+    return min(255, round(35 + lum * 0.95)), round(lum * 0.16), round(lum * 0.2)
+
+
+NORMAL_THEME = (dict(C), {k: list(v) for k, v in GRADIENTS.items()})
+RED_THEME = ({**{k: _red(v) for k, v in C.items()}, "bg": (20, 6, 8), "panel": (36, 9, 12),
+              "bad": (255, 64, 64), "warn": (255, 150, 60), "ok": (150, 60, 60), "pill_fg": (20, 6, 8),
+              "bright": (255, 220, 220), "text": (235, 170, 170)},
+             {k: [(110, 18, 24), (200, 40, 46), (255, 95, 90)] for k in GRADIENTS})
+ALERT_ORANGE = (255, 140, 0)
+
+
+def set_theme(critical):
+    """Switch every colour between the normal and the red theme (per frame)."""
+    global C, GRADIENTS, STATE_COLOUR, EVENT_COLOUR
+    C, GRADIENTS = (RED_THEME if critical else NORMAL_THEME)
+    C, GRADIENTS = dict(C), dict(GRADIENTS)
+    STATE_COLOUR = {"ok": C["ok"], "warn": C["warn"], "bad": C["bad"], "off": C["off"]}
+    EVENT_COLOUR = {"ok": C["ok"], "warn": C["warn"], "bad": C["bad"], "info": C["accent"]}
+
+
+def ring_colour(level, t):
+    """Screen-edge colour: warnings pulse orange; critical alerts flash red."""
+    if level == "warning":
+        k = (1 + math.sin(t * 2 * math.pi / 1.4)) / 2
+        return mix(C["bg"], ALERT_ORANGE, 0.2 + 0.8 * k)
+    if level == "critical":
+        return (255, 36, 36) if int(t * 2.5) % 2 == 0 else (80, 8, 12)
+    return None
 
 
 def mix(a, b, t):
@@ -367,6 +402,8 @@ class Sampler:
         self.status_read = -1e9
         self.status_stamp = None
         self.firstboot = ""
+        self.force_overview = False     # Space during an incident shows the normal dashboard
+        self.fans = None
         self.events = Events()
         self.events.add("info", "dashboard started")
 
@@ -430,6 +467,13 @@ class Sampler:
                 f"running hot: {temp or 0:.0f}°C", "temperature back to normal")
         ev.edge("net", self.now["rx"] >= 5e6, "info", f"download burst: {fmt_bytes(self.now['rx'], True)}")
         ev.edge("offline", not iface, "bad", "network connection lost", "network connected")
+        try:                                     # what the fan controller is doing
+            self.fans = json.loads(FANS.read_text())
+        except (OSError, ValueError):
+            self.fans = None
+        fans_rpm = self.now.get("fans") or []
+        if fans_rpm:
+            h["fan"].append(fans_rpm[0])
         if t - self.status_read >= 5:
             new = load_status()
             self.firstboot = firstboot_state()
@@ -451,6 +495,7 @@ class Canvas:
 
     def __init__(self, w, h, rich=True):
         self.w, self.h, self.rich = w, h, rich
+        self.alert = "ok"
         self.cells = [[(" ", C["text"], None, False)] * w for _ in range(h)]
 
     def put(self, x, y, text, fg=None, bg=None, bold=False):
@@ -473,6 +518,48 @@ class Canvas:
                     ch, fg, _, bold = self.cells[yy][xx]
                     self.cells[yy][xx] = (ch, fg, bg, bold)
 
+    def edge_cells(self):
+        for x in range(self.w):
+            yield x, 0
+            yield x, self.h - 1
+        for y in range(1, self.h - 1):
+            yield 0, y
+            yield self.w - 1, y
+
+    def ring(self, colour):
+        """Colour the outermost cells' background (the alert glow)."""
+        if colour is None:
+            return
+        plain = (None, C["bg"], C["panel"])
+        if not hasattr(self, "ring_cells"):          # remember which cells are plain background
+            self.ring_cells = [(x, y) for x, y in self.edge_cells() if self.cells[y][x][2] in plain]
+        for x, y in self.ring_cells:                 # pills and badges keep their own colour
+            ch, fg, _, bold = self.cells[y][x]
+            self.cells[y][x] = (ch, fg, colour, bold)
+
+    def ring_ansi(self, colour):
+        """Only the edge, for the animation frames between full redraws."""
+        self.ring(colour)
+        out, last, cursor = [], None, None
+        for x, y in sorted(getattr(self, "ring_cells", []), key=lambda p: (p[1], p[0])):
+            ch, fg, bg, bold = self.cells[y][x]
+            if cursor != (x, y):                    # move only where the run of cells breaks
+                out.append(f"\x1b[{y + 1};{x + 1}H")
+            key = (fg, bg, bold)
+            if key != last:
+                out.append(f"\x1b[{self.sgr(fg, bg, bold)}m")
+                last = key
+            out.append(ch)
+            cursor = (x + 1, y)
+        return "".join(out) + "\x1b[0m"
+
+    def sgr(self, fg, bg, bold):
+        if self.rich:
+            code = f"0;{'1;' if bold else ''}38;2;{fg[0]};{fg[1]};{fg[2]}"
+            return code + (f";48;2;{bg[0]};{bg[1]};{bg[2]}" if bg else "")
+        i = nearest16(fg)
+        return f"0;{'1;' if bold or i >= 8 else ''}{30 + i % 8}" + (f";{40 + nearest16(bg, True)}" if bg else "")
+
     def text(self):
         return "\n".join("".join(c[0] for c in row).rstrip() for row in self.cells)
 
@@ -485,14 +572,7 @@ class Canvas:
             for ch, fg, bg, bold in row:
                 key = (fg, bg, bold)
                 if key != last:
-                    if self.rich:
-                        sgr = f"0;{'1;' if bold else ''}38;2;{fg[0]};{fg[1]};{fg[2]}"
-                        sgr += f";48;2;{bg[0]};{bg[1]};{bg[2]}" if bg else ""
-                    else:
-                        i = nearest16(fg)
-                        sgr = f"0;{'1;' if bold or i >= 8 else ''}{30 + i % 8}"
-                        sgr += f";{40 + nearest16(bg, True)}" if bg else ""
-                    line.append(f"\x1b[{sgr}m")
+                    line.append(f"\x1b[{self.sgr(fg, bg, bold)}m")
                     last = key
                 line.append(ch)
             out.append("".join(line) + "\x1b[0m")
@@ -625,36 +705,70 @@ def dot(c, x, y, state):
 
 # --- assessment ----------------------------------------------------------------------
 
-def assess(sampler):
-    s, now, problems = sampler.status or {}, sampler.now, []
+def incidents(sampler):
+    """Everything wrong right now, worst first: level, title, why, what to do, logs."""
+    s, now, out = sampler.status or {}, sampler.now, []
+
+    def add(level, title, why="", fix=(), logs=()):
+        out.append({"level": level, "title": title, "why": why, "fix": list(fix), "logs": list(logs)})
+
     if not s:
         if sampler.firstboot == "activating":
-            problems.append(("warn", "setup is running"))
+            add("warn", "setup is running", "first-boot setup is still installing MacServer")
         else:
-            problems.append(("bad", "no health data (setup not finished, or the collector stopped)"))
+            add("warn", "no health data yet", "setup has not finished, or the health collector stopped",
+                ["press 2, log in, run: sudo /opt/macserver-src/install.sh",
+                 "sudo systemctl restart macserver-status.timer"])
     else:
         if not s.get("setup_done"):
-            problems.append(("warn", "setup has not finished"))
-        down = [x["name"] for x in s.get("containers", []) if x.get("state") != "running"]
-        if down:
-            problems.append(("bad", f"{len(down)} service(s) stopped"))
-        if s.get("tailscale", {}).get("state") not in ("Running", None):
-            problems.append(("bad", "Tailscale is not connected"))
+            add("warn", "setup has not finished", "some install steps are still to do",
+                ["press 2, log in, run: sudo /opt/macserver-src/install.sh"])
+        for c in s.get("containers", []):
+            short = c["name"].split(".")[-1].replace("supabase-", "")
+            if c.get("state") != "running":
+                add("bad", f"service {short} is {c.get('state', 'down')}", c.get("status", ""),
+                    [f"sudo docker logs --tail 50 {c['name']}", "sudo macserver restart"], c.get("logs") or [])
+            elif "unhealthy" in c.get("status", ""):
+                add("warn", f"service {short} is unhealthy", c.get("status", ""),
+                    [f"sudo docker logs --tail 50 {c['name']}"], c.get("logs") or [])
+        state = (s.get("tailscale") or {}).get("state")
+        if state not in ("Running", None):
+            add("bad", "Tailscale is not connected", f"state: {state}; the admin page and SSH are unreachable",
+                ["sudo tailscale up", "sudo systemctl restart tailscaled"])
         if s.get("age_s", 0) > 120:
-            problems.append(("warn", "health data is old"))
+            add("warn", "health data is old", f"last collected {int(s['age_s'] // 60)} minutes ago",
+                ["sudo systemctl restart macserver-status.timer"])
         if s.get("public_domain") and s.get("public_ok") is False:
-            problems.append(("bad", "public API not answering"))
-        if s.get("host", {}).get("reboot_required"):
-            problems.append(("warn", "restart needed for updates"))
+            add("bad", "public API not answering", f"https://{s['public_domain']}/auth/v1/health fails",
+                ["sudo macserver public on", "check the tunnel in the Cloudflare dashboard"])
+        if (s.get("host") or {}).get("reboot_required"):
+            add("warn", "restart needed for updates", "the kernel or a core library was updated",
+                ["sudo reboot   (then type the disk passphrase)"])
+        mu = s.get("macserver_update") or {}
+        if mu.get("state") in ("rolled-back", "refused"):
+            add("warn", "a MacServer update did not install", mu.get("message", ""),
+                ["sudo macserver autoupdate status"])
     if not sampler.iface:
-        problems.append(("bad", "no network connection"))
+        add("bad", "no network connection", "no default route: Wi-Fi or cable is down",
+            ["press 2, log in, run: sudo nmtui   (or plug in Ethernet)"])
     temp = now.get("temp")
     if temp is not None and temp >= 90:
-        problems.append(("warn", f"running hot ({temp:.0f}°C)"))
+        add("warn", f"running hot ({temp:.0f}°C)", "the CPU is near its limit",
+            ["systemctl status macserver-fans", "keep the vents clear; open the lid"])
     used, total = now.get("disk", (0, 0))
     if total and used / total > 0.9:
-        problems.append(("warn", "disk almost full"))
-    return problems
+        add("warn", "disk almost full", f"{fmt_bytes(total - used)} free",
+            ["sudo docker system df", "sudo docker image prune   (asks first)"])
+    out.sort(key=lambda i: i["level"] != "bad")
+    return out
+
+
+def assess(sampler):
+    return [(i["level"], i["title"]) for i in incidents(sampler)]
+
+
+def alert_level(problems):
+    return "critical" if any(p[0] == "bad" for p in problems) else "warning" if problems else "ok"
 
 
 def connections(sampler):
@@ -715,7 +829,7 @@ def top_bar(c, sampler, problems):
     x = c.put(x + 2, 0, name, C["dim"], C["panel"] if c.rich else None)
     worst = "bad" if any(p[0] == "bad" for p in problems) else "warn" if problems else "ok"
     label = {"ok": " ALL SYSTEMS NORMAL ", "warn": f" {len(problems)} NOTICE(S) ",
-             "bad": f" {len(problems)} ISSUE(S) "}[worst]
+             "bad": f" ▲ CRITICAL · {len(problems)} ISSUE(S) ▲ "}[worst]
     right = []
     pct, stat, watts = now.get("battery") or (None, None, None)
     clock = time.strftime("%H:%M:%S")
@@ -765,7 +879,7 @@ def cpu_panel(c, sampler, x, y, w, h):
     # The total (a meter; the big graph shows its history), then each core: a line with
     # meter, % and temperature, its own graph under it, and a gap before the next core.
     meter_w = max(side_w - 22, 6)
-    room = gh - 2                              # rows for the lines, above load/fan
+    room = gh - 3                              # rows for the lines, above fan/load/tasks
     cores_room = room - 2
     per = max(1, min(5, cores_room // max(len(lines) - 1, 1)))
     row = y + 1
@@ -782,10 +896,25 @@ def cpu_panel(c, sampler, x, y, w, h):
         if n > 0 and graph_rows > 0 and c.rich:
             graph(c, sx + 5, row + 1, side_w - 6, graph_rows, hist, 100, "cpu")
         row += rows_here
-    if row < y + h - 2:
-        la = now.get("load") or [0, 0, 0]
+    if row < y + h - 3:
+        # Fan: speed against the controller's target (FAN_MIN_PCT floor), with its trend.
         fans = now.get("fans") or []
-        info = f"load {la[0]:.2f} {la[1]:.2f} {la[2]:.2f}" + (f"   fan {fans[0]} rpm" if fans else "")
+        fi = sampler.fans or {}
+        fan_max = next((f.get("max_rpm") for f in fi.get("fans", []) if f.get("max_rpm")), None) or 6000
+        xx = c.put(sx + 1, y + h - 4, "FAN ", C["conn"], bold=True)
+        if fans:
+            meter(c, xx, y + h - 4, 12, fans[0] / fan_max, "up")
+            xx = c.put(xx + 13, y + h - 4, f"{fans[0]:5d} rpm", C["bright"])
+            mode = (f"  target {fi['target_pct']:.0f}% · min {fi.get('min_pct', 60):.0f}%" if fi.get("target_pct")
+                    else f"  {fi.get('mode', 'auto')}" if fi else "  Mac's own control")
+            xx = c.put(xx, y + h - 4, clip(mode, sx + side_w - xx - 12), C["dim"])
+            spark = sx + side_w - xx - 2
+            if spark >= 6 and c.rich:
+                graph(c, xx + 1, y + h - 4, spark, 1, sampler.hist["fan"], fan_max, "up")
+        else:
+            c.put(xx, y + h - 4, "no fan reading", C["dim"])
+        la = now.get("load") or [0, 0, 0]
+        info = f"load {la[0]:.2f} {la[1]:.2f} {la[2]:.2f}"
         c.put(sx + 1, y + h - 3, clip(info, side_w - 1), C["dim"])
         freq = now.get("mhz")
         busy = (f"tasks {now.get('running', 0)}/{now.get('tasks', 0)}   ctx {fmt_count(now['ctxt'])}/s   "
@@ -960,6 +1089,112 @@ def events_panel(c, sampler, x, y, w, h):
         c.put(xx + 1, row, clip(text, x + w - 2 - xx - 1), C["bright"] if level in ("bad", "warn") else C["text"])
 
 
+BIG = {  # 5-row block letters for the incident banner
+    "C": [" ███ ", "█    ", "█    ", "█    ", " ███ "], "R": ["████ ", "█   █", "████ ", "█  █ ", "█   █"],
+    "I": ["███", " █ ", " █ ", " █ ", "███"], "T": ["█████", "  █  ", "  █  ", "  █  ", "  █  "],
+    "A": [" ███ ", "█   █", "█████", "█   █", "█   █"], "L": ["█    ", "█    ", "█    ", "█    ", "█████"],
+}
+
+
+def big_text(c, x, y, word, gradient):
+    for letter in word:
+        rows = BIG[letter]
+        for r, line in enumerate(rows):
+            for i, ch in enumerate(line):
+                if ch != " ":
+                    c.put(x + i, y + r, "█", grad(gradient, 1 - r / 5))
+        x += len(rows[0]) + 1
+    return x
+
+
+def incident_view(c, sampler, problems, kiosk):
+    """The red debug screen: what is wrong, why, what to do, the logs, and live vitals."""
+    w, h = c.w, c.h
+    items = incidents(sampler)
+    bad = [i for i in items if i["level"] == "bad"]
+    y = 1
+    if h >= 30 and w >= 100:
+        end = big_text(c, 2, y + 1, "CRITICAL", "cpu")
+        c.put(end + 3, y + 1, f"{len(bad)} critical, {len(items) - len(bad)} warning", C["bright"], bold=True)
+        c.put(end + 3, y + 2, clip(bad[0]["title"] if bad else "", w - end - 5), C["bad"], bold=True)
+        since = next((when for when, lvl, _ in sampler.events.items if lvl == "bad"), None)
+        c.put(end + 3, y + 3, f"since {time.strftime('%H:%M:%S', time.localtime(since))}" if since else "", C["dim"])
+        c.put(end + 3, y + 5, "space: normal dashboard · press 2 to log in and fix it", C["dim"])
+        y += 7
+    left_w = w * 60 // 100 if w >= 120 else w
+    box(c, 0, y, left_w, h - 1 - y, "incident", C["bad"], f"{len(items)} problem(s)")
+    row = y + 1
+    inner = left_w - 4
+    for n, item in enumerate(items):
+        if row >= h - 2:
+            break
+        xx = pill(c, 2, row, item["level"])
+        c.put(xx + 2, row, clip(f"{n + 1}. {item['title']}", inner - 9), C["bright"], bold=True)
+        row += 1
+        if item["why"] and row < h - 2:
+            c.put(4, row, clip(f"why   {item['why']}", inner - 2), C["text"])
+            row += 1
+        for k, cmd in enumerate(item["fix"]):
+            if row >= h - 2:
+                break
+            c.put(4, row, "fix   " if k == 0 else "      ", C["dim"])
+            c.put(10, row, clip(cmd, inner - 8), C["accent"])
+            row += 1
+        if item["logs"] and row < h - 3:
+            c.put(4, row, "log", C["dim"])
+            for line in item["logs"][-min(6, h - 3 - row):]:
+                c.put(10, row, clip(line, inner - 8), C["dim"])
+                row += 1
+        row += 1
+    # Whatever room is left: every connection and every service, so the whole
+    # situation is visible at once.
+    conns = connections(sampler)
+    if row + len(conns) + 3 < h - 2:
+        c.put(2, row, "SYSTEM STATE", C["dim"], bold=True)
+        row += 1
+        for state, label, value in conns:
+            xx = pill(c, 2, row, state)
+            xx = c.put(xx + 2, row, f"{label:<11}", C["dim"])
+            c.put(xx, row, clip(value, inner - 20), C["text"])
+            row += 1
+        row += 1
+    containers = (sampler.status or {}).get("containers", [])
+    if containers and row + 2 < h - 2:
+        up = sum(1 for x in containers if x.get("state") == "running")
+        c.put(2, row, f"SERVICES  {up}/{len(containers)} running", C["dim"], bold=True)
+        row += 1
+        x = 2
+        for item in sorted(containers, key=lambda i: (i.get("state") == "running", i["name"])):
+            label = item["name"].split(".")[-1].replace("supabase-", "")
+            running = item.get("state") == "running"
+            if x + len(label) + 4 > left_w - 2:
+                row += 1
+                x = 2
+            if row >= h - 2:
+                break
+            x = dot(c, x, row, "ok" if running else "bad")
+            x = c.put(x + 1, row, label, C["text"] if running else C["bad"], bold=not running) + 2
+    if left_w == w:
+        return
+    rx, rw = left_w, w - left_w
+    vit_h = min(max((h - 1 - y) // 2, 10), 18)
+    box(c, rx, y, rw, vit_h, "vitals", C["accent"], "live")
+    now, hist = sampler.now, sampler.hist
+    rows = [("CPU", hist["cpu"], 100, "cpu", f"{now['cpu']:3.0f}%"),
+            ("MEM", hist["mem"], 100, "mem", f"{hist['mem'][-1]:3.0f}%" if hist["mem"] else ""),
+            ("TEMP", hist["temp"], 100, "temp", f"{now['temp']:.0f}°C" if now.get("temp") is not None else ""),
+            ("NET", hist["rx"], nice_top(list(hist["rx"])[-rw * 2:], 100_000), "down", fmt_bytes(now["rx"], True))]
+    gh = max((vit_h - 2) // len(rows), 1)
+    for n, (label, values, top, g, value) in enumerate(rows):
+        ry = y + 1 + n * gh
+        if ry >= y + vit_h - 1:
+            break
+        c.put(rx + 2, ry, f"{label:<5}", C["dim"])
+        c.put(rx + rw - 3 - len(value), ry, value, C["bright"], bold=True)
+        graph(c, rx + 8, ry, rw - 12 - len(value), max(gh - (1 if gh > 2 else 0), 1), values, top, g)
+    events_panel(c, sampler, rx, y + vit_h, rw, h - 1 - y - vit_h)
+
+
 def setup_panel(c, sampler, x, y, w, h):
     running = sampler.firstboot == "activating"
     box(c, x, y, w, h, "setup", C["warn"])
@@ -974,7 +1209,7 @@ def setup_panel(c, sampler, x, y, w, h):
         c.put(x + 2, y + 1 + i, clip(text, w - 4), colour, bold=bold)
 
 
-def bottom_bar(c, sampler, kiosk):
+def bottom_bar(c, sampler, kiosk, level="ok"):
     w, y = c.w, c.h - 1
     s = sampler.status or {}
     bg = C["panel"] if c.rich else None
@@ -983,6 +1218,8 @@ def bottom_bar(c, sampler, kiosk):
     links = ([("admin", f"https://{name}/"), ("studio", f"https://{name}:{STUDIO_PORT}")] if name else [])
     links.append(("guide", DOCS))
     hint = "press 2 to log in · back here: Ctrl+Option+1" if kiosk else "q quit · sudo macserver help"
+    if level == "critical":
+        hint = "space: incident / overview · " + hint
     x = 1
     for label, url in links:
         if x + len(label) + len(url) + 4 > w - len(hint) - 3:
@@ -995,11 +1232,27 @@ def bottom_bar(c, sampler, kiosk):
 def draw(c, sampler, kiosk=True):
     """Lay out every panel for a canvas of any size (80x24 up to 250x80)."""
     w, h = c.w, c.h
+    problems = assess(sampler)
+    level = alert_level(problems)
+    set_theme(level == "critical")                  # an incident turns the whole screen red
+    if level != "critical":
+        sampler.force_overview = False
+    c.alert = level
     if c.rich:
         c.fill(0, 0, w, h, C["bg"])
-    problems = assess(sampler)
     top_bar(c, sampler, problems)
-    bottom_bar(c, sampler, kiosk)
+    bottom_bar(c, sampler, kiosk, level)
+    if level == "critical" and not sampler.force_overview:
+        incident_view(c, sampler, problems, kiosk)
+        c.ring(ring_colour(level, time.time()))
+        return c
+    draw_overview(c, sampler)
+    c.ring(ring_colour(level, time.time()))
+    return c
+
+
+def draw_overview(c, sampler):
+    w, h = c.w, c.h
     avail = h - 2
     y = 1
     s = sampler.status or {}
@@ -1090,26 +1343,39 @@ def run(kiosk):
         out.write("\x1b[?1049h\x1b[?25l\x1b[?7l\x1b[2J")
         out.flush()
         sampler = Sampler()
-        next_tick = 0.0
+        next_tick = next_pulse = 0.0
+        canvas = None
+        redraw = False
+        sync_on, sync_off = ("\x1b[?2026h", "\x1b[?2026l") if rich else ("", "")
         while True:
             t = time.monotonic()
-            if t >= next_tick or resized[0]:
+            if t >= next_tick or resized[0] or redraw:
                 if t >= next_tick:
                     sampler.sample()
                     next_tick = t + SAMPLE_S
                 if resized[0]:
                     out.write("\x1b[2J")
                     resized[0] = False
+                redraw = False
                 size = os.get_terminal_size(out.fileno()) if out.isatty() else os.terminal_size((120, 34))
                 try:
-                    frame = draw(Canvas(size.columns, size.lines, rich), sampler, kiosk).ansi(full_frame=True)
+                    canvas = draw(Canvas(size.columns, size.lines, rich), sampler, kiosk)
+                    frame = canvas.ansi(full_frame=True)
                 except Exception as err:       # a bad reading must never blank the screen
-                    frame = f"\x1b[H\x1b[0mMacServer dashboard: {err!r}"
+                    canvas, frame = None, f"\x1b[H\x1b[0mMacServer dashboard: {err!r}"
                     if not kiosk:
                         raise
-                out.write(("\x1b[?2026h" if rich else "") + frame + ("\x1b[?2026l" if rich else ""))
+                out.write(sync_on + frame + sync_off)
                 out.flush()
-            wait = max(next_tick - time.monotonic(), 0.05)
+            elif canvas is not None and canvas.alert != "ok" and t >= next_pulse:
+                # Between full redraws, animate only the screen edge (pulse or flash).
+                out.write(sync_on + canvas.ring_ansi(ring_colour(canvas.alert, time.time())) + sync_off)
+                out.flush()
+                next_pulse = t + 0.12
+            wait = next_tick - time.monotonic()
+            if canvas is not None and canvas.alert != "ok":
+                wait = min(wait, next_pulse - time.monotonic())
+            wait = max(wait, 0.02)
             if fd is None:
                 time.sleep(wait)
                 continue
@@ -1118,7 +1384,11 @@ def run(kiosk):
                 keys = os.read(fd, 64)
                 if not keys:
                     time.sleep(wait)       # input closed: keep drawing
-                elif kiosk:
+                    continue
+                if b" " in keys:           # during an incident: incident view <-> normal dashboard
+                    sampler.force_overview = not sampler.force_overview
+                    redraw = True
+                if kiosk:
                     screen = wanted_screen(keys)
                     if screen:
                         request_screen(screen)

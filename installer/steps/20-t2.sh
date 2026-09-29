@@ -57,6 +57,23 @@ step_host() {
   systemctl restart systemd-journald
   ok "logs capped at 500 MB, clock sync on, battery limit service installed"
   install_console
+  install_fans
+}
+
+# install_fans: fans at FAN_MIN_PCT (default 60%) or more, faster with load and heat.
+install_fans() {
+  install -D -m 0755 "$SRC/admin/fan_control.py" /usr/local/lib/macserver/fan-control
+  put_file "$SRC/host/macserver-fans.service" /etc/systemd/system/macserver-fans.service 0644
+  systemctl daemon-reload
+  if ! compgen -G '/sys/class/hwmon/hwmon*/fan*_output' >/dev/null; then
+    ok "no controllable fans found; the Mac's own fan control stays in charge"
+    return 0
+  fi
+  # MacServer's controller replaces t2fanrd; two controllers would fight over the fans.
+  systemctl disable --now t2fanrd.service >/dev/null 2>&1 || true
+  systemctl enable macserver-fans.service >/dev/null
+  systemctl restart macserver-fans.service
+  ok "fans: at least $(conf_get FAN_MIN_PCT 60)% of full speed, faster with load and heat (FAN_MIN_PCT, FAN_MODE=auto)"
 }
 
 # install_console: the Mac's screen always shows the dashboard (tty1) and never blanks.
