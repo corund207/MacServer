@@ -502,13 +502,20 @@ nothing pending. Nothing to bump.
 Verified: `tests/run.sh` (72 tests), ShellCheck 0.11, `nft -c`; the local VM test
 (`tests/local.sh image` + `vm`): hands-off install, then first boot on real systemd with
 NetworkManager installed systemd-resolved and resolved names within 2 s ("ok DNS:
-systemd-resolved on 127.0.0.53"), then the dashboard. Not verified: the update on
-the real Mac (below).
+systemd-resolved on 127.0.0.53"), then the dashboard. CI passed all four jobs.
 
-Still open on the Mac (restarts parts of Supabase, so it waits for the owner):
-- Firewall forward chain and Supabase's 127.0.0.1 ports are still not applied (5432,
-  6543 and 8000 reachable from the Wi-Fi); the next update's firewall step applies them.
-- Supabase's containers still send lookups to Tailscale's resolver: restart them after
-  the update (`sudo macserver restart`).
-- resolved still has LLMNR on (0.0.0.0:5355, dropped by the firewall) until the update's
-  host step; then remove the hand-made `/etc/systemd/resolved.conf.d/macserver.conf`.
+On the real Mac (owner approved; 10:12-10:16): the self-updater installed 2286525 and
+passed its health check. It applied the forward chain and moved Supabase's API
+gateway and pooler to 127.0.0.1 (both recreated, about 30 s); resolved runs with the
+new drop-in (LLMNR and mDNS off, DoT opportunistic); the sysctls are live; Tailscale
+DNS is off. Then `sh run.sh restart --except api-gw supavisor`: all 11 Supabase
+containers healthy after 46 s, every one with `ExtServers: [host(127.0.0.53)]`, and
+lookups from supabase-storage work (getaddrinfo and c-ares/EDNS0). The hand-made
+drop-in was removed. From another PC on the same Wi-Fi, 192.168.18.33 answers on
+none of 5432, 6543, 8000, 8090, 8081, 5355, 22, 443; the admin page answers 200 over
+the tailnet. The only listener beyond loopback and the tailnet is Tailscale's UDP 41641.
+
+For the owner: in the Tailscale admin console, turn off key expiry for `macserver`
+(it expires about 2027-03-28; re-authenticating then needs someone at the Mac).
+PlaneSight's compose file hard-codes Quad9 (`dns:`) and builds with `network: host`
+because Tailscale's resolver used to be in the way; both can go now.
