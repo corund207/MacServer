@@ -312,6 +312,7 @@ exit
 | The dashboard says **Setup has not finished** | Press **2**, log in, and run `sudo /opt/macserver-src/install.sh`. It continues where it stopped |
 | Admin page says **Forbidden** | Your Tailscale login isn't on the list: log in and add it to `ADMIN_LOGINS` in `/etc/macserver/macserver.conf` |
 | Admin page doesn't open at all | Tailscale must be on for that device; check MagicDNS and HTTPS in [part 2](#2-set-up-tailscale-5-minutes) |
+| Admin page: "Secure Connection Failed" | The Mac has no HTTPS certificate yet, usually a DNS problem: see [troubleshooting](TROUBLESHOOTING.md) |
 | A Supabase service is red | `sudo macserver logs <name>`, then `sudo macserver restart` |
 | Claude button says to sign in | Do the once-only steps in [part 9](#9-get-help-from-claude) |
 

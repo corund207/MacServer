@@ -1338,7 +1338,7 @@ def incidents(sampler):
             elif net:
                 facts.append("the Internet is NOT reachable: fix the network first, Tailscale will follow")
             add("bad", "Tailscale is not connected", f"state: {state}; the admin page and SSH are unreachable",
-                ["sudo tailscale status", "sudo journalctl -u tailscaled -n 50 --no-pager", "sudo tailscale up",
+                ["sudo tailscale status", "sudo journalctl -u tailscaled -n 50 --no-pager", "sudo tailscale up --ssh --accept-dns=false",
                  "sudo systemctl restart tailscaled"], facts=facts,
                 files=["/etc/nftables.conf  (firewall: only tailscale0 may connect)", "/var/lib/tailscale/  (node state)"])
         if s.get("age_s", 0) > 120:

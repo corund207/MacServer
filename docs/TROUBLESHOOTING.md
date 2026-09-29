@@ -52,6 +52,21 @@ if it is missing. Check `sudo dmesg | grep brcmfmac`.
 Certificates at https://login.tailscale.com/admin/dns, then
 `sudo ./install.sh --redo admin`.
 
+**The admin page does not load ("Secure Connection Failed",
+`SSL_ERROR_INTERNAL_ERROR_ALERT`, or a TLS error from curl).** Tailscale has no HTTPS
+certificate for the Mac yet. `journalctl -u tailscaled | grep -i cert` says why. If it
+shows `lookup acme-v02.api.letsencrypt.org ... i/o timeout`, tailscaled cannot use
+the Mac's DNS: run `sudo tailscale set --accept-dns=false` and
+`sudo /opt/macserver-src/install.sh --redo host` (DNS through systemd-resolved, see
+[NETWORK.md](NETWORK.md#dns-on-the-installed-mac)), then reload the page; the first
+load after that takes up to a minute while the certificate is issued.
+
+**Containers cannot resolve names (Auth e-mail, Edge Functions calling other sites)
+after a DNS change.** A container keeps the DNS servers it was started with. Restart
+it (`sudo docker restart NAME`, or `sudo macserver restart` for all of Supabase);
+`sudo docker exec NAME cat /etc/resolv.conf` shows `ExtServers: [host(127.0.0.53)]`
+when it uses the Mac's resolver.
+
 **The public URL returns 502 or 1033.** In Cloudflare, the public hostname must point
 to `http://caddy:8080`. Check `sudo docker logs macserver-gateway-cloudflared-1`.
 

@@ -62,6 +62,21 @@ class RepoTests(unittest.TestCase):
         for iface in ("wl*", "en*"):
             self.assertIn(f'ct state new iifname "{iface}" drop', rules)
 
+    def test_dns_stays_on_this_mac(self):
+        conf = (ROOT / "host/resolved.conf").read_text()
+        for setting in ("LLMNR=no", "MulticastDNS=no", "DNSOverTLS=opportunistic"):
+            self.assertRegex(conf, rf"(?m)^{setting}$")
+        # tailscaled's own lookups cannot reach Tailscale's resolver: never let it take
+        # over /etc/resolv.conf (it then cannot fetch the admin page's certificate).
+        steps = (ROOT / "installer/steps/30-services.sh").read_text()
+        calls = re.findall(r"^\s*tailscale (?:up|set) .*$", steps, re.M)
+        self.assertEqual(len(calls), 3)
+        for call in calls:
+            self.assertIn("--accept-dns=false", call)
+        # The host step switches DNS before the dashboard, whose line ends the VM test.
+        host = (ROOT / "installer/steps/20-t2.sh").read_text().split("step_host() {", 1)[1].split("\n}", 1)[0]
+        self.assertLess(host.index("install_dns"), host.index("install_console"))
+
     def test_caddy_refuses_admin_surfaces(self):
         caddy = (ROOT / "gateway/Caddyfile").read_text()
         refused = re.search(r"@refused path (.*)", caddy).group(1).split()

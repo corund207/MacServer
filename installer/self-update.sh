@@ -2,9 +2,10 @@
 # MacServer self-update: installs the newest commit on GitHub `main`, but only once
 # every CI check for that exact commit has passed (the tests and the full VM
 # install), and only as a fast-forward of what runs now. It backs up the database
-# first, re-applies the MacServer parts (screen, admin page, Claude Code), checks
-# health, and rolls back on failure. Supabase, Docker and the firewall are not
-# touched; `sudo macserver update` handles packages and containers.
+# first, re-applies MacServer's own settings (UPDATE_STEPS: screen, fans, DNS, kernel
+# network settings, firewall, admin page, Claude Code, this updater), checks health,
+# and rolls back on failure. It never changes Supabase's version or data, or Docker;
+# `sudo macserver update` handles packages and containers.
 #
 #   self-update           what the timer runs (every 2 minutes; obeys AUTO_UPDATE)
 #   self-update --now     check and install now, even with AUTO_UPDATE=off

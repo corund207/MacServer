@@ -12,6 +12,7 @@ GATEWAY_DIR=$MACSERVER_OPT/gateway
 ADMIN_DIR=$MACSERVER_OPT/admin
 ADMIN_PORT=8090
 STUDIO_TAILNET_PORT=8443
+RESOLVED_CONF=/etc/systemd/resolved.conf.d/60-macserver.conf
 
 # Pinned upstream sources. Update deliberately, with a review of the diff.
 SUPABASE_REF=self-hosted/v0.8.2
@@ -164,6 +165,10 @@ running_t2_kernel() { [[ $(uname -r) == *t2* ]]; }
 
 can_reach_ip() { timeout 5 bash -c "exec 3<>/dev/tcp/${FALLBACK_DNS[0]}/53" 2>/dev/null; }
 can_resolve() { timeout 8 getent hosts deb.debian.org >/dev/null 2>&1; }
+dns_via_resolved() {  # lookups go through systemd-resolved's stub, as install_dns sets up
+  systemctl is-active --quiet systemd-resolved &&
+    [[ $(readlink -f /etc/resolv.conf) == /run/systemd/resolve/stub-resolv.conf ]]
+}
 
 tailnet_name() {  # MagicDNS name without trailing dot, or empty
   tailscale status --json 2>/dev/null | jq -r '.Self.DNSName // empty' | sed 's/\.$//'

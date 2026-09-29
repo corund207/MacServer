@@ -102,8 +102,9 @@ step_autoupdate() {
 MacServer can install its own new versions from GitHub (github.com/corund207/MacServer)
 by itself: every 2 minutes it looks for a new commit, and installs it only once
 every automatic test has passed for it, including a full install in a virtual machine.
-It backs up the database first, and goes back to the old version if anything is wrong
-afterwards. Supabase, Docker and the firewall are not touched.
+It backs up the database first, re-applies MacServer's settings (screen, DNS, firewall,
+admin page), and goes back to the old version if anything is wrong afterwards. It never
+changes Supabase's version or your data.
 EOF
   if unattended; then        # first boot or a self-update: keep the owner's choice (default on)
     conf_set AUTO_UPDATE "$(conf_get AUTO_UPDATE on)"

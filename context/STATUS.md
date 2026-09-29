@@ -449,3 +449,66 @@ override file, no forward chain, 5432 / 6543 / 8000 open from the LAN), because 
 that installed it does not run the firewall step itself: it takes effect on the next
 update, or with `sudo ./install.sh --redo firewall`. The dashboard now shows this as a
 notice ("port(s) reachable from the local network") until it is fixed.
+
+## 2026-09-29: no HTTPS certificate for the admin page; DNS through systemd-resolved
+
+Found on the real Mac: `https://macserver.<tailnet>.ts.net/` never loaded (Firefox
+`SSL_ERROR_INTERNAL_ERROR_ALERT`). `tailscale serve` and the admin page were fine, but
+tailscaled could not get its Let's Encrypt certificate: `lookup
+acme-v02.api.letsencrypt.org ... i/o timeout`. Two causes, both measured on the Mac:
+1. With Tailscale DNS on and no systemd-resolved, Tailscale writes 100.100.100.100 and
+   fd7a:115c:a1e0::53 into /etc/resolv.conf. tailscaled's own sockets carry fwmark
+   0x80000, which skips Tailscale's routing table, so they cannot reach that resolver
+   (a marked query timed out / "network unreachable"; an unmarked one was answered).
+2. The Wi-Fi router drops every UDP DNS query that carries EDNS0 (to itself, 1.1.1.1
+   and 9.9.9.9 alike) and does not answer DNS over TCP. Go's resolver always sends
+   EDNS0; glibc does not, so curl, apt and getent worked. Public resolvers answer over
+   TCP and TLS.
+
+Done by hand on the Mac (owner's go-ahead): restarted tailscaled (no effect);
+`tailscale set --accept-dns=false`; installed systemd-resolved. It then had no
+upstream servers until `systemctl reload dbus`, a restart and `nmcli general reload
+dns-full` (the Mac's own DNS was down about two minutes, 09:24-09:26); a hand-made
+drop-in `/etc/systemd/resolved.conf.d/macserver.conf` adds FallbackDNS. tailscaled got
+its certificate at 09:27 and the admin page answers 200.
+Side effect: Docker forwards Supabase's container lookups to what /etc/resolv.conf
+listed when they started (`ExtServers: [host(100.100.100.100) host(fd7a:...::53)]`);
+with Tailscale DNS off, 100.100.100.100 answers SERVFAIL for public names, so those
+containers cannot resolve public names until they restart. A new container gets
+`host(127.0.0.53)` and resolves (glibc and c-ares/EDNS0 lookups tested).
+
+In the repository:
+- `host/resolved.conf` + `install_dns` (host step; asks; the updater re-applies it):
+  systemd-resolved with Quad9 and Cloudflare next to the network's server, DNS over
+  TLS opportunistic, LLMNR and mDNS off; after installing the package it reloads D-Bus
+  and NetworkManager's DNS. `fix_dns` uses resolved once it runs.
+- Tailscale joins and re-runs with `--accept-dns=false`.
+- `host/sysctl.conf`: no ICMP redirects or source routing (all + default), secure
+  redirects off, broadcast pings and bogus ICMP errors ignored, SYN cookies.
+- Firewall: pings from the LAN rate-limited (10/s, burst 20).
+- `macserver doctor` checks DNS goes through resolved; `tailscale up` hints carry the
+  flags. The server's Claude skill: publish on 127.0.0.1 explicitly, no `dns:` in
+  compose files.
+- Docs: SECURITY (DNS, sysctl, the corrected Docker claim, what the updater
+  re-applies), NETWORK (DNS section), TROUBLESHOOTING and GUIDE (certificate,
+  container DNS).
+- Tests: repo invariants (resolved settings, `--accept-dns=false` on every `tailscale
+  up`/`set`, DNS switched before the dashboard); the VM test waits for the DNS line.
+
+Upgrades checked on 2026-09-29: Supabase self-hosted v0.8.2, Caddy 2.11.4, cloudflared
+2026.9.3 and Claude Code 2.1.284 are the newest releases; Docker 29.8.1 and Debian had
+nothing pending. Nothing to bump.
+
+Verified: `tests/run.sh` (72 tests), ShellCheck 0.11, `nft -c`; the local VM test
+(`tests/local.sh image` + `vm`): hands-off install, then first boot on real systemd with
+NetworkManager installed systemd-resolved and resolved names within 2 s ("ok DNS:
+systemd-resolved on 127.0.0.53"), then the dashboard. Not verified: the update on
+the real Mac (below).
+
+Still open on the Mac (restarts parts of Supabase, so it waits for the owner):
+- Firewall forward chain and Supabase's 127.0.0.1 ports are still not applied (5432,
+  6543 and 8000 reachable from the Wi-Fi); the next update's firewall step applies them.
+- Supabase's containers still send lookups to Tailscale's resolver: restart them after
+  the update (`sudo macserver restart`).
+- resolved still has LLMNR on (0.0.0.0:5355, dropped by the firewall) until the update's
+  host step; then remove the hand-made `/etc/systemd/resolved.conf.d/macserver.conf`.

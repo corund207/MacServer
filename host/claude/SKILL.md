@@ -64,9 +64,15 @@ exact command to run instead.
 ## Rules you must follow here
 
 - **Never expose anything new.** No router port forwarding, no ports published on
-  0.0.0.0 (Docker publishes on 127.0.0.1 only), no OpenSSH, and never make Postgres,
-  Studio, postgres-meta, Docker or the admin page public. To let the Internet reach a
-  new API path, explain the change to `Caddyfile` and let the owner decide.
+  0.0.0.0, no OpenSSH, and never make Postgres, Studio, postgres-meta, Docker or the
+  admin page public. In a compose file always write the address:
+  `ports: ["127.0.0.1:8081:8080"]` (Docker's 127.0.0.1 default covers only its default
+  bridge, not Compose networks; the firewall also drops LAN connections to containers).
+  To let the Internet reach a new API path, explain the change to `Caddyfile` and let
+  the owner decide.
+- **DNS** goes through systemd-resolved (`resolvectl status`); Docker hands every
+  container's lookups to it. Do not hard-code DNS servers (`dns:`) in compose files,
+  and do not edit `/etc/resolv.conf` or turn on Tailscale DNS (`--accept-dns`).
 - **Back up before risky database work**: `sudo macserver backup`.
 - Do not edit `/opt/macserver/supabase/docker-compose.yml` or pinned image
   versions/digests by hand; updates go through `sudo macserver update`.
@@ -78,8 +84,9 @@ exact command to run instead.
 ## Troubleshooting
 
 - Containers down: `sudo macserver status`, then `sudo macserver logs <service>`.
-- Network/DNS: `sudo macserver doctor`. Wrong clock breaks HTTPS: check `date`
-  (`systemd-timesyncd` keeps it right).
+- Network/DNS: `sudo macserver doctor`, `resolvectl status`. Wrong clock breaks
+  HTTPS: check `date` (`systemd-timesyncd` keeps it right). A container that cannot
+  resolve names after a DNS change needs a restart.
 - Disk: `df -h /`; old Docker images: `docker image prune` (ask first).
 - Temperature/fans: `sensors`; the Mac should be on its charger, lid may be closed.
 - Logs of the installer: `/var/log/macserver-firstboot.log`,

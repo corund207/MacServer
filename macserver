@@ -90,12 +90,13 @@ cmd_doctor() {
   if can_resolve; then ok "Internet and DNS"
   elif can_reach_ip; then warn "Internet works, DNS does not: sudo ./install.sh --redo network"
   else warn "no Internet"; fi
+  check "DNS through systemd-resolved" "DNS does not go through systemd-resolved (sudo /opt/macserver-src/install.sh --redo host)" dns_via_resolved
   if is_t2; then
     check "T2 kernel $(uname -r)" "not running the T2 kernel ($(uname -r)); pick it in GRUB or reinstall linux-t2-lts" running_t2_kernel
     check "T2 keyboard driver (keyboard, trackpad)" "T2 keyboard driver not loaded (sudo modprobe t2bce_vhci)" t2_keyboard_loaded
     check "Wi-Fi firmware" "no Wi-Fi firmware (sudo macserver wifi)" wifi_firmware_present
   fi
-  check "Tailscale" "Tailscale is not connected (sudo tailscale up --ssh)" tailscale_running
+  check "Tailscale" "Tailscale is not connected (sudo tailscale up --ssh --accept-dns=false)" tailscale_running
   check "Docker" "Docker is not running" systemctl is-active --quiet docker
 }
 

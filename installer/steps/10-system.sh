@@ -34,6 +34,12 @@ step_preflight() {
 # Many phones hand out a DNS server that does not answer Linux. Replace it.
 fix_dns() {
   local conf list
+  if systemctl is-active --quiet systemd-resolved; then   # after the host step: add the public resolvers there
+    say "Adding public DNS servers to systemd-resolved (host/resolved.conf)"
+    put_file "$SRC/host/resolved.conf" "$RESOLVED_CONF" 0644
+    systemctl restart systemd-resolved
+    return 0
+  fi
   list=$(IFS=,; echo "${FALLBACK_DNS[*]}")
   say "Using fixed DNS servers: ${FALLBACK_DNS[*]}"
   [[ -L /etc/resolv.conf ]] && { warn "/etc/resolv.conf is managed by another service; set DNS there."; return 1; }
@@ -54,6 +60,35 @@ fix_dns() {
     printf '[global-dns-domain-*]\nservers=%s\n' "$list" > /etc/NetworkManager/conf.d/60-macserver-dns.conf
     systemctl reload NetworkManager 2>/dev/null || true
   fi
+}
+
+# install_dns: this Mac resolves names through systemd-resolved (host/resolved.conf):
+# a cache on 127.0.0.53 that Docker's containers use too, public resolvers next to the
+# network's own server, and no LLMNR or mDNS. Tailscale is kept out of /etc/resolv.conf:
+# tailscaled's own sockets bypass Tailscale's routes, so with its resolver there it
+# cannot look up anything itself (such as Let's Encrypt, for the admin page's certificate).
+install_dns() {
+  local _
+  if ! dpkg -s systemd-resolved >/dev/null 2>&1 || ! cmp -s "$SRC/host/resolved.conf" "$RESOLVED_CONF"; then
+    say "DNS will go through systemd-resolved: a local cache that asks your network's DNS server"
+    say "and Quad9/Cloudflare (encrypted when they offer it), with LAN name broadcasts (LLMNR, mDNS) off."
+    confirm "Switch this Mac's DNS to systemd-resolved?" y || { warn "skipped; DNS stays as it is"; return 0; }
+    if tailscale_running; then tailscale set --accept-dns=false; fi
+    put_file "$SRC/host/resolved.conf" "$RESOLVED_CONF" 0644   # before the package: it starts with servers
+    if ! dpkg -s systemd-resolved >/dev/null 2>&1; then
+      apt_quiet install systemd-resolved >/dev/null || { warn "could not install systemd-resolved; DNS stays as it is"; return 0; }
+      # The package starts resolved before D-Bus has read its policy: it then never owns
+      # its bus name, and NetworkManager cannot hand it the network's DNS server.
+      systemctl reload dbus 2>/dev/null || true
+    fi
+    systemctl restart systemd-resolved
+    if systemctl is-active --quiet NetworkManager; then nmcli general reload dns-full >/dev/null 2>&1 || true; fi
+  fi
+  for _ in 1 2 3 4 5; do
+    if can_resolve; then ok "DNS: systemd-resolved on 127.0.0.53 (public resolvers added, LLMNR and mDNS off)"; return 0; fi
+    sleep 2
+  done
+  warn "names do not resolve yet through systemd-resolved; see: resolvectl status"
 }
 
 # check_https: DNS works; make sure HTTPS does too. A wrong clock (a Mac whose battery

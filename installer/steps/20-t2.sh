@@ -56,6 +56,7 @@ step_host() {
   systemctl enable macserver-battery.service >/dev/null
   systemctl restart systemd-journald
   ok "logs capped at 500 MB, clock sync on, battery limit service installed"
+  install_dns
   install_console
   install_fans
 }

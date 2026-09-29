@@ -7,7 +7,8 @@
 #     it up to its build date, and the installer must set it from the network);
 #  2. boot the installed disk under UEFI, type the passphrase on the serial console
 #     and wait for MacServer's first-boot setup to pass preflight, network, base
-#     and host (which puts the always-on dashboard on the screen).
+#     and host (which switches DNS to systemd-resolved and puts the always-on
+#     dashboard on the screen).
 #
 #   tests/iso_install_test.sh IMAGE.iso            quick: phase 1 boots the kernel directly
 #   FULL_UEFI=1 tests/iso_install_test.sh IMAGE.iso phase 1 boots the image's own UEFI menu
@@ -104,7 +105,8 @@ watch_console boot.log \
   "MacServer installer@300" \
   "Debian 13 x86_64, UEFI@120" \
   "Internet and DNS work@180" \
-  "the screen shows the MacServer dashboard@900"
+  "DNS: systemd-resolved on 127.0.0.53@900" \
+  "the screen shows the MacServer dashboard@600"
 rc=$?
 set -e
 kill "$qpid" 2>/dev/null || true

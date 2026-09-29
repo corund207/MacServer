@@ -10,11 +10,14 @@ step_tailscale() {
   fi
   systemctl enable --now tailscaled >/dev/null
 
+  # --accept-dns=false: this Mac keeps its own DNS (install_dns). With Tailscale's
+  # resolver in /etc/resolv.conf, tailscaled itself cannot look names up, so it never
+  # gets the admin page's HTTPS certificate. Nothing on the server needs MagicDNS names.
   if ! tailscale_running; then
     local host key=$MACSERVER_ETC/tailscale-authkey
     host=$(ask "Name for this server on your tailnet" "$(conf_get HOSTNAME macserver)")
     if [[ -s $key ]]; then
-      tailscale up --ssh --hostname="$host" --auth-key="file:$key"
+      tailscale up --ssh --accept-dns=false --hostname="$host" --auth-key="file:$key"
       shred -u "$key" 2>/dev/null || rm -f "$key"
     else
       cat <<'EOF'
@@ -23,10 +26,10 @@ the link on any computer, and sign in with the account that owns your tailnet.
 Tailscale SSH is turned on, so you can then run `ssh USER@macserver` from your
 own devices without copying keys.
 EOF
-      tailscale up --ssh --hostname="$host" --qr
+      tailscale up --ssh --accept-dns=false --hostname="$host" --qr
     fi
   else
-    tailscale set --ssh
+    tailscale set --ssh --accept-dns=false
   fi
   local name login
   name=$(tailnet_name)

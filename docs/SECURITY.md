@@ -11,10 +11,24 @@
 | Public app API | none: cloudflared connects out to Cloudflare | The Internet, only the paths below |
 
 - **Firewall** (`host/nftables.conf`): input is dropped unless it arrives on
-  `tailscale0`, is a reply, ICMP, DHCP, or Tailscale's UDP port. It lives in its own
-  table and does not flush Docker's or Tailscale's rules.
-- **Docker** (`host/docker-daemon.json`): `"ip": "127.0.0.1"` makes every published
-  container port loopback-only, even if a compose file forgets to say so.
+  `tailscale0`, is a reply, ICMP (pings rate-limited), DHCP, or Tailscale's UDP port.
+  A forward chain that runs before Docker's drops every new connection from the Wi-Fi,
+  a cable or a phone to a container, whatever address the container publishes on. It
+  lives in its own table and does not flush Docker's or Tailscale's rules.
+- **Container ports** stay on 127.0.0.1. Docker's `"ip": "127.0.0.1"`
+  (`host/docker-daemon.json`) covers only its default bridge, not Compose networks, so
+  Supabase's published ports (API gateway 8000, pooler 5432 and 6543) are pinned to
+  127.0.0.1 by `docker-compose.macserver.yml`, which the supabase and firewall steps
+  write. The firewall's forward chain covers any container that still gets this wrong.
+- **DNS** (`host/resolved.conf`): systemd-resolved answers on 127.0.0.53 only, for
+  the Mac and (through Docker) its containers. LLMNR and mDNS are off, so nothing
+  answers name broadcasts from the LAN. It asks the network's DNS server and Quad9 /
+  Cloudflare side by side, over TLS when a server offers it (opportunistic: this
+  encrypts but does not authenticate). Tailscale does not manage the Mac's DNS
+  (`--accept-dns=false`): tailscaled's own lookups cannot reach Tailscale's resolver.
+- **Kernel network settings** (`host/sysctl.conf`): no ICMP redirects or source
+  routing accepted or sent, SYN cookies, loose reverse-path filtering (strict mode
+  breaks Tailscale).
 - **No OpenSSH, no router port forwarding.** The installer offers to disable OpenSSH
   if Debian installed it.
 
@@ -62,12 +76,13 @@ keep `ADMIN_LOGINS` to yourself. The session log is private to the owner (mode 0
   `checks` always, plus `disk-install`, `image` and `vm-test` when the change since
   the running version touches `iso/`, `installer/`, `host/`, `install.sh` or the
   workflows (or when the running version is unknown). It installs only a fast-forward
-  of the running version (a rewritten history is refused). It backs up the database, re-runs
-  the host, admin and claude steps, checks health and rolls back on failure; a
-  rolled-back commit is not retried automatically. It never touches Supabase's
-  version, Docker, the firewall or data. Trust: whoever can push to `main` and pass
-  CI can run code as root on the server, so the GitHub account needs 2FA. Turn it off
-  with `sudo macserver autoupdate off`.
+  of the running version (a rewritten history is refused). It backs up the database,
+  re-runs the host, firewall, admin, claude and autoupdate steps (screen, DNS, kernel
+  network settings, firewall, Supabase's local-only ports, admin page, Claude Code,
+  the updater), checks health and rolls back on failure; a rolled-back commit is not
+  retried automatically. It never changes Supabase's version, Docker or data.
+  Trust: whoever can push to `main` and pass CI can run code as root on the server,
+  so the GitHub account needs 2FA. Turn it off with `sudo macserver autoupdate off`.
 
 - APT repositories (t2linux, Docker, Tailscale) are added only after the downloaded
   signing key matches the fingerprint pinned in `installer/lib.sh`, and each key is

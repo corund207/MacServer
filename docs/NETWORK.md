@@ -41,7 +41,8 @@ For a server, keep a wired connection if you can. It is the most stable.
    ```
 
    The MacServer `network` step then makes this permanent (it asks first). It
-   configures the DHCP client so a lease renewal does not undo it.
+   configures the DHCP client so a lease renewal does not undo it. Once the `host`
+   step has run, do not edit `/etc/resolv.conf` any more: see DNS below.
 
 ## Offline install
 
@@ -64,3 +65,24 @@ The installer's `wifi` step (or `sudo macserver wifi` later) does this:
 
 Wired and Wi-Fi can be used together. Either way, nothing on the Mac is reachable
 from the local network: the firewall only admits Tailscale.
+
+## DNS on the installed Mac
+
+The `host` step (asks first) makes systemd-resolved the Mac's DNS: `/etc/resolv.conf`
+points at its local cache on 127.0.0.53, which Docker's containers use too. It asks the
+network's own DNS server and Quad9 / Cloudflare side by side (`host/resolved.conf`),
+over TLS when a server offers it, so a phone or router whose DNS misbehaves does not
+take the server offline. LLMNR and mDNS are off. Tailscale does not manage the Mac's
+DNS (`tailscale set --accept-dns=false`); your other devices still reach the Mac by
+its MagicDNS name.
+
+Some routers drop DNS queries that carry EDNS0, which programs written in Go (such as
+tailscaled) always send, and answer only plain UDP queries. Tools such as `curl` and
+`apt` then work while tailscaled cannot fetch the admin page's HTTPS certificate.
+systemd-resolved notices and falls back to plain queries for that server.
+
+```sh
+resolvectl status                          # servers per link and the global ones
+resolvectl query deb.debian.org            # a lookup, and which server answered
+sudo resolvectl show-server-state          # what each server supports (UDP, EDNS0, TLS)
+```
