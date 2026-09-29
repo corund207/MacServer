@@ -9,6 +9,8 @@ RuntimeDirectory=macserver
 RuntimeDirectoryMode=0755
 RuntimeDirectoryPreserve=yes
 Nice=10
+# Runs every 2 s: keep the journal for things that matter (systemd would log 3 lines per run)
+LogLevelMax=warning
 ProtectSystem=full
 ProtectHome=yes
 PrivateTmp=yes

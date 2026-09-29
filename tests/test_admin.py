@@ -41,7 +41,7 @@ class AuthorizationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             status = Path(tmp) / "status.json"
             status.write_text(json.dumps({"generated_at": 1000}))
-            self.assertFalse(server.load_status(status, now=1050)["stale"])
+            self.assertFalse(server.load_status(status, now=1000 + server.STALE_AFTER_S - 1)["stale"])
             self.assertTrue(server.load_status(status, now=1000 + server.STALE_AFTER_S + 1)["stale"])
             self.assertIn("error", server.load_status(Path(tmp) / "none.json"))
 

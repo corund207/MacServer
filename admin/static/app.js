@@ -164,4 +164,4 @@ async function refresh() {
 }
 
 refresh();
-setInterval(refresh, 15000);
+setInterval(refresh, 2000);

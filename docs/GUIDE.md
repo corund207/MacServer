@@ -145,11 +145,23 @@ MacServer folder and log out of the Mac's screen.
 **Alerts.** When something needs attention, the edge of the screen **pulses orange**.
 When something is broken (a service stopped, Tailscale or the network down, the public
 API not answering), the edge **flashes red**, the whole screen turns red, and it
-switches to the **incident view**: each problem with the reason, the command that
-fixes it, and the failing service's last log lines (passwords and keys hidden),
-next to live vitals and the event log. Press **space** to switch between the
-incident view and the normal dashboard. The screen returns to normal by itself
-once everything works again.
+switches to the **incident view**, a debugging console with five pages that turn by
+themselves every 8 seconds (**n** next, **b** back, **p** hold the page, **space**
+switches to the normal dashboard and back):
+
+- **Incident**: each problem with the reason, facts (exit code, out-of-memory kill,
+  restarts, health-check output), numbered commands to run, the files and folders to
+  open, and the last log lines (passwords and keys hidden), next to live vitals,
+  temperatures, the busiest programs and the event log.
+- **Network**: every listening port and how far it reaches (ALL NETS and LAN are
+  flagged), live inbound and outbound connections, router / Internet / DNS checks.
+- **Requests**: what your apps are asking the API for: a live feed, the status
+  codes, the busiest requests and callers, and recent errors.
+- **System**: CPU cores, memory, every temperature sensor, fans and heat throttling.
+- **Logs**: failed services, system and kernel errors, the last error lines of each
+  Supabase service, the files that matter and when they last changed, and commands.
+
+The screen returns to normal by itself once everything works again.
 
 **Fans.** The fans never run below 60% of full speed, and speed up as CPU load or
 temperature rises (full speed above 95 °C). The CPU panel shows the fan speed and

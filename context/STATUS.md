@@ -413,3 +413,39 @@ covers the default bridge, not Compose networks, so Supabase's ports were never 
 6543 on 127.0.0.1, `!override`) and adds it to COMPOSE_FILE; called by the supabase
 step and by the firewall step, which updates re-apply. Verified with `docker compose
 config` on Supabase v0.8.2's real files: all three ports host_ip 127.0.0.1.
+
+## 2026-09-28: the incident view is a debugging console; status every 2 seconds
+
+Status file: `macserver-status.timer` now runs every 2 s (was 30 s). A run takes about
+0.3 s: container CPU and memory come from cgroup v2 (the same numbers as `docker stats`,
+which alone took 2.2 s), and the slow parts are cached in `/run/macserver/collector-state.json`
+(apt 5 min, public route 20 s). The service has `LogLevelMax=warning` so the journal is not
+flooded. The admin page polls every 2 s, the dashboard reads the file every 2 s, and the
+admin page calls the data stale after 20 s (was 120 s).
+
+The collector adds a `debug` section to status.json (never fatal: an error there leaves the
+basic health data intact). Envoy access log parsed into requests (query strings stripped,
+token-like path segments hidden), `/proc/net/nf_conntrack` grouped into inbound and outbound
+connections per container (labelled by container, tailnet device or LAN host), `ss` listeners
+with how far they reach, router / Internet / DNS checks (an outage needs two misses in a
+row), `docker inspect` facts for services that are not fine, the last error lines of each
+service log, failed units, journal and kernel errors, OOM kills and heat-throttle counters,
+and the files worth opening with their age.
+
+Dashboard: five incident pages that rotate (n / b / p keys). New incidents from the debug
+data: ports reachable from the LAN, failed units, API 5xx, OOM kill, heat throttling,
+Internet unreachable (critical), DNS failing. The T+ clock counts from the start of the
+incident.
+
+Verified: 71 Python tests (parsers on real Envoy / conntrack / ss lines, every page at six
+sizes in rich and console mode, glyph set), renders of every page from sample and from the
+real Mac's status.json, and on the Mac: collector 0.27 s per run, status file 2 s old, no
+secrets in the debug section (the public anon key is in status.json by design).
+
+Found on the way (also in the entry above): Supabase's published ports were reachable from
+the LAN; `docker-compose.macserver.yml` is written by the supabase step and the firewall step
+re-applies it. On the Mac the fix was still not applied after the update to fe68309 (no
+override file, no forward chain, 5432 / 6543 / 8000 open from the LAN), because the updater
+that installed it does not run the firewall step itself: it takes effect on the next
+update, or with `sudo ./install.sh --redo firewall`. The dashboard now shows this as a
+notice ("port(s) reachable from the local network") until it is fixed.

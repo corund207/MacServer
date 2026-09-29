@@ -1,10 +1,10 @@
 [Unit]
-Description=MacServer: refresh admin page health every 30 seconds
+Description=MacServer: refresh admin page health every 2 seconds
 
 [Timer]
 OnBootSec=20s
-OnUnitActiveSec=30s
-AccuracySec=5s
+OnUnitActiveSec=2s
+AccuracySec=200ms
 
 [Install]
 WantedBy=timers.target

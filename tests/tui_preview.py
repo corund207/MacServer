@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Render the MacServer dashboard to a PNG as the Mac's screen shows it.
 
-    python3 tests/tui_preview.py OUT.png [scenario] [--console] [--px N] [--size COLSxROWS]
+    python3 tests/tui_preview.py OUT.png [scenario] [--console] [--px N] [COLSxROWS] [--page NAME]
 
   rich (default)  the kiosk terminal: JetBrains Mono at N pixels (default 18) on the
                   2560x1600 panel, 24-bit colour; braille and box lines are drawn
@@ -146,7 +146,7 @@ def render_rich(canvas, path, px=18):
 def main():
     args = sys.argv[1:]
     out = args[0] if args else "dashboard.png"
-    scenario = next((a for a in args[1:] if not a.startswith("--") and "x" not in a), "healthy")
+    scenario = next((a for a in args[1:] if a in ("healthy", "warning", "trouble", "setup")), "healthy")
     console = "--console" in args
     px = int(args[args.index("--px") + 1]) if "--px" in args else 18
     size = next((a for a in args if "x" in a and a.replace("x", "").isdigit()), None)
@@ -155,7 +155,8 @@ def main():
         render_console(tui_fixture.screen(scenario, cols, rows, rich=False), out)
     else:
         cols, rows = map(int, size.split("x")) if size else grid_for(px)
-        render_rich(tui_fixture.screen(scenario, cols, rows, rich=True, overview="--overview" in args), out, px)
+        page = args[args.index("--page") + 1] if "--page" in args else None
+        render_rich(tui_fixture.screen(scenario, cols, rows, rich=True, overview="--overview" in args, page=page), out, px)
     print(f"wrote {out}: {cols}x{rows} characters, {scenario}, {'console' if console else f'rich {px}px'}")
 
 

@@ -12,7 +12,7 @@ Two looks from one layout:
            only characters in the Lat15-Terminus font (tests check this).
 
 Read-only and unprivileged: live numbers come from /proc and /sys every second;
-everything else from /run/macserver/status.json (written every 30 s by the root
+everything else from /run/macserver/status.json (written every 2 s by the root
 collector; it holds no secrets).
 """
 import collections
@@ -408,7 +408,7 @@ class Sampler:
         self.prev_counters = proc_counters()
         self.prev_t = time.monotonic()
         self.hist = collections.defaultdict(lambda: collections.deque(maxlen=HISTORY))
-        self.svc_hist = collections.defaultdict(lambda: collections.deque(maxlen=120))
+        self.svc_hist = collections.defaultdict(lambda: collections.deque(maxlen=1800))   # 1 hour at one sample per 2 s
         self.now = {"cpu": 0.0, "cores": [], "rx": 0.0, "tx": 0.0, "rd": 0.0, "wr": 0.0,
                     "ts_rx": 0.0, "ts_tx": 0.0, "ctxt": 0.0, "intr": 0.0}
         self.status = None
@@ -419,6 +419,12 @@ class Sampler:
         self.firstboot = ""
         self.force_overview = False     # Space during an incident shows the normal dashboard
         self.fans = None
+        self.procs = {"cpu": [], "mem": []}     # busiest programs (read every 2 s)
+        self.prev_procs, self.prev_procs_t = {}, time.monotonic()
+        self.thermal = []                       # every temperature sensor
+        self.page, self.page_t, self.paused, self.last_items = 0, time.monotonic(), False, 0   # incident pages
+        self.crit_since = None                  # when the current incident began (for the T+ clock)
+        self.counter_base, self.counter_last, self.counter_changed = {}, {}, {}
         self.events = Events()
         self.events.add("info", "dashboard started")
 
@@ -507,7 +513,7 @@ class Sampler:
         fans_rpm = self.now.get("fans") or []
         if fans_rpm:
             h["fan"].append(fans_rpm[0])
-        if t - self.status_read >= 5:
+        if t - self.status_read >= 2:
             new = load_status()
             self.firstboot = firstboot_state()
             self.status_read = t
@@ -519,6 +525,34 @@ class Sampler:
                         self.svc_hist[c["name"]].append(c["cpu"])
                 self.status_stamp = stamp
             self.status = new
+            self.update_slow_readings(t)
+
+    def update_slow_readings(self, t):
+        """Processes, every sensor and the kernel's OOM / heat counters: every 2 s is plenty."""
+        cur = read_procs()
+        self.procs = group_procs(cur, self.prev_procs, max(t - self.prev_procs_t, 0.001))
+        self.prev_procs, self.prev_procs_t = cur, t
+        self.thermal = thermal_readings()
+        system = ((self.status or {}).get("debug") or {}).get("system") or {}
+        for key in ("oom_kills", "thermal_throttle"):
+            value = system.get(key)
+            if value is None:
+                continue
+            self.counter_base.setdefault(key, value)
+            if value > self.counter_last.get(key, self.counter_base[key]):
+                self.counter_changed[key] = time.time()
+            self.counter_last[key] = value
+
+    def advance_page(self, t, item_count):
+        """Rotate the incident pages by themselves; a new problem jumps back to the first."""
+        if item_count > self.last_items:
+            self.page, self.page_t = 0, t
+        self.last_items = item_count
+        if not self.paused and t - self.page_t >= ROTATE_S:
+            self.page, self.page_t = (self.page + 1) % len(PAGES), t
+
+    def turn_page(self, step):
+        self.page, self.page_t = (self.page + step) % len(PAGES), time.monotonic()
 
 
 # --- canvas --------------------------------------------------------------------------
@@ -737,68 +771,6 @@ def dot(c, x, y, state):
 
 
 # --- assessment ----------------------------------------------------------------------
-
-def incidents(sampler):
-    """Everything wrong right now, worst first: level, title, why, what to do, logs."""
-    s, now, out = sampler.status or {}, sampler.now, []
-
-    def add(level, title, why="", fix=(), logs=()):
-        out.append({"level": level, "title": title, "why": why, "fix": list(fix), "logs": list(logs)})
-
-    if not s:
-        if sampler.firstboot == "activating":
-            add("warn", "setup is running", "first-boot setup is still installing MacServer")
-        else:
-            add("warn", "no health data yet", "setup has not finished, or the health collector stopped",
-                ["press 2, log in, run: sudo /opt/macserver-src/install.sh",
-                 "sudo systemctl restart macserver-status.timer"])
-    else:
-        if not s.get("setup_done"):
-            add("warn", "setup has not finished", "some install steps are still to do",
-                ["press 2, log in, run: sudo /opt/macserver-src/install.sh"])
-        for c in s.get("containers", []):
-            short = c["name"].split(".")[-1].replace("supabase-", "")
-            if c.get("state") != "running":
-                add("bad", f"service {short} is {c.get('state', 'down')}", c.get("status", ""),
-                    [f"sudo docker logs --tail 50 {c['name']}", "sudo macserver restart"], c.get("logs") or [])
-            elif "unhealthy" in c.get("status", ""):
-                add("warn", f"service {short} is unhealthy", c.get("status", ""),
-                    [f"sudo docker logs --tail 50 {c['name']}"], c.get("logs") or [])
-        state = (s.get("tailscale") or {}).get("state")
-        if state not in ("Running", None):
-            add("bad", "Tailscale is not connected", f"state: {state}; the admin page and SSH are unreachable",
-                ["sudo tailscale up", "sudo systemctl restart tailscaled"])
-        if s.get("age_s", 0) > 120:
-            add("warn", "health data is old", f"last collected {int(s['age_s'] // 60)} minutes ago",
-                ["sudo systemctl restart macserver-status.timer"])
-        if s.get("public_domain") and s.get("public_ok") is False:
-            add("bad", "public API not answering", f"https://{s['public_domain']}/auth/v1/health fails",
-                ["sudo macserver public on", "check the tunnel in the Cloudflare dashboard"])
-        if (s.get("host") or {}).get("reboot_required"):
-            add("warn", "restart needed for updates", "the kernel or a core library was updated",
-                ["sudo reboot   (then type the disk passphrase)"])
-        mu = s.get("macserver_update") or {}
-        if mu.get("state") in ("rolled-back", "refused"):
-            add("warn", "a MacServer update did not install", mu.get("message", ""),
-                ["sudo macserver autoupdate status"])
-    if not sampler.iface:
-        add("bad", "no network connection", "no default route: Wi-Fi or cable is down",
-            ["press 2, log in, run: sudo nmtui   (or plug in Ethernet)"])
-    temp = now.get("temp")
-    if temp is not None and temp >= 90:
-        add("warn", f"running hot ({temp:.0f}°C)", "the CPU is near its limit",
-            ["systemctl status macserver-fans", "keep the vents clear; open the lid"])
-    used, total = now.get("disk", (0, 0))
-    if total and used / total > 0.9:
-        add("warn", "disk almost full", f"{fmt_bytes(total - used)} free",
-            ["sudo docker system df", "sudo docker image prune   (asks first)"])
-    out.sort(key=lambda i: i["level"] != "bad")
-    return out
-
-
-def assess(sampler):
-    return [(i["level"], i["title"]) for i in incidents(sampler)]
-
 
 def alert_level(problems):
     return "critical" if any(p[0] == "bad" for p in problems) else "warning" if problems else "ok"
@@ -1140,92 +1112,944 @@ def big_text(c, x, y, word, gradient):
     return x
 
 
-def incident_view(c, sampler, problems, kiosk):
-    """The red debug screen: what is wrong, why, what to do, the logs, and live vitals."""
-    w, h = c.w, c.h
-    items = incidents(sampler)
-    bad = [i for i in items if i["level"] == "bad"]
-    y = 1
-    if h >= 30 and w >= 100:
-        end = big_text(c, 2, y + 1, "CRITICAL", "cpu")
-        c.put(end + 3, y + 1, f"{len(bad)} critical, {len(items) - len(bad)} warning", C["bright"], bold=True)
-        c.put(end + 3, y + 2, clip(bad[0]["title"] if bad else "", w - end - 5), C["bad"], bold=True)
-        since = next((when for when, lvl, _ in sampler.events.items if lvl == "bad"), None)
-        c.put(end + 3, y + 3, f"since {time.strftime('%H:%M:%S', time.localtime(since))}" if since else "", C["dim"])
-        c.put(end + 3, y + 5, "space: normal dashboard · press 2 to log in and fix it", C["dim"])
-        y += 7
-    left_w = w * 60 // 100 if w >= 120 else w
-    box(c, 0, y, left_w, h - 1 - y, "incident", C["bad"], f"{len(items)} problem(s)")
-    row = y + 1
-    inner = left_w - 4
-    for n, item in enumerate(items):
-        if row >= h - 2:
+# --- incident war room ---------------------------------------------------------------------
+# When something is critical the screen becomes a debugging console: what is wrong and why,
+# the facts and the exact commands, the files to open, and pages for the network, inbound and
+# outbound traffic, temperatures, processes and logs. It rotates through the pages by itself.
+
+PAGES = ("incident", "network", "requests", "system", "logs")
+ROTATE_S = 8.0
+CLK_TCK = os.sysconf("SC_CLK_TCK") if hasattr(os, "sysconf") else 100
+PAGE_BYTES = os.sysconf("SC_PAGE_SIZE") if hasattr(os, "sysconf") else 4096
+SUPA = "/opt/macserver/supabase"
+SERVICE_FILES = {
+    "db": [f"{SUPA}/volumes/db  (Postgres data)", f"{SUPA}/.env  (POSTGRES_*; never print it)"],
+    "edge-functions": [f"{SUPA}/volumes/functions/  (function source)", f"{SUPA}/.env  (function secrets)"],
+    "storage": [f"{SUPA}/volumes/storage/  (uploaded files)"],
+    "auth": [f"{SUPA}/.env  (GOTRUE_*, SITE_URL)"],
+    "rest": [f"{SUPA}/.env  (PGRST_*, exposed schemas)"],
+    "envoy": [f"{SUPA}/docker-compose.yml  (api gateway)"],
+    "caddy": ["/opt/macserver/gateway/Caddyfile  (public path filter)", "/opt/macserver/gateway/compose.yml"],
+    "cloudflared": ["/opt/macserver/gateway/compose.yml  (tunnel)", "/etc/macserver/macserver.conf  (PUBLIC_DOMAIN)"],
+}
+
+
+def read_procs():
+    """{pid: (name, cpu ticks, resident bytes)} for every process (world-readable /proc)."""
+    out = {}
+    for d in PROC.glob("[0-9]*"):
+        text = read(d / "stat")
+        i = text.rfind(")")
+        if i < 0:
+            continue
+        rest = text[i + 2:].split()
+        try:
+            out[int(d.name)] = (text[text.find("(") + 1:i], int(rest[11]) + int(rest[12]), int(rest[21]) * PAGE_BYTES)
+        except (ValueError, IndexError):
+            continue
+    return out
+
+
+def group_procs(cur, prev, dt):
+    """Busiest and biggest programs (processes with the same name are added together)."""
+    groups = {}
+    for pid, (name, ticks, rss) in cur.items():
+        before = prev.get(pid)
+        cpu = (ticks - before[1]) / CLK_TCK / dt * 100 if before and ticks >= before[1] and dt > 0 else 0.0
+        g = groups.setdefault(name, {"name": name, "cpu": 0.0, "rss": 0, "n": 0})
+        g["cpu"] += cpu
+        g["rss"] += rss
+        g["n"] += 1
+    rows = list(groups.values())
+    return {"cpu": sorted(rows, key=lambda g: -g["cpu"])[:8], "mem": sorted(rows, key=lambda g: -g["rss"])[:8]}
+
+
+def thermal_readings():
+    """Every temperature sensor: [{chip, label, temp, limit}]."""
+    rows = []
+    for mon in sorted((SYS / "class/hwmon").glob("hwmon*")):
+        chip = read(mon / "name").strip() or mon.name
+        for t in sorted(mon.glob("temp*_input")):
+            try:
+                value = int(read(t, "0")) / 1000
+            except ValueError:
+                continue
+            if not 0 < value < 125:
+                continue
+            base = t.name.replace("_input", "")
+            limit = None
+            for suffix in ("_crit", "_max", "_high"):
+                try:
+                    limit = int(read(t.with_name(base + suffix), "")) / 1000
+                    break
+                except ValueError:
+                    continue
+            rows.append({"chip": chip, "label": read(t.with_name(base + "_label")).strip() or base,
+                         "temp": value, "limit": limit})
+    return rows
+
+
+def debug_of(sampler):
+    return ((sampler.status or {}).get("debug")) or {}
+
+
+def fmt_ago(seconds):
+    seconds = max(int(seconds), 0)
+    return f"{seconds}s" if seconds < 90 else f"{seconds // 60}m" if seconds < 5400 else f"{seconds // 3600}h"
+
+
+def http_colour(code):
+    return C["bad"] if code >= 500 else C["warn"] if code >= 400 else C["accent"] if code >= 300 else C["text"]
+
+
+def line(c, x, y, w, *parts):
+    """Coloured text pieces left to right, clipped to w columns. Returns where it stopped."""
+    end = x + w
+    for part in parts:
+        if x >= end:
             break
-        xx = pill(c, 2, row, item["level"])
-        c.put(xx + 2, row, clip(f"{n + 1}. {item['title']}", inner - 9), C["bright"], bold=True)
+        x = c.put(x, y, clip(str(part[0]), end - x), part[1], bold=len(part) > 2 and part[2])
+    return x
+
+
+def fields(c, x, y, right, *cols):
+    """Fixed-width columns, each (text, colour, width[, bold]); width None takes what is left.
+    Nothing is ever drawn at or past `right`, so a narrow panel cannot spill into its neighbour."""
+    for col in cols:
+        room = right - x
+        if room <= 0:
+            break
+        width = room if col[2] is None else min(col[2], room)
+        c.put(x, y, clip(str(col[0]), width).ljust(width), col[1], bold=len(col) > 3 and col[3])
+        x += width
+    return x
+
+
+def stack(y, h, weights):
+    """Split a column into rows of these relative sizes: [(y, h), ...]."""
+    total, out, used = sum(weights), [], 0
+    for i, wt in enumerate(weights):
+        rows = max(h - used, 0) if i == len(weights) - 1 else max(min(round(h * wt / total), h - used), 0)
+        out.append((y + used, rows))
+        used += rows
+    return out
+
+
+def fit(y, h, needs, grow=-1):
+    """Rows for stacked panels that each want needs[i] rows; the spare rows go to panel `grow`.
+    When they cannot all fit, every panel shrinks in proportion."""
+    if sum(needs) >= h:
+        return stack(y, h, needs)
+    heights = list(needs)
+    heights[grow] += h - sum(needs)
+    out, used = [], 0
+    for rows in heights:
+        out.append((y + used, rows))
+        used += rows
+    return out
+
+
+def columns(x, w, weights):
+    """Split a row of the screen into columns of these relative sizes: [(x, w), ...]."""
+    return [(x + a, b) for a, b in stack(0, w, weights)]
+
+
+def bar(c, x, y, w, frac, colour):
+    """A plain meter in one colour."""
+    frac = min(max(frac, 0.0), 1.0)
+    filled = round(frac * w)
+    for i in range(w):
+        c.put(x + i, y, "■" if c.rich or i < filled else "·", colour if i < filled else (C["faint"] if c.rich else C["off"]))
+
+
+# --- what is wrong, with the facts and the way to look ------------------------------------------
+
+def service_facts(name, info, now_mem, now_disk):
+    facts = []
+    if info:
+        cause = "killed: OUT OF MEMORY" if info.get("oom") else "not killed for memory"
+        facts.append(f"exit code {info.get('exit')} · {cause} · restarted {info.get('restarts') or 0} time(s)")
+        if info.get("finished", "").startswith("20"):
+            facts.append(f"stopped {info['finished'].replace('T', ' ')} UTC · started {info.get('started', '').replace('T', ' ')} UTC")
+        if info.get("error"):
+            facts.append(f"docker says: {info['error']}")
+        if info.get("health_output"):
+            facts.append(f"health check: {info['health_output']}")
+    pressure = []
+    if now_mem and now_mem.get("total") and now_mem["used"] / now_mem["total"] > 0.88:
+        pressure.append(f"memory {100 * now_mem['used'] / now_mem['total']:.0f}% used")
+    if now_disk and now_disk[1] and now_disk[0] / now_disk[1] > 0.9:
+        pressure.append(f"disk {100 * now_disk[0] / now_disk[1]:.0f}% full")
+    if pressure:
+        facts.append("machine under pressure: " + " · ".join(pressure) + " (a likely cause)")
+    return facts
+
+
+def incidents(sampler):
+    """Everything wrong right now, worst first: level, title, why, facts, steps, files, logs."""
+    s, now, out = sampler.status or {}, sampler.now, []
+    dbg = s.get("debug") or {}
+    inspect = dbg.get("inspect") or {}
+
+    def add(level, title, why="", fix=(), logs=(), facts=(), files=()):
+        out.append({"level": level, "title": title, "why": why, "fix": list(fix), "logs": list(logs),
+                    "facts": list(facts), "files": list(files)})
+
+    if not s:
+        if sampler.firstboot == "activating":
+            add("warn", "setup is running", "first-boot setup is still installing MacServer",
+                files=["/var/log/macserver-firstboot.log  (installer output)"])
+        else:
+            add("warn", "no health data yet", "setup has not finished, or the health collector stopped",
+                ["press 2, log in, run: sudo /opt/macserver-src/install.sh",
+                 "sudo systemctl restart macserver-status.timer",
+                 "sudo journalctl -u macserver-status -n 30 --no-pager"],
+                files=["/run/macserver/status.json  (should be under 5 s old)", "/usr/local/lib/macserver/collect_status.py"])
+    else:
+        if not s.get("setup_done"):
+            add("warn", "setup has not finished", "some install steps are still to do",
+                ["press 2, log in, run: sudo /opt/macserver-src/install.sh"],
+                files=["/var/log/macserver-firstboot.log", "/var/lib/macserver/install.state  (steps done)"])
+        containers = s.get("containers", [])
+        db_down = any(c["name"].endswith("supabase-db") and c.get("state") != "running" for c in containers)
+        for c in containers:
+            short = c["name"].split(".")[-1].replace("supabase-", "")
+            gateway_name = short.replace("gateway-", "").rsplit("-", 1)[0] if short.startswith("gateway-") else short
+            files = SERVICE_FILES.get(gateway_name, []) + [f"{SUPA}/docker-compose.yml  (how it is started)"]
+            steps = [f"sudo docker logs --tail 50 {c['name']}",
+                     f"sudo docker inspect {c['name']} --format '{{{{json .State}}}}'"]
+            if c.get("state") != "running":
+                if db_down and short != "db":
+                    steps.insert(0, "the database is down too: fix the db service first, the rest depend on it")
+                add("bad", f"service {short} is {c.get('state', 'down')}", c.get("status", ""),
+                    steps + ["sudo macserver restart"], c.get("logs") or [],
+                    service_facts(c["name"], inspect.get(c["name"]), now.get("mem"), now.get("disk")), files)
+            elif "unhealthy" in c.get("status", ""):
+                add("warn", f"service {short} is unhealthy", c.get("status", ""), steps, c.get("logs") or [],
+                    service_facts(c["name"], inspect.get(c["name"]), now.get("mem"), now.get("disk")), files)
+        net = dbg.get("net") or {}
+        state = (s.get("tailscale") or {}).get("state")
+        if state not in ("Running", None):
+            facts = [f"Tailscale state: {state}"]
+            if net.get("gateway"):
+                facts.append(f"router {net['gateway']}: " + (f"answers in {net['gateway_ms']:.0f} ms" if net.get("gateway_ms") is not None else "does not answer"))
+            if net.get("internet_ms") is not None:
+                facts.append("the Internet is reachable, so this is Tailscale itself (login expired? key expired?)")
+            elif net:
+                facts.append("the Internet is NOT reachable: fix the network first, Tailscale will follow")
+            add("bad", "Tailscale is not connected", f"state: {state}; the admin page and SSH are unreachable",
+                ["sudo tailscale status", "sudo journalctl -u tailscaled -n 50 --no-pager", "sudo tailscale up",
+                 "sudo systemctl restart tailscaled"], facts=facts,
+                files=["/etc/nftables.conf  (firewall: only tailscale0 may connect)", "/var/lib/tailscale/  (node state)"])
+        if s.get("age_s", 0) > 120:
+            add("warn", "health data is old", f"last collected {int(s['age_s'] // 60)} minutes ago",
+                ["sudo systemctl restart macserver-status.timer", "sudo journalctl -u macserver-status -n 30 --no-pager"],
+                files=["/run/macserver/status.json", "/usr/local/lib/macserver/collect_status.py"])
+        if s.get("public_domain") and s.get("public_ok") is False:
+            gateway = [f"{c['name']}: {c.get('state')}" for c in containers if c.get("project") == "gateway"]
+            add("bad", "public API not answering", f"https://{s['public_domain']}/auth/v1/health fails",
+                ["sudo macserver public on", f"curl -sI https://{s['public_domain']}/auth/v1/health",
+                 "sudo docker logs --tail 50 gateway-cloudflared-1", "check the tunnel in the Cloudflare dashboard"],
+                facts=gateway or ["no gateway containers found: the public route is not installed or not running"],
+                files=SERVICE_FILES["caddy"] + ["/etc/macserver/macserver.conf  (PUBLIC_DOMAIN)"])
+        if (s.get("host") or {}).get("reboot_required"):
+            add("warn", "restart needed for updates", "the kernel or a core library was updated",
+                ["sudo reboot   (then type the disk passphrase)"], files=["/run/reboot-required"])
+        mu = s.get("macserver_update") or {}
+        if mu.get("state") in ("rolled-back", "refused"):
+            add("warn", "a MacServer update did not install", mu.get("message", ""),
+                ["sudo macserver autoupdate status", "sudo tail -50 /var/log/macserver-self-update.log"],
+                files=["/var/log/macserver-self-update.log", "/var/lib/macserver/self-update.json"])
+        system = dbg.get("system") or {}
+        if system.get("failed_units"):
+            units = system["failed_units"]
+            add("warn", f"{len(units)} systemd unit(s) failed", ", ".join(units),
+                [f"sudo systemctl status {units[0]} --no-pager", f"sudo journalctl -u {units[0]} -n 50 --no-pager",
+                 f"sudo systemctl reset-failed {units[0]}   (after fixing it)"], facts=system.get("journal", [])[-3:])
+        exposed = [r for r in dbg.get("listeners") or [] if r.get("scope") in ("all", "public", "lan")]
+        if exposed:
+            names = ", ".join(sorted({f":{r['port']} {r['proc']}" for r in exposed}))
+            lan_in = [f for f in (dbg.get("flows") or {}).get("in", []) if f.get("kind") in ("lan", "public")]
+            facts = [f"{len(lan_in)} LAN/Internet connection(s) into this Mac right now: "
+                     + ", ".join(f"{f['src']} → :{f['port']}" for f in lan_in[:3])] if lan_in else []
+            add("warn", f"{len(exposed)} port(s) reachable from the local network", names,
+                ["sudo ss -tlnp | grep -E '0.0.0.0|\\[::\\]'", "sudo docker ps --format '{{.Names}}  {{.Ports}}'",
+                 "MacServer rule: Docker publishes on 127.0.0.1 only; 0.0.0.0 also answers on the Wi-Fi/LAN"],
+                facts=facts, files=["/etc/docker/daemon.json  (\"ip\": \"127.0.0.1\")", f"{SUPA}/docker-compose.yml  (ports:)",
+                                    "/etc/nftables.conf"])
+        req = dbg.get("requests") or {}
+        if (req.get("classes") or {}).get("5xx"):
+            n = req["classes"]["5xx"]
+            last = next((e for e in req.get("errors", []) if e["status"] >= 500), None)
+            add("warn", f"the API answered {n} request(s) with a server error in the last minute",
+                f"{last['method']} {last['path']} → {last['status']} for {last['client']}" if last else "",
+                ["sudo macserver logs rest", "sudo macserver logs db", "sudo docker logs --tail 50 supabase-envoy"],
+                files=[f"{SUPA}/docker-compose.yml  (service wiring)"])
+        counters = getattr(sampler, "counter_changed", {})
+        if time.time() - counters.get("oom_kills", 0) < 600:
+            add("warn", "the kernel killed a process: out of memory",
+                f"{system.get('oom_kills')} kill(s) since boot", ["sudo dmesg -T | grep -i -E 'killed process|out of memory'",
+                                                                 "sudo docker stats --no-stream"],
+                facts=[f"memory now {100 * now['mem']['used'] / now['mem']['total']:.0f}% used" if now.get("mem") and now["mem"].get("total") else ""],
+                files=["/proc/meminfo", f"{SUPA}/docker-compose.yml  (mem_limit)"])
+        if time.time() - counters.get("thermal_throttle", 0) < 600:
+            add("warn", "the CPU slowed itself down because of heat", f"{system.get('thermal_throttle')} throttle event(s) since boot",
+                ["sensors", "systemctl status macserver-fans", "top -o %CPU"], files=["/sys/devices/system/cpu/cpu0/thermal_throttle/"])
+        if sampler.iface and net.get("internet_fails", 0) >= 2:
+            gw = net.get("gateway_ms")
+            add("bad", "the Internet is unreachable",
+                f"cannot connect to 1.1.1.1:443 ({net['internet_fails']} checks in a row)",
+                ["ping -c 3 " + (net.get("gateway") or "the-router"), "ip route", "sudo macserver doctor",
+                 "restart the router if the Wi-Fi is connected but nothing answers"],
+                facts=[f"router {net.get('gateway') or '?'}: " + (f"answers in {gw:.0f} ms (the Wi-Fi link is fine, the router or ISP is not)" if gw is not None
+                                                                   else "does NOT answer (Wi-Fi link or router problem)"),
+                       f"DNS: {'works' if net.get('dns_ms') is not None else 'failing too'}"],
+                files=["/etc/NetworkManager/system-connections/  (saved Wi-Fi)", "/etc/resolv.conf"])
+        elif sampler.iface and net.get("dns_fails", 0) >= 2:
+            add("warn", "DNS is not resolving names", "names cannot be looked up, but the Internet answers",
+                ["resolvectl status || cat /etc/resolv.conf", "getent hosts registry-1.docker.io", "sudo tailscale dns status"],
+                files=["/etc/resolv.conf", "/etc/NetworkManager/"])
+    if not sampler.iface:
+        add("bad", "no network connection", "no default route: Wi-Fi or cable is down",
+            ["press 2, log in, run: sudo nmtui   (or plug in Ethernet)", "ip route", "sudo macserver doctor",
+             "sudo dmesg | grep -i brcmfmac | tail"],
+            facts=[f"Wi-Fi signal {now['signal']} dBm" if now.get("signal") is not None else "no Wi-Fi signal reading"],
+            files=["/etc/NetworkManager/system-connections/  (saved Wi-Fi)"])
+    temp = now.get("temp")
+    if temp is not None and temp >= 90:
+        fan = (now.get("fans") or [None])[0]
+        top = (sampler.procs.get("cpu") or [None])[0] if getattr(sampler, "procs", None) else None
+        facts = [f"fan {fan} rpm" + (f" · controller target {sampler.fans['target_pct']:.0f}%" if sampler.fans and sampler.fans.get("target_pct") else "")
+                 if fan is not None else "no fan reading: the fan controller may not be running"]
+        if top and top["cpu"] > 20:
+            facts.append(f"busiest program: {top['name']} at {top['cpu']:.0f}% of one core")
+        add("warn", f"running hot ({temp:.0f}°C)", "the CPU is near its limit",
+            ["sensors", "systemctl status macserver-fans", "keep the vents clear; open the lid, use the charger"],
+            facts=facts, files=["/sys/class/hwmon/  (sensor files)", "/run/macserver/fans.json  (fan controller)"])
+    used, total = now.get("disk", (0, 0))
+    if total and used / total > 0.9:
+        add("warn", "disk almost full", f"{fmt_bytes(total - used)} free",
+            ["sudo du -xh /var/lib/docker --max-depth=1 | sort -h | tail -5", "sudo docker system df",
+             "ls -lh /var/backups/macserver", "sudo docker image prune   (asks first)"],
+            files=["/var/lib/docker/", "/var/backups/macserver/", "/var/log/journal/"])
+    out.sort(key=lambda i: i["level"] != "bad")
+    return out
+
+
+def assess(sampler):
+    return [(i["level"], i["title"]) for i in incidents(sampler)]
+
+
+# --- panels ------------------------------------------------------------------------------------
+
+def detail_rows(item):
+    """The lines under an incident's title: (label, text, colour)."""
+    rows = []
+    if item["why"]:
+        rows.append(("why", item["why"], C["text"]))
+    rows += [("info", f, C["bright"]) for f in item["facts"] if f]
+    rows += [("fix" if k == 0 else "", f"{k + 1}) {cmd}" if len(item["fix"]) > 1 else cmd, C["accent"])
+             for k, cmd in enumerate(item["fix"])]
+    rows += [("look" if k == 0 else "", path, C["svc"]) for k, path in enumerate(item["files"])]
+    rows += [("log" if k == 0 else "", entry, C["dim"]) for k, entry in enumerate(item["logs"][-6:])]
+    return rows
+
+
+def incident_list_panel(c, sampler, x, y, w, h, items):
+    bad = sum(1 for i in items if i["level"] == "bad")
+    box(c, x, y, w, h, "incident", C["bad"], f"{bad} critical · {len(items) - bad} warning")
+    inner, row, bottom = w - 4, y + 1, y + h - 1
+    for n, item in enumerate(items):
+        rows = detail_rows(item)
+        room = bottom - row - 1
+        if room < 1:
+            line(c, x + 2, bottom - 1, inner, (f"… {len(items) - n} more (n: next page, all listed in the events)", C["dim"]))
+            return
+        if len(rows) > room:                        # not enough room: the most useful lines first
+            keep = [r for r in rows if r[0] in ("why", "info", "fix")] or rows
+            rows = (keep + [r for r in rows if r not in keep])[:room]
+        pill_end = pill(c, x + 2, row, item["level"])
+        line(c, pill_end + 2, row, inner - 9, (f"{n + 1}. {item['title']}", C["bright"], True))
         row += 1
-        if item["why"] and row < h - 2:
-            c.put(4, row, clip(f"why   {item['why']}", inner - 2), C["text"])
-            row += 1
-        for k, cmd in enumerate(item["fix"]):
-            if row >= h - 2:
+        for label, text, colour in rows:
+            if row >= bottom:
                 break
-            c.put(4, row, "fix   " if k == 0 else "      ", C["dim"])
-            c.put(10, row, clip(cmd, inner - 8), C["accent"])
-            row += 1
-        if item["logs"] and row < h - 3:
-            c.put(4, row, "log", C["dim"])
-            for line in item["logs"][-min(6, h - 3 - row):]:
-                c.put(10, row, clip(line, inner - 8), C["dim"])
-                row += 1
-        row += 1
-    # Whatever room is left: every connection and every service, so the whole
-    # situation is visible at once.
-    conns = connections(sampler)
-    if row + len(conns) + 3 < h - 2:
-        c.put(2, row, "SYSTEM STATE", C["dim"], bold=True)
-        row += 1
-        for state, label, value in conns:
-            xx = pill(c, 2, row, state)
-            xx = c.put(xx + 2, row, f"{label:<11}", C["dim"])
-            c.put(xx, row, clip(value, inner - 20), C["text"])
+            c.put(x + 4, row, f"{label:<5}", C["dim"])
+            line(c, x + 10, row, inner - 8, (text, colour))
             row += 1
         row += 1
-    containers = (sampler.status or {}).get("containers", [])
-    if containers and row + 2 < h - 2:
-        up = sum(1 for x in containers if x.get("state") == "running")
-        c.put(2, row, f"SERVICES  {up}/{len(containers)} running", C["dim"], bold=True)
-        row += 1
-        x = 2
-        for item in sorted(containers, key=lambda i: (i.get("state") == "running", i["name"])):
-            label = item["name"].split(".")[-1].replace("supabase-", "")
-            running = item.get("state") == "running"
-            if x + len(label) + 4 > left_w - 2:
-                row += 1
-                x = 2
-            if row >= h - 2:
-                break
-            x = dot(c, x, row, "ok" if running else "bad")
-            x = c.put(x + 1, row, label, C["text"] if running else C["bad"], bold=not running) + 2
-    if left_w == w:
-        return
-    rx, rw = left_w, w - left_w
-    vit_h = min(max((h - 1 - y) // 2, 10), 18)
-    box(c, rx, y, rw, vit_h, "vitals", C["accent"], "live")
+
+
+def vitals_panel(c, sampler, x, y, w, h):
+    box(c, x, y, w, h, "vitals", C["accent"], "live")
     now, hist = sampler.now, sampler.hist
     rows = [("CPU", hist["cpu"], 100, "cpu", f"{now['cpu']:3.0f}%"),
             ("MEM", hist["mem"], 100, "mem", f"{hist['mem'][-1]:3.0f}%" if hist["mem"] else ""),
             ("TEMP", hist["temp"], 100, "temp", f"{now['temp']:.0f}°C" if now.get("temp") is not None else ""),
-            ("NET", hist["rx"], nice_top(list(hist["rx"])[-rw * 2:], 100_000), "down", fmt_bytes(now["rx"], True))]
-    gh = max((vit_h - 2) // len(rows), 1)
+            ("NET", hist["rx"], nice_top(list(hist["rx"])[-w * 2:], 100_000), "down", fmt_bytes(now["rx"], True)),
+            ("DISK", hist["wr"], nice_top(list(hist["wr"])[-w * 2:], 1_000_000), "disk", fmt_bytes(now["wr"], True))]
+    gh = max((h - 2) // len(rows), 1)
     for n, (label, values, top, g, value) in enumerate(rows):
         ry = y + 1 + n * gh
-        if ry >= y + vit_h - 1:
+        if ry >= y + h - 1:
             break
-        c.put(rx + 2, ry, f"{label:<5}", C["dim"])
-        c.put(rx + rw - 3 - len(value), ry, value, C["bright"], bold=True)
-        graph(c, rx + 8, ry, rw - 12 - len(value), max(gh - (1 if gh > 2 else 0), 1), values, top, g)
-    events_panel(c, sampler, rx, y + vit_h, rw, h - 1 - y - vit_h)
+        c.put(x + 2, ry, f"{label:<5}", C["dim"])
+        c.put(x + w - 3 - len(value), ry, value, C["bright"], bold=True)
+        graph(c, x + 8, ry, w - 12 - len(value), max(gh - (1 if gh > 2 else 0), 1), values, top, g)
+
+
+def status_panel(c, sampler, x, y, w, h):
+    rows = connections(sampler)
+    box(c, x, y, w, h, "system state", C["conn"])
+    for n, (state, label, value) in enumerate(rows[: h - 2]):
+        xx = pill(c, x + 2, y + 1 + n, state)
+        xx = c.put(xx + 2, y + 1 + n, f"{label:<11}", C["dim"])
+        line(c, xx, y + 1 + n, x + w - 2 - xx, (value, C["text"]))
+
+
+def services_panel_compact(c, sampler, x, y, w, h):
+    containers = (sampler.status or {}).get("containers", [])
+    up = sum(1 for i in containers if i.get("state") == "running")
+    box(c, x, y, w, h, "services", C["svc"], f"{up}/{len(containers)} running")
+    row, xx = y + 1, x + 2
+    for item in sorted(containers, key=lambda i: (i.get("state") == "running", i["name"])):
+        label = item["name"].split(".")[-1].replace("supabase-", "")
+        running = item.get("state") == "running"
+        if xx + len(label) + 4 > x + w - 2:
+            row, xx = row + 1, x + 2
+        if row >= y + h - 1:
+            break
+        xx = dot(c, xx, row, "ok" if running else "bad")
+        xx = c.put(xx + 1, row, label, C["text"] if running else C["bad"], bold=not running) + 2
+
+
+def thermal_panel(c, sampler, x, y, w, h):
+    now = sampler.now
+    temp = now.get("temp")
+    box(c, x, y, w, h, "thermal", C["warn"] if temp is not None and temp >= 85 else C["accent"],
+        f"{(now.get('mhz') or 0) / 1000:.2f} GHz" if now.get("mhz") else "")
+    inner, row, bottom = w - 4, y + 1, y + h - 1
+    mw = max(inner - 26, 6)
+    if temp is not None and row < bottom:
+        xx = c.put(x + 2, row, f"CPU {temp:4.0f}°C ", C["bright"], bold=True)
+        meter(c, xx, row, mw, (temp - 30) / 70, "temp")
+        note = "HOT" if temp >= 90 else "warm" if temp >= 80 else "ok"
+        c.put(xx + mw + 1, row, note, C["bad"] if temp >= 90 else C["warn"] if temp >= 80 else C["dim"], bold=temp >= 90)
+        row += 1
+    fans = now.get("fans") or []
+    fi = sampler.fans or {}
+    fan_max = next((f.get("max_rpm") for f in fi.get("fans", []) if f.get("max_rpm")), None) or 6000
+    if row < bottom:
+        if fans:
+            xx = c.put(x + 2, row, f"FAN {fans[0]:5d} rpm ", C["bright"], bold=True)
+            bar(c, xx, row, mw, fans[0] / fan_max, C["conn"])
+            row += 1
+            if row < bottom:
+                if fi.get("target_pct"):
+                    mode = f"controller: {fi.get('mode', '?')} · target {fi['target_pct']:.0f}% · floor {fi.get('min_pct', 60):.0f}%"
+                elif fi:
+                    mode = "controller: " + str(fi.get("mode", "auto"))
+                else:
+                    mode = "controller: none (the firmware's own control)"
+                line(c, x + 2, row, inner, (mode, C["dim"]))
+                row += 1
+        else:
+            line(c, x + 2, row, inner, ("no fan reading (fan controller stopped?)", C["warn"]))
+            row += 1
+    dbg = debug_of(sampler)
+    throttle = (dbg.get("system") or {}).get("thermal_throttle")
+    if throttle is not None and row < bottom:
+        base = getattr(sampler, "counter_base", {}).get("thermal_throttle", throttle)
+        line(c, x + 2, row, inner, (f"throttle events since boot: {throttle}" + (f"  (+{throttle - base} since this screen started)" if throttle > base else ""),
+                                    C["bad"] if throttle > base else C["dim"]))
+        row += 1
+    bat = now.get("battery") or (None, None, None)
+    if bat[0] is not None and row < bottom:
+        line(c, x + 2, row, inner, (f"battery {bat[0]}% {bat[1]}" + (f" · {bat[2]:.1f} W" if bat[2] else ""), C["dim"]))
+        row += 1
+    row += 1
+    for r in sorted(getattr(sampler, "thermal", []), key=lambda r: -r["temp"]):
+        if row >= bottom:
+            break
+        limit = r["limit"] or 100
+        colour = grad("temp", (r["temp"] - 30) / 70)
+        xx = fields(c, x + 2, row, x + w - 2, (r["chip"], C["dim"], 10), (r["label"], C["dim"], 14),
+                    (f"{r['temp']:4.0f}°C", colour, 7))
+        bar(c, xx, row, max(x + w - 3 - xx, 0), r["temp"] / limit, colour)
+        row += 1
+
+
+def procs_panel(c, sampler, x, y, w, h):
+    procs = getattr(sampler, "procs", None) or {"cpu": [], "mem": []}
+    box(c, x, y, w, h, "busiest programs", C["cpu"], "by name")
+    inner, row, bottom = w - 4, y + 1, y + h - 1
+    half = max((h - 4) // 2, 1)
+    for title, key in (("CPU (100% = one core)", "cpu"), ("MEMORY", "mem")):
+        if row >= bottom:
+            break
+        line(c, x + 2, row, inner, (title, C["dim"], True))
+        row += 1
+        for g in procs[key][:half]:
+            if row >= bottom:
+                break
+            count = f" x{g['n']}" if g["n"] > 1 else ""
+            fields(c, x + 2, row, x + w - 2, (f"{g['cpu']:5.1f}%" if key == "cpu" else f"{fmt_bytes(g['rss']):>8}", C["bright"], 9),
+                   (g["name"] + count, C["text"], None))
+            row += 1
+        if not procs[key] and row < bottom:
+            line(c, x + 2, row, inner, ("no process data yet", C["dim"]))
+            row += 1
+
+
+def scope_tag(c, x, y, scope):
+    text, colour = {"all": ("ALL NETS", C["bad"]), "public": ("PUBLIC", C["bad"]), "lan": ("LAN", C["warn"]),
+                    "tailnet": ("TAILNET", C["ok"]), "loopback": ("LOCAL", C["off"])}.get(scope, (scope.upper()[:8], C["off"]))
+    return c.put(x, y, text.center(8), C["pill_fg"] if c.rich else C["bright"], colour, bold=True)
+
+
+def listeners_panel(c, sampler, x, y, w, h):
+    rows = debug_of(sampler).get("listeners")
+    exposed = [r for r in rows or [] if r["scope"] in ("all", "public", "lan")]
+    box(c, x, y, w, h, "listening ports", C["bad"] if exposed else C["conn"], f"{len(exposed)} exposed" if exposed else "all private")
+    inner, row, bottom = w - 4, y + 1, y + h - 1
+    if rows is None:
+        line(c, x + 2, row, inner, ("no port data (collector not updated yet)", C["dim"]))
+        return
+    for r in rows:
+        if row >= bottom - (2 if exposed else 0):
+            break
+        xx = scope_tag(c, x + 2, row, r["scope"])
+        fields(c, xx + 1, row, x + w - 2, (f":{r['port']}", C["bright"], 7, r["scope"] in ("all", "public", "lan")),
+               (r["svc"], C["dim"], 9), (r["proc"], C["bad"] if r["scope"] in ("all", "public") else C["text"], None))
+        row += 1
+    if exposed and bottom - 2 >= row:
+        line(c, x + 2, bottom - 2, inner, ("! ALL NETS / LAN = answers on the Wi-Fi/LAN too.", C["bad"], True))
+        line(c, x + 2, bottom - 1, inner, ("MacServer rule: only 127.0.0.1 or the tailnet.", C["dim"]))
+
+
+def flows_panel(c, sampler, x, y, w, h, direction):
+    flows = debug_of(sampler).get("flows")
+    title = "inbound connections" if direction == "in" else "outbound connections"
+    box(c, x, y, w, h, title, C["conn"], f"{flows['tracked']} tracked" if flows else "")
+    inner, row, bottom = w - 4, y + 1, y + h - 1
+    if not flows:
+        line(c, x + 2, row, inner, ("no connection data (collector not updated yet)", C["dim"]))
+        return
+    rows = flows[direction]
+    if not rows:
+        line(c, x + 2, row, inner, ("none right now", C["dim"]))
+    for r in rows:
+        if row >= bottom:
+            break
+        colour = {"public": C["bad"], "lan": C["warn"], "tailnet": C["accent"]}.get(r["kind"], C["text"])
+        right = x + w - 2
+        if direction == "in":
+            fields(c, x + 2, row, right, (f"{r['n']}x", C["bright"], 5),
+                   (r["src"], colour, min(max(inner * 45 // 100, 14), 30), r["kind"] in ("lan", "public")),
+                   (f"→ :{r['port']}", C["bright"], 9), (r["svc"], C["dim"], None))
+        else:
+            fields(c, x + 2, row, right, (f"{r['n']}x", C["bright"], 5),
+                   (r["who"], C["text"], min(max(inner * 26 // 100, 10), 18), True),
+                   ("→ ", C["dim"], 2), (r["dst"], colour, min(max(inner * 34 // 100, 12), 26)),
+                   (f":{r['port']}", C["bright"], 7), (r["svc"], C["dim"], None))
+        row += 1
+
+
+def netchecks_panel(c, sampler, x, y, w, h):
+    net = debug_of(sampler).get("net") or {}
+    box(c, x, y, w, h, "connectivity", C["conn"])
+    inner, row, bottom = w - 4, y + 1, y + h - 1
+
+    def check(label, ms, fails, detail):
+        nonlocal row
+        if row >= bottom:
+            return
+        state = "ok" if ms is not None and ms < 300 else "warn" if ms is not None or fails < 2 else "bad"
+        xx = pill(c, x + 2, row, state)
+        xx = c.put(xx + 2, row, f"{label:<11}", C["dim"])
+        line(c, xx, row, x + w - 2 - xx, (detail + (f"  {ms:.0f} ms" if ms is not None else "  no answer"), C["bright"] if state == "ok" else STATE_COLOUR[state]))
+        row += 1
+
+    if net:
+        check("Router", net.get("gateway_ms"), 0 if net.get("gateway_ms") is not None else 2, net.get("gateway") or "no default route")
+        check("Internet", net.get("internet_ms"), net.get("internet_fails", 0), "1.1.1.1:443")
+        check("DNS", net.get("dns_ms"), net.get("dns_fails", 0), "registry-1.docker.io")
+        row += 1
+    for state, label, value in connections(sampler):
+        if row >= bottom:
+            break
+        xx = pill(c, x + 2, row, state)
+        xx = c.put(xx + 2, row, f"{label:<11}", C["dim"])
+        line(c, xx, row, x + w - 2 - xx, (value, C["text"]))
+        row += 1
+
+
+def requests_feed_panel(c, sampler, x, y, w, h):
+    req = debug_of(sampler).get("requests")
+    at = debug_of(sampler).get("at") or time.time()
+    box(c, x, y, w, h, "inbound requests", C["svc"], f"{req['total']} in the last {req['window_s']} s" if req else "")
+    inner, row, bottom = w - 4, y + 1, y + h - 1
+    if req is None:
+        line(c, x + 2, row, inner, ("no API gateway container found", C["dim"]))
+        return
+    path_w = min(max(inner * 38 // 100, 14), 60)
+    right = x + w - 2
+    fields(c, x + 2, row, right, ("time", C["dim"], 10), ("code", C["dim"], 6), ("method", C["dim"], 8),
+           ("path", C["dim"], path_w), ("caller", C["dim"], None))
+    row += 1
+    if not req["recent"]:
+        line(c, x + 2, row, inner, ("no requests in the last minute. If apps should be calling: is the tailnet/public route up?", C["dim"]))
+    for r in req["recent"]:
+        if row >= bottom:
+            break
+        fields(c, x + 2, row, right, (time.strftime("%H:%M:%S", time.localtime(r["t"])), C["dim"], 10),
+               (str(r["status"]), http_colour(r["status"]), 6, r["status"] >= 400), (r["method"], C["bright"], 8),
+               (r["path"], C["text"], path_w), (f"{r['client']} ({r['agent']})", C["accent"], None))
+        row += 1
+
+
+def requests_stats_panel(c, sampler, x, y, w, h):
+    req = debug_of(sampler).get("requests")
+    box(c, x, y, w, h, "traffic", C["svc"], "last minute")
+    inner, row, bottom = w - 4, y + 1, y + h - 1
+    if not req:
+        return
+    per_s = req["total"] / max(req["window_s"], 1)
+    line(c, x + 2, row, inner, (f"{req['total']} requests · {per_s:.1f}/s", C["bright"], True))
+    row += 1
+    gh = min(4, max(bottom - row - 12, 0))
+    if gh:
+        rep = max(inner * (2 if c.rich else 1) // max(len(req["per_2s"]), 1), 1)     # stretch to the panel's width
+        graph(c, x + 2, row, inner, gh, [v for v in req["per_2s"] for _ in range(rep)], max(max(req["per_2s"]), 4), "down")
+        row += gh
+    total = max(req["total"], 1)
+    for label, colour in (("2xx", C["ok"]), ("3xx", C["accent"]), ("4xx", C["warn"]), ("5xx", C["bad"])):
+        if row >= bottom:
+            return
+        n = req["classes"].get(label, 0)
+        c.put(x + 2, row, label, colour, bold=n > 0 and label in ("4xx", "5xx"))
+        bar(c, x + 6, row, max(inner - 12, 4), n / total, colour)
+        c.put(x + w - 3 - len(str(n)), row, str(n), C["bright"])
+        row += 1
+    for title, key in (("top requests", "top_paths"), ("top callers", "top_clients")):
+        if row + 2 >= bottom:
+            break
+        row += 1
+        line(c, x + 2, row, inner, (title.upper(), C["dim"], True))
+        row += 1
+        for name, n in req[key]:
+            if row >= bottom:
+                break
+            fields(c, x + 2, row, x + w - 2, (f"{n}x", C["bright"], 5), (name, C["text"], None))
+            row += 1
+    errors = req.get("errors") or []
+    if errors and row + 2 < bottom:
+        row += 1
+        line(c, x + 2, row, inner, ("RECENT ERRORS (15 min)", C["bad"], True))
+        row += 1
+        for e in errors:
+            if row >= bottom:
+                break
+            fields(c, x + 2, row, x + w - 2, (time.strftime("%H:%M:%S", time.localtime(e["t"])), C["dim"], 9),
+                   (str(e["status"]), http_colour(e["status"]), 4, True),
+                   (f"{e['method']} {e['path']}  {e['client']}", C["text"], None))
+            row += 1
+
+
+def logs_panel(c, sampler, x, y, w, h):
+    system = debug_of(sampler).get("system")
+    box(c, x, y, w, h, "system logs", C["warn"], "errors only")
+    inner, row, bottom = w - 4, y + 1, y + h - 1
+    if system is None:
+        line(c, x + 2, row, inner, ("no log data (collector not updated yet)", C["dim"]))
+        return
+    failed = system.get("failed_units") or []
+    line(c, x + 2, row, inner, ("FAILED UNITS  ", C["dim"], True), (", ".join(failed) if failed else "none", C["bad"] if failed else C["ok"]))
+    row += 1
+    line(c, x + 2, row, inner, (f"OOM kills since boot {system.get('oom_kills', 0)}   heat throttles {system.get('thermal_throttle', 0)}", C["dim"]))
+    row += 2
+    for title, key, colour in (("JOURNAL  (errors, last 6 h)", "journal", C["text"]), ("KERNEL  (errors since boot)", "kernel", C["dim"])):
+        if row >= bottom:
+            break
+        line(c, x + 2, row, inner, (title, C["dim"], True))
+        row += 1
+        lines = system.get(key) or []
+        if not lines:
+            line(c, x + 2, row, inner, ("nothing logged", C["ok"]))
+            row += 1
+        for entry in lines[-max((bottom - row) // (2 if key == "journal" else 1), 1):]:
+            if row >= bottom:
+                break
+            line(c, x + 2, row, inner, (entry, colour))
+            row += 1
+        row += 1
+    dbg = debug_of(sampler)
+    if dbg and row < bottom:
+        line(c, x + 2, bottom - 1, inner, (f"collected {fmt_ago(time.time() - dbg.get('at', time.time()))} ago", C["faint"] if c.rich else C["off"]))
+
+
+def service_errors_panel(c, sampler, x, y, w, h):
+    errors = debug_of(sampler).get("service_errors")
+    box(c, x, y, w, h, "service errors", C["bad"] if errors else C["ok"], "last 15 min")
+    inner, row, bottom = w - 4, y + 1, y + h - 1
+    if errors is None:
+        line(c, x + 2, row, inner, ("no service log data (collector not updated yet)", C["dim"]))
+        return
+    if not errors:
+        line(c, x + 2, row, inner, ("no service logged an error", C["ok"]))
+        return
+    for name, lines in sorted(errors.items()):
+        if row >= bottom:
+            break
+        line(c, x + 2, row, inner, (name.upper(), C["bad"], True), (f"  sudo macserver logs {name}", C["faint"] if c.rich else C["off"]))
+        row += 1
+        for entry in lines:
+            if row >= bottom:
+                break
+            line(c, x + 4, row, inner - 2, (entry, C["text"]))
+            row += 1
+
+
+def files_panel(c, sampler, x, y, w, h):
+    dbg = debug_of(sampler)
+    files = dbg.get("files")
+    box(c, x, y, w, h, "where to look", C["svc"], "files and folders")
+    inner, row, bottom = w - 4, y + 1, y + h - 1
+    if files is None:
+        line(c, x + 2, row, inner, ("no file data (collector not updated yet)", C["dim"]))
+        return
+    backups = dbg.get("backups") or {}
+    for f in files:
+        if row >= bottom - 2:
+            break
+        fresh = f["age_s"] < 600
+        path_w = min(max(inner * 48 // 100, 18), 58)
+        shown = f["path"] if len(f["path"]) <= path_w else "…" + f["path"][-(path_w - 1):]    # keep the file name
+        fields(c, x + 2, row, x + w - 2, ("● " if fresh else "  ", C["warn"], 2),
+               (shown, C["accent"] if fresh else C["svc"], path_w),
+               (f"{fmt_ago(f['age_s'])} ago", C["bright"] if fresh else C["dim"], 10),
+               (fmt_bytes(f["size"]) if f.get("size") is not None else "folder", C["dim"], 9), (f["note"], C["text"], None))
+        row += 1
+    if backups.get("count") is not None and bottom - 2 >= row:
+        text = (f"backups: {backups['count']} kept · newest {fmt_ago(backups['newest_age_s'])} ago ({fmt_bytes(backups['newest_size'])})"
+                if backups.get("count") else "backups: none yet · sudo macserver backup")
+        line(c, x + 2, bottom - 2, inner, (text, C["warn"] if not backups.get("count") or backups.get("newest_age_s", 0) > 7 * 86400 else C["dim"]))
+    line(c, x + 2, bottom - 1, inner, ("● changed in the last 10 minutes", C["warn"]))
+
+
+def commands_panel(c, sampler, x, y, w, h):
+    s = sampler.status or {}
+    name = (s.get("tailscale", {}) or {}).get("name") or "macserver"
+    box(c, x, y, w, h, "commands", C["accent"], "copy and run")
+    inner, row, bottom = w - 4, y + 1, y + h - 1
+    rows = [("log in", f"ssh admin@{name.split('.')[0]}   (from a computer on the tailnet)"),
+            ("", "or press 2 on this screen"), ("health", "sudo macserver status"),
+            ("follow", "sudo macserver logs <auth|rest|db|storage|functions>"), ("restart", "sudo macserver restart"),
+            ("network", "sudo macserver doctor"), ("containers", "sudo docker ps -a"),
+            ("one service", "sudo docker inspect <name> --format '{{json .State}}'"),
+            ("unit logs", "sudo journalctl -u <unit> -n 100 --no-pager"), ("ports", "sudo ss -tlnp"),
+            ("connections", "sudo ss -tnp state established"), ("firewall", "sudo nft list ruleset"),
+            ("heat", "sensors"), ("disk", "df -h /  ;  sudo docker system df"),
+            ("backup", "sudo macserver backup"), ("API offline", "sudo macserver public off")]
+    for label, cmd in rows:
+        if row >= bottom:
+            break
+        c.put(x + 2, row, f"{label:<13}", C["dim"])
+        line(c, x + 15, row, inner - 13, (cmd, C["accent"]))
+        row += 1
+
+
+# --- the banner, the tabs and the pages -------------------------------------------------------------
+
+def hazard_row(c, y, t):
+    """A moving warning-tape stripe across the screen."""
+    shift = int(t * 9)
+    for x in range(c.w):
+        k = (x - shift) % 8
+        ch, level = ("█", 1.0) if k < 2 else ("▒", 0.7) if k < 4 else ("░", 0.45) if k < 5 else (" ", 0.0)
+        if ch != " ":
+            c.put(x, y, ch, mix(C["bg"], C["bad"], level))
+
+
+def clock_text(sampler):
+    if not getattr(sampler, "crit_since", None):
+        return ""
+    s = int(time.time() - sampler.crit_since)
+    return f"T+{s // 3600:02d}:{s % 3600 // 60:02d}:{s % 60:02d}"
+
+
+def banner(c, sampler, items):
+    """The top of the incident screen. Returns the first free row."""
+    w, h = c.w, c.h
+    bad = [i for i in items if i["level"] == "bad"]
+    t = time.time()
+    hazard_row(c, 1, t)
+    if h >= 30 and w >= 100:
+        end = big_text(c, 2, 2, "CRITICAL", "cpu")
+        blink = int(t * 2) % 2 == 0
+        c.put(end + 3, 2, "●" if blink else " ", C["bad"], bold=True)
+        c.put(end + 5, 2, f"{len(bad)} critical · {len(items) - len(bad)} warning", C["bright"], bold=True)
+        line(c, end + 3, 3, w - end - 5, (bad[0]["title"] if bad else items[0]["title"] if items else "", C["bad"], True))
+        since = next((when for when, lvl, _ in sampler.events.items if lvl == "bad"), None)
+        line(c, end + 3, 4, w - end - 5, (clock_text(sampler), C["bright"], True),
+             (f"   since {time.strftime('%H:%M:%S', time.localtime(since))}" if since else "", C["dim"]))
+        line(c, end + 3, 6, w - end - 5, ("space: normal dashboard · n/b: page · p: hold the page · 2: log in and fix it", C["dim"]))
+        hazard_row(c, 8, t + 1.5)
+        return 9
+    line(c, 2, 2, w - 4, ("▲ " + (bad[0]["title"] if bad else items[0]["title"] if items else "critical"), C["bad"], True),
+         (f"   {clock_text(sampler)}", C["bright"]))
+    return 3
+
+
+def tab_strip(c, sampler, y):
+    x = 1
+    for i, name in enumerate(PAGES):
+        label = f" {name.upper()} "
+        if i == sampler.page:
+            x = c.put(x, y, label, C["pill_fg"] if c.rich else C["bright"], C["bad"], bold=True) + 1
+        else:
+            x = c.put(x, y, label, C["dim"]) + 1
+    left = ROTATE_S - (time.monotonic() - sampler.page_t)
+    note = "page held (p)" if sampler.paused else f"next page in {max(int(left) + 1, 1)} s"
+    c.put(c.w - len(note) - 2, y, note, C["dim"])
+    return y + 1
+
+
+def need_services(sampler, w):
+    containers = (sampler.status or {}).get("containers", [])
+    return 2 + max(2, len(containers) * 20 // max(w - 4, 1) + 1)
+
+
+def need_thermal(sampler):
+    return 8 + len(getattr(sampler, "thermal", []))
+
+
+def need_procs(sampler):
+    procs = getattr(sampler, "procs", None) or {"cpu": [], "mem": []}
+    return 4 + 2 * max(min(len(procs["cpu"]), 6), min(len(procs["mem"]), 6), 1)
+
+
+def need_listeners(sampler):
+    rows = debug_of(sampler).get("listeners") or []
+    return len(rows) + 3 + (2 if any(r["scope"] in ("all", "public", "lan") for r in rows) else 0)
+
+
+def need_flows(sampler, direction):
+    return max(len((debug_of(sampler).get("flows") or {}).get(direction, [])) + 3, 5)
+
+
+def page_incident(c, sampler, items, x, y, w, h):
+    if w >= 150:
+        a, b, d = columns(x, w, [40, 30, 30])
+        incident_list_panel(c, sampler, a[0], y, a[1], h, items)
+        v, st, sv = fit(y, h, [14, len(connections(sampler)) + 2, need_services(sampler, b[1])], grow=0)
+        vitals_panel(c, sampler, b[0], v[0], b[1], v[1])
+        status_panel(c, sampler, b[0], st[0], b[1], st[1])
+        services_panel_compact(c, sampler, b[0], sv[0], b[1], sv[1])
+        th, pr, ev = fit(y, h, [need_thermal(sampler), need_procs(sampler), 8], grow=2)
+        thermal_panel(c, sampler, d[0], th[0], d[1], th[1])
+        procs_panel(c, sampler, d[0], pr[0], d[1], pr[1])
+        events_panel(c, sampler, d[0], ev[0], d[1], ev[1])
+    elif w >= 100:
+        a, b = columns(x, w, [58, 42])
+        incident_list_panel(c, sampler, a[0], y, a[1], h, items)
+        v, t, e = stack(y, h, [3, 3, 3])
+        vitals_panel(c, sampler, b[0], v[0], b[1], v[1])
+        thermal_panel(c, sampler, b[0], t[0], b[1], t[1])
+        events_panel(c, sampler, b[0], e[0], b[1], e[1])
+    else:
+        incident_list_panel(c, sampler, x, y, w, h, items)
+
+
+def page_network(c, sampler, items, x, y, w, h):
+    checks = len(connections(sampler)) + 8
+    if w >= 150:
+        a, b, d = columns(x, w, [27, 38, 35])
+        l, n = fit(y, h, [need_listeners(sampler), checks], grow=1)
+        listeners_panel(c, sampler, a[0], l[0], a[1], l[1])
+        netchecks_panel(c, sampler, a[0], n[0], a[1], n[1])
+        i, o, g = fit(y, h, [need_flows(sampler, "in"), need_flows(sampler, "out"), 12], grow=2)
+        flows_panel(c, sampler, b[0], i[0], b[1], i[1], "in")
+        flows_panel(c, sampler, b[0], o[0], b[1], o[1], "out")
+        net_panel(c, sampler, b[0], g[0], b[1], g[1])
+        requests_feed_panel(c, sampler, d[0], y, d[1], h)
+    elif w >= 100:
+        a, b = columns(x, w, [48, 52])
+        l, n = fit(y, h, [need_listeners(sampler), checks], grow=1)
+        listeners_panel(c, sampler, a[0], l[0], a[1], l[1])
+        netchecks_panel(c, sampler, a[0], n[0], a[1], n[1])
+        i, o, g = fit(y, h, [need_flows(sampler, "in"), need_flows(sampler, "out"), 10], grow=2)
+        flows_panel(c, sampler, b[0], i[0], b[1], i[1], "in")
+        flows_panel(c, sampler, b[0], o[0], b[1], o[1], "out")
+        net_panel(c, sampler, b[0], g[0], b[1], g[1])
+    else:
+        l, i, o = stack(y, h, [3, 2, 2])
+        listeners_panel(c, sampler, x, l[0], w, l[1])
+        flows_panel(c, sampler, x, i[0], w, i[1], "in")
+        flows_panel(c, sampler, x, o[0], w, o[1], "out")
+
+
+def page_requests(c, sampler, items, x, y, w, h):
+    if w >= 100:
+        a, b = columns(x, w, [62, 38])
+        requests_feed_panel(c, sampler, a[0], y, a[1], h)
+        requests_stats_panel(c, sampler, b[0], y, b[1], h)
+    else:
+        f, s = stack(y, h, [3, 2])
+        requests_feed_panel(c, sampler, x, f[0], w, f[1])
+        requests_stats_panel(c, sampler, x, s[0], w, s[1])
+
+
+def page_system(c, sampler, items, x, y, w, h):
+    top, low = stack(y, h, [4, 5]) if h >= 24 else stack(y, h, [1, 2])
+    cpu_panel(c, sampler, x, top[0], w, top[1])
+    if w >= 150:
+        a, b, d = columns(x, w, [30, 40, 30])
+        mem_panel(c, sampler, a[0], low[0], a[1], low[1])
+        thermal_panel(c, sampler, b[0], low[0], b[1], low[1])
+        procs_panel(c, sampler, d[0], low[0], d[1], low[1])
+    elif w >= 100:
+        a, b = columns(x, w, [50, 50])
+        thermal_panel(c, sampler, a[0], low[0], a[1], low[1])
+        procs_panel(c, sampler, b[0], low[0], b[1], low[1])
+    else:
+        thermal_panel(c, sampler, x, low[0], w, low[1])
+
+
+def page_logs(c, sampler, items, x, y, w, h):
+    if w >= 150:
+        a, b, d = columns(x, w, [40, 36, 24])
+        l, e = fit(y, h, [14, 8], grow=1)
+        logs_panel(c, sampler, a[0], l[0], a[1], l[1])
+        service_errors_panel(c, sampler, a[0], e[0], a[1], e[1])
+        files_panel(c, sampler, b[0], y, b[1], h)
+        commands_panel(c, sampler, d[0], y, d[1], h)
+    elif w >= 100:
+        a, b = columns(x, w, [50, 50])
+        l, e = fit(y, h, [14, 8], grow=1)
+        logs_panel(c, sampler, a[0], l[0], a[1], l[1])
+        service_errors_panel(c, sampler, a[0], e[0], a[1], e[1])
+        f, m = stack(y, h, [3, 2])
+        files_panel(c, sampler, b[0], f[0], b[1], f[1])
+        commands_panel(c, sampler, b[0], m[0], b[1], m[1])
+    else:
+        l, e, f = stack(y, h, [2, 2, 2])
+        logs_panel(c, sampler, x, l[0], w, l[1])
+        service_errors_panel(c, sampler, x, e[0], w, e[1])
+        files_panel(c, sampler, x, f[0], w, f[1])
+
+
+PAGE_DRAW = {"incident": page_incident, "network": page_network, "requests": page_requests,
+             "system": page_system, "logs": page_logs}
+
+
+def incident_view(c, sampler, problems, kiosk):
+    """The red debug screen: the banner, a tab strip, and the current page."""
+    items = incidents(sampler)
+    y = banner(c, sampler, items)
+    sampler.advance_page(time.monotonic(), len(items))
+    y = tab_strip(c, sampler, y)
+    PAGE_DRAW[PAGES[sampler.page % len(PAGES)]](c, sampler, items, 0, y, c.w, c.h - 1 - y)
 
 
 def setup_panel(c, sampler, x, y, w, h):
@@ -1252,7 +2076,7 @@ def bottom_bar(c, sampler, kiosk, level="ok"):
     links.append(("guide", DOCS))
     hint = "press 2 to log in · back here: Ctrl+Option+1" if kiosk else "q quit · sudo macserver help"
     if level == "critical":
-        hint = "space: incident / overview · " + hint
+        hint = "n/b page · p hold · space: incident / overview · " + hint
     x = 1
     for label, url in links:
         if x + len(label) + len(url) + 4 > w - len(hint) - 3:
@@ -1271,6 +2095,10 @@ def draw(c, sampler, kiosk=True):
     if level != "critical":
         sampler.force_overview = False
     c.alert = level
+    if level == "critical":
+        sampler.crit_since = sampler.crit_since or time.time()
+    else:
+        sampler.crit_since = None
     if c.rich:
         c.fill(0, 0, w, h, C["bg"])
     top_bar(c, sampler, problems)
@@ -1420,6 +2248,16 @@ def run(kiosk):
                     continue
                 if b" " in keys:           # during an incident: incident view <-> normal dashboard
                     sampler.force_overview = not sampler.force_overview
+                    redraw = True
+                if b"n" in keys or b"\t" in keys:        # incident pages: next / back / hold
+                    sampler.turn_page(1)
+                    redraw = True
+                if b"b" in keys:
+                    sampler.turn_page(-1)
+                    redraw = True
+                if b"p" in keys:
+                    sampler.paused = not sampler.paused
+                    sampler.page_t = time.monotonic()
                     redraw = True
                 if kiosk:
                     screen = wanted_screen(keys)

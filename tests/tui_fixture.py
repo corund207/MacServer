@@ -74,10 +74,92 @@ def machine(temp_c=62, tick=0):
     write("sys/class/hwmon/hwmon0/temp3_label", "Core 1\n")
     write("sys/class/hwmon/hwmon1/name", "applesmc\n")
     write("sys/class/hwmon/hwmon1/fan1_input", "2400\n")
+    write("sys/class/hwmon/hwmon1/temp1_input", "41000\n")
+    write("sys/class/hwmon/hwmon1/temp1_label", "TC0P\n")
+    write("sys/class/hwmon/hwmon2/name", "nvme\n")
+    write("sys/class/hwmon/hwmon2/temp1_input", f"{(temp_c - 18) * 1000}\n")
+    write("sys/class/hwmon/hwmon2/temp1_label", "Composite\n")
+    write("sys/class/hwmon/hwmon2/temp1_crit", "85000\n")
+    for pid, name, ticks, rss_pages in ((101, "postgres", 900, 60_000), (102, "postgres", 400, 30_000), (103, "beam.smp", 800, 41_000),
+                                        (104, "deno", 500, 25_000), (105, "python3", 100, 8_000), (1, "systemd", 20, 2_000)):
+        write(f"proc/{pid}/stat", f"{pid} ({name}) S 1 1 1 0 -1 0 0 0 0 0 {ticks * tick} {tick} 0 0 20 0 1 0 0 0 {rss_pages}\n")
     write("sys/class/power_supply/BAT0/type", "Battery\n")
     write("sys/class/power_supply/BAT0/capacity", "80\n")
     write("sys/class/power_supply/BAT0/status", "Charging\n")
     write("sys/class/power_supply/BAT0/power_now", "3200000\n")
+
+
+def debug(trouble):
+    """What the collector's debug section holds: requests, connections, ports, logs, files."""
+    now = int(time.time())
+    listeners = [
+        {"port": 443, "addr": "100.89.16.53", "scope": "tailnet", "proc": "tailscaled", "svc": "https"},
+        {"port": 8443, "addr": "100.89.16.53", "scope": "tailnet", "proc": "tailscaled", "svc": "studio"},
+        {"port": 8090, "addr": "127.0.0.1", "scope": "loopback", "proc": "python3", "svc": "admin"},
+        {"port": 8000, "addr": "127.0.0.1", "scope": "loopback", "proc": "supabase-envoy", "svc": "api"},
+        {"port": 53, "addr": "127.0.0.53", "scope": "loopback", "proc": "systemd-resolve", "svc": "dns"}]
+    flows_in = [{"src": "tailnet jonahs-iphone", "kind": "tailnet", "port": 443, "svc": "https", "n": 3},
+                {"src": "tailnet desktop-nlhe9il", "kind": "tailnet", "port": 8443, "svc": "studio", "n": 1}]
+    if trouble:
+        listeners = [{"port": 5432, "addr": "0.0.0.0", "scope": "all", "proc": "supabase-pooler", "svc": "postgres"},
+                     {"port": 6543, "addr": "0.0.0.0", "scope": "all", "proc": "supabase-pooler", "svc": "pooler"},
+                     {"port": 8000, "addr": "0.0.0.0", "scope": "all", "proc": "supabase-envoy", "svc": "api"}] + listeners[:3]
+        flows_in.insert(0, {"src": "LAN 192.168.18.20", "kind": "lan", "port": 5432, "svc": "postgres", "n": 2})
+    recent = [
+        (2, "POST", "/functions/v1/sync-events", 200, 77, "this Mac", "curl"),
+        (3, "POST", "/rest/v1/event_teams", 201, 0, "edge-functions", "edge function"),
+        (3, "POST", "/rest/v1/teams", 201, 45, "edge-functions", "edge function"),
+        (5, "GET", "/rest/v1/events", 200, 152, "tailnet jonahs-iphone", "iOS app"),
+        (6, "GET", "/rest/v1/teams", 200, 9312, "tailnet jonahs-iphone", "iOS app"),
+        (9, "GET", "/auth/v1/user", 401, 88, "tailnet desktop-nlhe9il", "browser"),
+        (14, "GET", "/rest/v1/rankings", 200, 4120, "tailnet jonahs-iphone", "iOS app"),
+        (21, "POST", "/rest/v1/rpc/claim_request_slot", 200, 40, "edge-functions", "edge function")]
+    if trouble:
+        recent[0:0] = [(1, "GET", "/rest/v1/events", 503, 17, "LAN 192.168.18.20", "python"),
+                       (1, "POST", "/functions/v1/sync-events", 502, 61, "this Mac", "curl")]
+    rows = [{"t": now - ago, "method": m, "path": path, "status": st, "bytes": b, "client": who, "agent": ua}
+            for ago, m, path, st, b, who, ua in recent]
+    for k in range(24):                       # a busier minute: older requests behind the latest
+        ago, m, path, st, b, who, ua = recent[3 + k % 5]
+        rows.append({"t": now - 22 - k * 2, "method": m, "path": path, "status": st, "bytes": b, "client": who, "agent": ua})
+    errors = [r for r in rows if r["status"] >= 400]
+    classes = {"2xx": 42, "3xx": 0, "4xx": 3, "5xx": 2 if trouble else 0}
+    return {
+        "at": now,
+        "requests": {"window_s": 60, "total": sum(classes.values()), "classes": classes,
+                     "per_2s": [int(2 + 2 * math.sin(i / 3) + (i % 7 == 0) * 3) for i in range(30)],
+                     "recent": rows, "errors": errors,
+                     "top_paths": [["GET /rest/v1/teams", 14], ["POST /rest/v1/teams", 9], ["GET /rest/v1/events", 7]],
+                     "top_clients": [["tailnet jonahs-iphone (iOS app)", 22], ["edge-functions (edge function)", 18]]},
+        "flows": {"out": [{"who": "edge-functions", "dst": "104.18.2.161", "kind": "public", "port": 443, "svc": "https", "n": 2},
+                          {"who": "tailscaled", "dst": "199.165.136.100", "kind": "public", "port": 443, "svc": "https", "n": 3},
+                          {"who": "tailscaled", "dst": "tailnet desktop-nlhe9il", "kind": "tailnet", "port": 41641, "svc": "tailscale", "n": 1},
+                          {"who": "this Mac", "dst": "LAN 192.168.18.1", "kind": "lan", "port": 53, "svc": "dns", "n": 2}],
+                  "in": flows_in, "tracked": 59, "states": {"ESTABLISHED": 12, "TIME_WAIT": 9}},
+        "listeners": listeners,
+        "net": {"gateway": "192.168.18.1", "gateway_ms": 2.1, "internet_ms": 18.4, "dns_ms": 12.0,
+                "internet_fails": 0, "dns_fails": 0, "checked_at": now},
+        "inspect": ({"supabase-edge-functions": {"exit": 1, "oom": False, "restarts": 3, "started": "2026-09-28T15:15:30",
+                                                  "finished": "2026-09-28T15:15:32", "error": "", "health": "",
+                                                  "health_output": ""}} if trouble else {}),
+        "system": {"failed_units": [], "oom_kills": 0, "thermal_throttle": 14,
+                   "journal": ["2026-09-28T21:24:07-0400 macserver systemd[1]: macserver-fans.service: Main process exited, code=exited, status=1/FAILURE",
+                               "2026-09-28T21:30:11-0400 macserver dockerd[815]: level=error msg=\"failed to allocate gateway\""],
+                   "kernel": ["[   19.140325] ieee80211 phy0: brcmf_p2p_set_firmware: failed to update device address ret -52"]},
+        "service_errors": ({"edge-functions": ["error: Module not found \"file:///home/deno/functions/main/index.ts\"",
+                                                "worker exited with code 1 (restarting in 5s)"],
+                            "rest": ["PGRST002: Could not query the database because of a schema cache error",
+                                     "connection to server failed: timeout expired"],
+                            "db": ["FATAL:  remaining connection slots are reserved for non-replication superuser connections"]}
+                           if trouble else {}),
+        "files": [{"path": "/opt/macserver/supabase/docker-compose.yml", "note": "Supabase services (managed: do not edit)", "age_s": 86400 * 3, "size": 21_000},
+                  {"path": "/opt/macserver/supabase/.env", "note": "Supabase settings and secrets (never print it)", "age_s": 300, "size": 12_300},
+                  {"path": "/opt/macserver/supabase/volumes/functions", "note": "Edge Functions source", "age_s": 240, "size": None},
+                  {"path": "/etc/nftables.conf", "note": "firewall rules", "age_s": 86400 * 2, "size": 2_600},
+                  {"path": "/var/log/macserver-firstboot.log", "note": "installer log", "age_s": 86400, "size": 88_000},
+                  {"path": "/var/backups/macserver", "note": "database backups", "age_s": 5400, "size": None}],
+        "backups": {"count": 7, "newest_age_s": 5400, "newest_size": 48_000},
+    }
 
 
 def status(scenario):
@@ -105,14 +187,16 @@ def status(scenario):
         "public_keys": {"ANON_KEY": "eyJpublic-anon-key"},
         "claude": {"installed": True, "state": "inactive" if trouble else "active",
                    "url": "https://claude.ai/code/session_x", "problem": ""},
+        "debug": debug(trouble),
     }
     (BASE / "status.json").write_text(json.dumps(data))
 
 
-def screen(scenario="healthy", cols=160, rows=50, rich=True, overview=False):
+def make_sampler(scenario="healthy", overview=False, page=None):
     """Draw the dashboard for a scenario with 20 minutes of made-up history.
     healthy | warning (notices only) | trouble (critical: incident view) | setup.
-    overview=True shows the normal dashboard during an incident (as Space does)."""
+    overview=True shows the normal dashboard during an incident (as Space does).
+    page=NAME (incident, network, requests, system, logs) picks the incident page and holds it."""
     trouble = scenario == "trouble"
     temp = 93 if trouble else 62
     (BASE / "fans.json").write_text(json.dumps({"mode": "curve", "min_pct": 60, "target_pct": 64.0 if not trouble else 100.0,
@@ -127,7 +211,7 @@ def screen(scenario="healthy", cols=160, rows=50, rich=True, overview=False):
     # Rates depend on the measured gap; pin them so tests never depend on timing.
     sampler.now.update(rx=1_240_000, tx=86_000, rd=1_228_800, wr=307_200, ts_rx=42_000, ts_tx=18_000,
                        ctxt=12_300, intr=4_100)
-    # Per-service CPU history (the collector reports every 30 s) and a few events.
+    # Per-service CPU history (the collector reports every 2 s) and a few events.
     for name, _, cpu, _ in SERVICES:
         sampler.svc_hist[name].extend(max(0.0, cpu * (0.6 + 0.8 * ((math.sin(i / 3 + len(name)) + 1) / 2)))
                                       for i in range(60))
@@ -166,6 +250,23 @@ def screen(scenario="healthy", cols=160, rows=50, rich=True, overview=False):
     for i in range(120):
         h["fan"].append(2300 + 600 * ((math.sin(i / 13) + 1) / 2))
     sampler.force_overview = overview
+    sampler.procs = {"cpu": [{"name": "postgres", "cpu": 34.5, "rss": 380_000_000, "n": 9},
+                             {"name": "beam.smp", "cpu": 12.1, "rss": 168_000_000, "n": 1},
+                             {"name": "deno", "cpu": 6.4, "rss": 98_000_000, "n": 4},
+                             {"name": "python3", "cpu": 1.2, "rss": 33_000_000, "n": 2}],
+                     "mem": [{"name": "postgres", "cpu": 34.5, "rss": 380_000_000, "n": 9},
+                             {"name": "studio", "cpu": 0.4, "rss": 281_000_000, "n": 1},
+                             {"name": "beam.smp", "cpu": 12.1, "rss": 168_000_000, "n": 1},
+                             {"name": "deno", "cpu": 6.4, "rss": 98_000_000, "n": 4}]}
+    if page:
+        sampler.page, sampler.paused, sampler.last_items = tui.PAGES.index(page), True, 99
+    sampler.crit_since = time.time() - 754
+    return sampler
+
+
+def screen(scenario="healthy", cols=160, rows=50, rich=True, overview=False, page=None, sampler=None):
+    """Draw the dashboard for a scenario (see make_sampler); pass a sampler to draw one you changed."""
+    sampler = sampler or make_sampler(scenario, overview, page)
     c = tui.Canvas(cols, rows, rich)
     tui.draw(c, sampler, kiosk=True)
     return c

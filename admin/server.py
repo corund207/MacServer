@@ -30,7 +30,7 @@ SECURITY_HEADERS = {
     "Cross-Origin-Opener-Policy": "same-origin",
     "Cross-Origin-Resource-Policy": "same-origin",
 }
-STALE_AFTER_S = 120
+STALE_AFTER_S = 20
 CLAUDE_ACTIONS = ("start", "stop")
 MAX_BODY = 256
 
