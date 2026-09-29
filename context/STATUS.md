@@ -387,3 +387,22 @@ shown above 95% within 12 samples (6 s).
 Expected: dashboard/docs changes on the Mac about 2-3 minutes after a push;
 installer changes about 5-7. Verified: 13 updater checks (quick-only install while
 the VM test runs; installer change waits for it). Timings to confirm on the next runs.
+
+## 2026-09-28: Supabase ports were reachable from the LAN (found on the real Mac)
+
+While preparing a PlaneSight deploy: on the Mac, supabase-db 5432, the pooler 6543
+and the API 8000 listened on 0.0.0.0, and a connection test from another machine on
+the same Wi-Fi reached all three (the admin page 8090 correctly did not).
+/etc/docker/daemon.json had "ip": "127.0.0.1" but was modified at 20:43 that evening,
+after the Supabase containers were created; a daemon setting does not change existing
+containers' bindings. And the MacServer firewall only had an input chain, while Docker
+DNATs published ports through the forward path.
+
+Fix in the repository: host/nftables.conf gains a forward chain (priority filter - 1,
+before Docker's) that drops new connections arriving on wl*, en*, eth*, usb*, ww*,
+whatever a container binds to; established traffic and tailscale0 pass. The
+self-updater re-applies the firewall step. Verified with a network-namespace test
+(fake Wi-Fi, fake container, Docker-style DNAT): without the chain the "database"
+answered from the LAN, with it the connection is blocked, and the container's
+outgoing traffic still works. On the Mac: ~/fix-supabase-ports.sh recreates the
+Supabase containers so they bind to 127.0.0.1 (needs the owner's sudo).

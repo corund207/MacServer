@@ -22,7 +22,7 @@ REQUIRED_CHECKS=(checks disk-install image vm-test)
 # docs, tests) only the quick checks. Health check and rollback protect either way.
 INSTALL_PATHS='^(iso/|installer/|host/|install\.sh$|\.github/workflows/)'
 # Install steps re-applied after an update, when they were done before.
-UPDATE_STEPS=(host admin claude autoupdate)
+UPDATE_STEPS=(host firewall admin claude autoupdate)
 STATUS_RUN=/run/macserver/self-update.json
 STATUS_KEEP=/var/lib/macserver/self-update.json
 LOCK=/run/macserver-self-update.lock

@@ -49,6 +49,11 @@ class RepoTests(unittest.TestCase):
         self.assertIn("policy drop;", rules)
         self.assertNotIn("flush ruleset", rules)
         self.assertNotRegex(rules, r"tcp dport")
+        # Docker forwards published ports around the input chain: new connections from
+        # the LAN must be dropped in a forward chain that runs before Docker's.
+        self.assertRegex(rules, r"hook forward priority filter - 1")
+        for iface in ("wl*", "en*"):
+            self.assertIn(f'ct state new iifname "{iface}" drop', rules)
 
     def test_caddy_refuses_admin_surfaces(self):
         caddy = (ROOT / "gateway/Caddyfile").read_text()
