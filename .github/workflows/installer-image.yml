@@ -31,6 +31,7 @@ jobs:
     runs-on: ubuntu-24.04
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Send workflow start email
         uses: dawidd6/action-send-mail@v3
         with:
@@ -41,7 +42,7 @@ jobs:
           subject: "🏗️ MacServer Installer Image Build Started - ${{ github.sha }}"
           to: ${{ secrets.NOTIFICATION_EMAIL }}
           from: MacServer CI
-          body: file://.github/workflows/email-templates/installer-image-start.txt
+          body: file://${{ github.workspace }}/.github/workflows/email-templates/installer-image-start.txt
 
   disk-install:
     needs: notify-start
@@ -138,6 +139,7 @@ jobs:
     runs-on: ubuntu-24.04
     if: always() && (needs.disk-install.result == 'success' && needs.image.result == 'success' && needs.vm-test.result == 'success' && (needs.release.result == 'success' || needs.release.result == 'skipped')) && github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Send workflow success email
         uses: dawidd6/action-send-mail@v3
         with:
@@ -148,7 +150,7 @@ jobs:
           subject: "✅ MacServer Installer Image Build Passed - ${{ github.sha }}"
           to: ${{ secrets.NOTIFICATION_EMAIL }}
           from: MacServer CI
-          body: file://.github/workflows/email-templates/installer-image-success.txt
+          body: file://${{ github.workspace }}/.github/workflows/email-templates/installer-image-success.txt
 
   notify-failure:
     name: Send failure notification
@@ -156,6 +158,7 @@ jobs:
     runs-on: ubuntu-24.04
     if: always() && (needs.disk-install.result != 'success' || needs.image.result != 'success' || needs.vm-test.result != 'success' || needs.release.result == 'failure') && github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Send workflow failure email
         uses: dawidd6/action-send-mail@v3
         with:
