@@ -548,3 +548,23 @@ because Tailscale's resolver used to be in the way; both can go now.
 - The page has not been looked at in a browser, and `tailscale serve --set-path /term`
   has not been run on the Mac (whether the mount prefix is stripped is handled either way:
   the service accepts `/ws` and `/term/ws`). ShellCheck was not available locally; CI runs it.
+
+## 2026-09-30: idle mode (low power when nobody is connected)
+
+After `IDLE_AFTER_S` (default 900 s) with no connections, the Mac uses less
+power until activity returns. Detection is in the collector (`status.json`
+`idle`: API traffic in the last minute, live inbound connections, meaningful
+outbound work, an active Claude session, or containers over 20% CPU; Tailscale's
+control plane, the tunnel keepalive and DNS/NTP never count). `admin/idle.py`
+(`macserver-idle.timer`, every 30 s) then reversibly applies: CPU governors to
+`IDLE_GOVERNOR` (default powersave), screen to `IDLE_BRIGHTNESS_PCT` (default
+30%), and `docker pause` for `IDLE_PAUSE_CONTAINERS` (default empty: nothing).
+It never touches the network, firewall, Tailscale or the public route, and a
+stale collector fails safe (stay awake). `sudo macserver idle [status|auto|on|off]`
+(default auto); shown in `macserver status`, the dashboard (Idle row, IDLE badge)
+and the admin page.
+
+Verified: `tests/run.sh` (shell syntax, ShellCheck 0.11, 91 Python tests: collector
+hysteresis/activity, controller apply/restore with fake sysfs, dashboard Idle row,
+repo safety invariants) plus end-to-end `--status`/`--check` with a fake status file.
+Not verified: real governor/backlight paths and wake latency on the MacBook Air.

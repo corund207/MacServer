@@ -59,6 +59,23 @@ step_host() {
   install_dns
   install_console
   install_fans
+  install_idle
+}
+
+# install_idle: low-power mode when nobody is using the server (admin/idle.py).
+# Reversible and local only: CPU governor, screen brightness and, only if the
+# owner names them, `docker pause` for some containers. Never touches the
+# network, the firewall, Tailscale or the public route.
+install_idle() {
+  install -D -m 0755 "$SRC/admin/idle.py" /usr/local/lib/macserver/idle
+  [[ -n $(conf_get IDLE_MODE) ]] || conf_set IDLE_MODE auto
+  [[ -n $(conf_get IDLE_AFTER_S) ]] || conf_set IDLE_AFTER_S 900
+  [[ -n $(conf_get IDLE_BRIGHTNESS_PCT) ]] || conf_set IDLE_BRIGHTNESS_PCT 30
+  put_file "$SRC/host/macserver-idle.service" /etc/systemd/system/macserver-idle.service 0644
+  put_file "$SRC/host/macserver-idle.timer" /etc/systemd/system/macserver-idle.timer 0644
+  systemctl daemon-reload
+  systemctl enable --now macserver-idle.timer >/dev/null
+  ok "idle mode: low power after $(conf_get IDLE_AFTER_S 900) s with no connections (change: sudo macserver idle auto|on|off)"
 }
 
 # install_fans: fans at FAN_MIN_PCT (default 100%: always full speed), from the Apple SMC.

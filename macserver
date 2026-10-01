@@ -28,6 +28,7 @@ Usage: sudo macserver COMMAND
   public setup      turn on (or change) the public API route
   public off        stop the public API route
   public on         start it again
+  idle [status|auto|on|off]   low-power mode when nobody is connected (auto by default)
   wifi              set up or change the built-in Wi-Fi
   doctor            check network, DNS and T2 drivers
 EOF
@@ -49,6 +50,7 @@ cmd_status() {
     "Updates    \(.host.updates_pending) pending\(if .host.reboot_required then ", reboot required" else "" end)",
     "Tailscale  \(.tailscale.state) \(.tailscale.name)",
     "Public     \(if .public_domain == "" then "off" else "https://\(.public_domain)" end)",
+    "Idle       \(if ((.idle.mode // "auto") == "off") then "off" elif ((.idle.idle // false)) then "low-power" else "active" end)",
     "",
     (.containers[] | "\(if .state == "running" then "  ok  " else "  !!  " end)\(.name)  \(.status)")
   ' "$s"
@@ -84,6 +86,14 @@ cmd_update() {
     warn "a reboot is needed to finish (sudo reboot). With disk encryption, type the passphrase on the Mac."
   fi
   ok "updated"
+}
+
+cmd_idle() {
+  case ${1:-status} in
+    status) "$LIB/idle" --status 2>/dev/null || say "idle mode not installed yet (run: sudo ./install.sh)" ;;
+    auto|on|off) need_root idle; conf_set IDLE_MODE "$1"; "$LIB/idle" --check >/dev/null 2>&1 || true; ok "idle mode $1" ;;
+    *) usage; exit 2 ;;
+  esac
 }
 
 cmd_doctor() {
@@ -126,6 +136,7 @@ main() {
         *) usage; exit 2 ;;
       esac ;;
     wifi) need_root wifi; wifi_setup ;;
+    idle) shift || true; cmd_idle "$@" ;;
     doctor) cmd_doctor ;;
     ''|-h|--help|help) usage ;;
     *) warn "unknown command '$cmd'"; usage; exit 2 ;;

@@ -265,7 +265,12 @@ function renderServiceDetail() {
 function renderSystem(s) {
   const h = s.host, t2 = h.t2_modules || {};
   const onOff = (v) => (v ? 'on' : 'off');
+  const idle = s.idle || {};
+  const idleText = idle.mode === 'off' ? 'off'
+    : idle.idle ? `low-power${idle.since ? ` since ${new Date(idle.since * 1000).toLocaleString()}` : ''}`
+    : `active (low-power after ${Math.max(Math.round((idle.after_s || 900) / 60), 1)}m quiet)`;
   rows($('host'), [
+    ['idle', idleText],
     ['model', h.model],
     ['kernel', `${h.kernel}${h.t2_kernel ? '' : ' (not the T2 kernel)'}`, h.t2_kernel ? '' : 'warn'],
     ['t2', `kbd ${onOff(t2.keyboard)} · wifi ${onOff(t2.brcmfmac)} · smc ${onOff(t2.applesmc)}`],

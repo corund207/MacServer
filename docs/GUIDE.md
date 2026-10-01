@@ -256,6 +256,7 @@ Logging in shows a summary; `macserver dashboard` opens the full dashboard (q qu
 | `sudo macserver logs auth` | Shows what a service is doing (`auth`, `rest`, `db`, `storage`...) |
 | `sudo macserver restart` | Restarts Supabase |
 | `sudo macserver public off` | Takes the public API off the Internet immediately |
+| `sudo macserver idle off` | Stays at full power (by default it uses less power after 15 minutes with no connections) |
 | `sudo macserver doctor` | Checks network, DNS and the Mac's drivers |
 | `sudo macserver upgrade` | Installs the newest tested MacServer version now (it also updates itself) |
 

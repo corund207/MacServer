@@ -309,5 +309,83 @@ class DebugParserTests(unittest.TestCase):
         self.assertIn("containers", data)
 
 
+class IdleTests(unittest.TestCase):
+    def base(self):
+        return {"debug": {"requests": {"total": 0},
+                          "flows": {"in": [], "out": []}},
+                "claude": {"state": "inactive"},
+                "containers": [{"name": "supabase-db", "state": "running", "cpu": 0.5}]}
+
+    def test_quiet_server_is_not_active(self):
+        active, reasons = collector.idle_activity(self.base())
+        self.assertFalse(active)
+        self.assertEqual(reasons, [])
+
+    def test_api_traffic_and_inbound_connections_count(self):
+        data = self.base()
+        data["debug"]["requests"] = {"total": 7}
+        active, reasons = collector.idle_activity(data)
+        self.assertTrue(active)
+        self.assertTrue(any("API request" in r for r in reasons))
+        data = self.base()
+        data["debug"]["flows"] = {"in": [{"src": "tailnet phone", "n": 2}], "out": []}
+        self.assertTrue(collector.idle_activity(data)[0])
+
+    def test_infra_chatter_does_not_keep_awake(self):
+        data = self.base()
+        data["debug"]["flows"] = {
+            "in": [],
+            "out": [{"who": "tailscaled", "dst": "199.165.136.100", "kind": "public",
+                     "port": 443, "svc": "https", "n": 3},
+                    {"who": "edge-functions", "dst": "1.1.1.1", "kind": "public",
+                     "port": 53, "svc": "dns", "n": 1},
+                    {"who": "gateway-cloudflared-1", "dst": "104.18.2.161", "kind": "public",
+                     "port": 443, "svc": "https", "n": 2}]}
+        self.assertFalse(collector.idle_activity(data)[0])
+        # ...but real tailnet work does.
+        data["debug"]["flows"]["out"].append(
+            {"who": "edge-functions", "dst": "104.18.2.161", "kind": "public",
+             "port": 443, "svc": "https", "n": 1})
+        active, reasons = collector.idle_activity(data)
+        self.assertTrue(active)
+        self.assertTrue(any("edge-functions" in r for r in reasons))
+
+    def test_claude_and_cpu_count(self):
+        data = self.base()
+        data["claude"] = {"state": "active"}
+        self.assertTrue(collector.idle_activity(data)[0])
+        data = self.base()
+        data["containers"] = [{"name": "supabase-db", "state": "running", "cpu": 25.0}]
+        active, reasons = collector.idle_activity(data)
+        self.assertTrue(active)
+        self.assertTrue(any("busy" in r for r in reasons))
+
+    def test_hysteresis_needs_a_quiet_spell(self):
+        state = {}
+        self.assertEqual(collector.idle_settings({}), ("auto", 900))
+        self.assertEqual(collector.idle_settings({"IDLE_MODE": "OFF", "IDLE_AFTER_S": "5"}), ("off", 60))
+        # Activity wakes at once.
+        info = collector.idle_track(state, 1000.0, True, 900, "auto")
+        self.assertFalse(info["idle"])
+        # Quiet, but the spell is not over yet.
+        info = collector.idle_track(state, 1500.0, False, 900, "auto")
+        self.assertFalse(info["idle"])
+        self.assertNotIn("idle_since", state)
+        # After 900 s quiet: idle, with when it started.
+        info = collector.idle_track(state, 1900.0, False, 900, "auto")
+        self.assertTrue(info["idle"])
+        self.assertEqual(info["since"], 1900)
+        # Still quiet: stays idle with the same start.
+        info = collector.idle_track(state, 2000.0, False, 900, "auto")
+        self.assertEqual(info["since"], 1900)
+        # Activity again: awake immediately.
+        info = collector.idle_track(state, 2100.0, True, 900, "auto")
+        self.assertFalse(info["idle"])
+        self.assertIsNone(info["since"])
+        # Forced modes ignore traffic.
+        self.assertTrue(collector.idle_track({}, 0.0, False, 900, "on")["idle"])
+        self.assertFalse(collector.idle_track({}, 0.0, True, 900, "off")["idle"])
+
+
 if __name__ == "__main__":
     unittest.main()

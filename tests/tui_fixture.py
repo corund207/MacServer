@@ -180,6 +180,7 @@ def status(scenario):
         "generated_at": time.time(), "setup_done": True,
         "host": {"updates_pending": 4 if trouble or warning else 0, "reboot_required": warning},
         "tailscale": {"state": "Running", "name": "macserver.tail4f2a.ts.net", "peers_online": 3},
+        "idle": {"mode": "auto", "idle": False, "since": None, "after_s": 900, "reasons": []},
         "containers": containers,
         "public_domain": "api.example.com", "public_ok": not trouble, "clock_synced": True,
         "macserver_update": {"state": "up-to-date", "message": "running the newest version",

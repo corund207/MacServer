@@ -102,6 +102,38 @@ class RepoTests(unittest.TestCase):
         self.assertIn("*.iso", ignored)
         self.assertFalse(list(ROOT.rglob("brcmfmac*")), "firmware files must never be committed")
 
+    def test_idle_mode_is_reversible_and_leaves_the_network_alone(self):
+        import re
+        # The controller only ever touches local power settings; networking,
+        # the firewall and the public route are out of its reach.
+        text = (ROOT / "admin/idle.py").read_text()
+        runs = re.findall(r"subprocess\.run\(\[(.*?)\]", text)
+        self.assertTrue(runs)
+        for argv in runs:
+            self.assertTrue(argv.strip().startswith('"docker"'), argv)
+        for pattern in (r"\btailscale\s+\w+", r"\bnft(ables)?\b", r"\biptables\b",
+                        r"\bufw\b", r"\bsystemctl\b", r"cloudflared"):
+            self.assertIsNone(re.search(pattern, text), pattern)
+        for wanted in ("scaling_governor", "backlight", "docker", "pause"):
+            self.assertIn(wanted, text)
+        # Installed by the host step (so updates re-apply it), on a 30 s timer.
+        host = (ROOT / "installer/steps/20-t2.sh").read_text()
+        self.assertIn("install_idle", host)
+        self.assertIn("macserver-idle.timer", host)
+        tools = (ROOT / "installer/steps/40-access.sh").read_text()
+        self.assertIn("admin/idle.py", tools)
+        timer = (ROOT / "host/macserver-idle.timer").read_text()
+        self.assertIn("OnUnitActiveSec=30", timer)
+        service = (ROOT / "host/macserver-idle.service").read_text()
+        self.assertIn("/usr/local/lib/macserver/idle --check", service)
+        self.assertNotIn("ProtectKernelTunables", service)  # it must be able to write /sys
+        cli = (ROOT / "macserver").read_text()
+        self.assertIn("idle [status|auto|on|off]", cli)
+        self.assertIn("cmd_idle", cli)
+        collector = (ROOT / "admin/collect_status.py").read_text()
+        self.assertIn("def idle_activity", collector)
+        self.assertIn("def idle_track", collector)
+
     def test_no_secrets_committed(self):
         pattern = re.compile(r"(TUNNEL_TOKEN=\w|eyJ[A-Za-z0-9_-]{20,}\.|BEGIN [A-Z ]*PRIVATE KEY)")
         for path in ROOT.rglob("*"):

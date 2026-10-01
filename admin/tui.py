@@ -820,6 +820,24 @@ def connections(sampler):
                 "waiting-ci": "new version in testing", "available": "new version ready",
                 "updating": "installing a new version", "waiting": "after setup", "off": "auto-update off"}
         rows.append((level, "MacServer", text.get(state, mu.get("message", state))))
+    idle = s.get("idle") or {}
+    mode = idle.get("mode", "auto")
+    if mode == "off":
+        rows.append(("off", "Idle", "off · sudo macserver idle auto to enable"))
+    elif idle.get("idle"):
+        since = idle.get("since")
+        if isinstance(since, (int, float)) and since > 0:
+            ago = max(int(time.time() - since), 0)
+            rows.append(("off", "Idle", f"low-power · quiet {fmt_duration(ago)}"))
+        else:
+            rows.append(("off", "Idle", "low-power"))
+    else:
+        after = idle.get("after_s", 900)
+        try:
+            mins = max(int(after) // 60, 1)
+        except (TypeError, ValueError):
+            mins = 15
+        rows.append(("ok", "Idle", f"active · low-power after {mins}m quiet"))
     return rows
 
 
@@ -828,6 +846,8 @@ def connections(sampler):
 def top_bar(c, sampler, problems):
     w, now, s = c.w, sampler.now, sampler.status or {}
     name = (s.get("tailscale", {}) or {}).get("name") or "macserver"
+    if (s.get("idle") or {}).get("idle"):
+        name += " · IDLE"
     c.fill(0, 0, w, 1, C["panel"] if c.rich else None)
     x = c.put(1, 0, "◆ ", C["accent"], C["panel"] if c.rich else None)
     x = c.put(x, 0, "MACSERVER", C["bright"], C["panel"] if c.rich else None, bold=True)

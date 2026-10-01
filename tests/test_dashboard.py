@@ -195,6 +195,17 @@ class DashboardTests(unittest.TestCase):
         self.assertIn(chr(0x28FF), text)                 # braille graphs are drawn
         self.assertNotIn("public-anon-key", text)       # no keys on the screen, not even public ones
 
+    def test_idle_row_and_badge(self):
+        text = tui_fixture.screen("healthy", 232, 64).text()
+        self.assertIn("Idle", text)
+        self.assertIn("low-power after 15m quiet", text)
+        s = tui_fixture.make_sampler("healthy")
+        s.status["idle"] = {"mode": "auto", "idle": True, "since": time.time() - 3600,
+                            "after_s": 900, "reasons": []}
+        idle_text = tui_fixture.screen("healthy", 232, 64, sampler=s).text()
+        self.assertIn("IDLE", idle_text)
+        self.assertIn("low-power", idle_text)
+
     def test_critical_shows_the_red_incident_view(self):
         c = tui_fixture.screen("trouble", 232, 64)
         text = c.text()

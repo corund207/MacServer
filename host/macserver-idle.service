@@ -1,0 +1,14 @@
+[Unit]
+Description=MacServer: apply idle low-power mode when nobody is connected
+After=multi-user.target docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/macserver/idle --check
+RuntimeDirectory=macserver
+RuntimeDirectoryPreserve=yes
+Nice=10
+# Only transitions are printed (every 30 s would otherwise flood the journal).
+LogLevelMax=warning
+NoNewPrivileges=yes
+PrivateTmp=yes

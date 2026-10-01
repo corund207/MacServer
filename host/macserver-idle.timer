@@ -1,0 +1,10 @@
+[Unit]
+Description=MacServer: check every 30 seconds whether idle low power applies
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=30s
+RandomizedDelaySec=5s
+
+[Install]
+WantedBy=timers.target

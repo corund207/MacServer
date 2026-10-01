@@ -898,6 +898,103 @@ def count_updates():
     return sum(1 for l in (upgradable or "").splitlines() if l.startswith("Inst "))
 
 
+# --- idle mode: low power when nobody is using the server ------------------------------
+# The collector decides *whether* the Mac is idle; admin/idle.py only applies the
+# reversible low-power settings (CPU governor, screen brightness, optional
+# container pause). Signals for activity: API traffic in the last minute, live
+# inbound connections, meaningful outbound work, an active Claude session, or a
+# busy CPU (a backup or migration with no network traffic still keeps it awake).
+# Tailscale's control plane, the tunnel keepalive and DNS/NTP lookups never
+# count: they chatter even when nobody uses anything.
+
+IDLE_AFTER_DEFAULT_S = 900
+IDLE_AFTER_MIN_S = 60
+IDLE_AFTER_MAX_S = 86400
+IDLE_BUSY_CPU_PCT = 20.0   # total container CPU % that counts as "doing work"
+IDLE_IGNORED_WHO = ("tailscaled", "this Mac")
+IDLE_IGNORED_SVC = ("tailscale", "dns", "ntp", "stun")
+
+
+def idle_settings(conf):
+    """(mode, after_s) from macserver.conf: auto = quiet spell -> idle."""
+    mode = (conf.get("IDLE_MODE", "auto") or "auto").strip().lower()
+    if mode not in ("auto", "on", "off"):
+        mode = "auto"
+    try:
+        after = int(conf.get("IDLE_AFTER_S", str(IDLE_AFTER_DEFAULT_S)))
+    except ValueError:
+        after = IDLE_AFTER_DEFAULT_S
+    return mode, min(max(after, IDLE_AFTER_MIN_S), IDLE_AFTER_MAX_S)
+
+
+def idle_activity(data):
+    """Is the server in use right now? Returns (active, [reasons])."""
+    reasons = []
+    debug = data.get("debug") or {}
+    requests = debug.get("requests") or {}
+    try:
+        total = int(requests.get("total", 0) or 0)
+    except (TypeError, ValueError):
+        total = 0
+    if total > 0:
+        reasons.append(f"{total} API request(s) in the last minute")
+    flows = debug.get("flows") or {}
+    inbound = flows.get("in") or []
+    if inbound:
+        n = sum(int(i.get("n", 1) or 1) for i in inbound)
+        reasons.append(f"{n} inbound connection(s)")
+    for entry in flows.get("out") or []:
+        who = entry.get("who", "")
+        if who in IDLE_IGNORED_WHO or "gateway" in who:
+            continue
+        if entry.get("svc") in IDLE_IGNORED_SVC or entry.get("port") in (53, 123, 41641, 3478):
+            continue
+        if entry.get("kind") not in ("tailnet", "lan", "public"):
+            continue
+        reasons.append(f"{who} -> {entry.get('dst', '?')}:{entry.get('port', '?')}")
+        break
+    claude = data.get("claude") or {}
+    if claude.get("state") in ("active", "activating"):
+        reasons.append("Claude session running")
+    busy = sum((c.get("cpu") or 0) for c in data.get("containers", []) if c.get("state") == "running")
+    try:
+        busy = float(busy)
+    except (TypeError, ValueError):
+        busy = 0.0
+    if busy >= IDLE_BUSY_CPU_PCT:
+        reasons.append(f"containers busy ({busy:.0f}% CPU)")
+    return bool(reasons), reasons[:3]
+
+
+def idle_track(state, now, active, after_s, mode):
+    """Hysteresis for idle mode, kept in the collector's STATE between runs.
+
+    Activity wakes at once (last_active = now); idleness needs `after_s`
+    continuous quiet seconds. Returns the "idle" section for status.json."""
+    if mode == "off":
+        state.pop("idle_last_active", None)
+        state.pop("idle_since", None)
+        return {"mode": mode, "idle": False, "since": None, "after_s": after_s, "reasons": []}
+    if mode == "on":
+        since = state.get("idle_since")
+        if not isinstance(since, (int, float)):
+            since = state["idle_since"] = int(now)
+        return {"mode": mode, "idle": True, "since": since, "after_s": after_s, "reasons": []}
+    if active:
+        state["idle_last_active"] = now
+        state.pop("idle_since", None)
+        return {"mode": mode, "idle": False, "since": None, "after_s": after_s, "reasons": []}
+    last = state.get("idle_last_active")
+    if not isinstance(last, (int, float)):
+        state["idle_last_active"] = last = now  # first run: grace period starts now
+    if now - last >= after_s:
+        since = state.get("idle_since")
+        if not isinstance(since, (int, float)):
+            since = state["idle_since"] = int(last + after_s)
+        return {"mode": mode, "idle": True, "since": since, "after_s": after_s, "reasons": []}
+    return {"mode": mode, "idle": False, "since": None, "after_s": after_s, "reasons": []}
+
+
 def collect(state=None):
     """One health snapshot. `state` carries what a 2-second cadence must not redo every run:
     the last cgroup reading (for CPU %) and cached slow values (apt, the public route)."""
@@ -947,6 +1044,7 @@ def collect(state=None):
         "claude": claude_session(read(CLAUDE_LOG, ""), unit_state("macserver-claude.service"),
                                  Path("/usr/local/bin/claude").exists()),
     }
+    mode, after_s = idle_settings(conf)
     try:   # likewise the live graphs: a failure here leaves the health data intact
         data["live"], state["live"] = live_stats(state.get("live", {}), now)
     except Exception as err:   # noqa: BLE001
@@ -955,6 +1053,9 @@ def collect(state=None):
         data["debug"] = debug_info(state, now, ps, ids, data["containers"], tailscale_peers(ts_text))
     except Exception as err:   # noqa: BLE001
         data["debug"] = {"error": repr(err)[:200]}
+    active, reasons = idle_activity(data)
+    data["idle"] = idle_track(state, now, active, after_s, mode)
+    data["idle"]["reasons"] = reasons if active else []
     return data
 
 
