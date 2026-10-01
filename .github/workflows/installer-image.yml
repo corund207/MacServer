@@ -34,6 +34,40 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Send workflow start email
         uses: dawidd6/action-send-mail@v3
+        env:
+          SHA: ${{ github.sha }}
+          REF: ${{ github.ref_name }}
+          ACTOR: ${{ github.actor }}
+          MSG: ${{ github.event.head_commit.message }}
+          RUN_ID: ${{ github.run_id }}
+          REPO: ${{ github.repository }}
+        run: |
+          cat <<EOF > /tmp/email-body.txt
+          MacServer Installer Image Build Started
+          =======================================
+          
+          Build Information:
+          - Workflow: installer-image (disk install, image build, VM test)
+          - Commit: $SHA
+          - Branch: $REF
+          - Author: $ACTOR
+          - Commit Message: $MSG
+          - Build URL: https://github.com/$REPO/actions/runs/$RUN_ID
+          
+          Expected Duration: ~10-15 minutes total
+          
+          Jobs (sequential):
+          1. disk-install (~3 min): Hands-off install onto loop device, 22 property checks
+          2. image (~30 s with cache, ~3 min cold): Assembles bootable UEFI ISO from cached base
+          3. vm-test (~4 min): QEMU/KVM install from ISO, UEFI boot, first-boot preflight + network
+          4. release (tags only): Publishes ISO as GitHub release with SHA256
+          
+          This workflow runs on every push to main and usb-installer branch, and on version tags (v*).
+          Installed MacServers only update to commits where BOTH this workflow AND ci have passed.
+          
+          ---
+          Automated notification from GitHub Actions
+          EOF
         with:
           server_address: smtp.gmail.com
           server_port: 465
@@ -42,7 +76,7 @@ jobs:
           subject: "🏗️ MacServer Installer Image Build Started - ${{ github.sha }}"
           to: ${{ secrets.NOTIFICATION_EMAIL }}
           from: MacServer CI
-          body: file://${{ github.workspace }}/.github/workflows/email-templates/installer-image-start.txt
+          body: file:///tmp/email-body.txt
 
   disk-install:
     needs: notify-start
@@ -139,9 +173,41 @@ jobs:
     runs-on: ubuntu-24.04
     if: always() && (needs.disk-install.result == 'success' && needs.image.result == 'success' && needs.vm-test.result == 'success' && (needs.release.result == 'success' || needs.release.result == 'skipped')) && github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Send workflow success email
         uses: dawidd6/action-send-mail@v3
+        env:
+          SHA: ${{ github.sha }}
+          REF: ${{ github.ref_name }}
+          ACTOR: ${{ github.actor }}
+          RUN_ID: ${{ github.run_id }}
+          REPO: ${{ github.repository }}
+        run: |
+          cat <<EOF > /tmp/email-body.txt
+          MacServer Installer Image Build PASSED
+          ======================================
+          
+          Build Information:
+          - Workflow: installer-image
+          - Commit: $SHA
+          - Branch: $REF
+          - Author: $ACTOR
+          - Build URL: https://github.com/$REPO/actions/runs/$RUN_ID
+          - Started: ${{ github.run_started_at }}
+          
+          All Jobs Passed:
+          ✅ disk-install (~3 min): Hands-off install to loop device, 22 property checks
+          ✅ image (~30s cached / ~3 min cold): Bootable UEFI ISO assembled
+          ✅ vm-test (~4 min): QEMU install from ISO, UEFI boot, first-boot preflight + network
+          ✅ release: ISO published as GitHub release (tags only)
+          
+          ISO Artifact: Available for 14 days at the build page
+          SHA256: Check build/macserver-*.iso.sha256 in artifacts
+          
+          Installed MacServers will now auto-update to this commit ($SHA) on their next 2-minute check cycle (requires CI to also pass).
+          
+          ---
+          Automated notification from GitHub Actions
+          EOF
         with:
           server_address: smtp.gmail.com
           server_port: 465
@@ -150,7 +216,7 @@ jobs:
           subject: "✅ MacServer Installer Image Build Passed - ${{ github.sha }}"
           to: ${{ secrets.NOTIFICATION_EMAIL }}
           from: MacServer CI
-          body: file://${{ github.workspace }}/.github/workflows/email-templates/installer-image-success.txt
+          body: file:///tmp/email-body.txt
 
   notify-failure:
     name: Send failure notification
@@ -158,9 +224,48 @@ jobs:
     runs-on: ubuntu-24.04
     if: always() && (needs.disk-install.result != 'success' || needs.image.result != 'success' || needs.vm-test.result != 'success' || needs.release.result == 'failure') && github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Send workflow failure email
         uses: dawidd6/action-send-mail@v3
+        env:
+          SHA: ${{ github.sha }}
+          REF: ${{ github.ref_name }}
+          ACTOR: ${{ github.actor }}
+          RUN_ID: ${{ github.run_id }}
+          REPO: ${{ github.repository }}
+        run: |
+          cat <<EOF > /tmp/email-body.txt
+          MacServer Installer Image Build FAILED
+          ======================================
+          
+          Build Information:
+          - Workflow: installer-image
+          - Commit: $SHA
+          - Branch: $REF
+          - Author: $ACTOR
+          - Build URL: https://github.com/$REPO/actions/runs/$RUN_ID
+          - Started: ${{ github.run_started_at }}
+          
+          ❌ One or more jobs failed. Check the build log:
+          https://github.com/$REPO/actions/runs/$RUN_ID
+          
+          Job Status:
+          - disk-install: ${{ needs.disk-install.result }}
+          - image: ${{ needs.image.result }}
+          - vm-test: ${{ needs.vm-test.result }}
+          - release: ${{ needs.release.result }}
+          
+          Common Failure Points:
+          - disk-install: LUKS2 setup, T2 kernel initrd, GRUB config, first-boot unit
+          - image: Base cache miss (rebuilds base ~3 min), squashfs, GRUB EFI
+          - vm-test: QEMU KVM, OVMF UEFI, ISO boot, installer answers, first-boot
+          - release: Only runs on tags (v*)
+          
+          Installed MacServers will NOT update to this commit. They remain on the previous passing version.
+          
+          Action Required: Check job logs, fix the issue, push a new commit.
+          ---
+          Automated notification from GitHub Actions
+          EOF
         with:
           server_address: smtp.gmail.com
           server_port: 465
@@ -169,4 +274,4 @@ jobs:
           subject: "❌ MacServer Installer Image Build Failed - ${{ github.sha }}"
           to: ${{ secrets.NOTIFICATION_EMAIL }}
           from: MacServer CI
-          body: file://.github/workflows/email-templates/installer-image-failure.txt
+          body: file:///tmp/email-body.txt

@@ -22,6 +22,41 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Send workflow start email
         uses: dawidd6/action-send-mail@v3
+        env:
+          SHA: ${{ github.sha }}
+          REF: ${{ github.ref_name }}
+          ACTOR: ${{ github.actor }}
+          MSG: ${{ github.event.head_commit.message }}
+          RUN_ID: ${{ github.run_id }}
+          REPO: ${{ github.repository }}
+        run: |
+          cat <<EOF | sed 's/^/  /' > /tmp/email-body.txt
+          MacServer CI Workflow Started
+          =============================
+          
+          Build Information:
+          - Workflow: CI (tests, shellcheck, firewall validation, gateway compose)
+          - Commit: $SHA
+          - Branch: $REF
+          - Author: $ACTOR
+          - Commit Message: $MSG
+          - Build URL: https://github.com/$REPO/actions/runs/$RUN_ID
+          
+          Expected Duration: ~3-5 minutes
+          
+          Jobs:
+          - checks: Shell syntax, ShellCheck, library & Python tests (110 tests)
+          - Self-update CI gate test
+          - Supabase pin validation
+          - Firewall rules parse (nftables)
+          - Gateway Compose validation
+          - Gateway path filter test
+          
+          This workflow runs on every push and PR. Only pushes to main trigger the installer-image workflow.
+          
+          ---
+          Automated notification from GitHub Actions
+          EOF
         with:
           server_address: smtp.gmail.com
           server_port: 465
@@ -30,7 +65,7 @@ jobs:
           subject: "🚀 MacServer CI Started - ${{ github.sha }}"
           to: ${{ secrets.NOTIFICATION_EMAIL }}
           from: MacServer CI
-          body: file://${{ github.workspace }}/.github/workflows/email-templates/ci-start.txt
+          body: file:///tmp/email-body.txt
 
   checks:
     needs: notify-start
@@ -66,9 +101,42 @@ jobs:
     runs-on: ubuntu-24.04
     if: always() && needs.checks.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Send workflow success email
         uses: dawidd6/action-send-mail@v3
+        env:
+          SHA: ${{ github.sha }}
+          REF: ${{ github.ref_name }}
+          ACTOR: ${{ github.actor }}
+          RUN_ID: ${{ github.run_id }}
+          REPO: ${{ github.repository }}
+        run: |
+          cat <<EOF > /tmp/email-body.txt
+          MacServer CI Workflow Passed
+          =============================
+          
+          Build Information:
+          - Workflow: CI
+          - Commit: $SHA
+          - Branch: $REF
+          - Author: $ACTOR
+          - Build URL: https://github.com/$REPO/actions/runs/$RUN_ID
+          - Duration: ${{ github.run_started_at }} to completion
+          
+          All Checks Passed:
+          ✅ Shell syntax & ShellCheck (0 issues)
+          ✅ Library tests
+          ✅ Python tests (110 tests)
+          ✅ Self-update CI gate test
+          ✅ Supabase pin validation
+          ✅ Firewall rules parse (nftables)
+          ✅ Gateway Compose validation
+          ✅ Gateway path filter test
+          
+          Installed MacServers will now auto-update to this commit ($SHA) on their next 2-minute check cycle.
+          
+          ---
+          Automated notification from GitHub Actions
+          EOF
         with:
           server_address: smtp.gmail.com
           server_port: 465
@@ -77,7 +145,7 @@ jobs:
           subject: "✅ MacServer CI Passed - ${{ github.sha }}"
           to: ${{ secrets.NOTIFICATION_EMAIL }}
           from: MacServer CI
-          body: file://${{ github.workspace }}/.github/workflows/email-templates/ci-success.txt
+          body: file:///tmp/email-body.txt
 
   notify-failure:
     name: Send failure notification
@@ -85,9 +153,44 @@ jobs:
     runs-on: ubuntu-24.04
     if: always() && needs.checks.result != 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Send workflow failure email
         uses: dawidd6/action-send-mail@v3
+        env:
+          SHA: ${{ github.sha }}
+          REF: ${{ github.ref_name }}
+          ACTOR: ${{ github.actor }}
+          RUN_ID: ${{ github.run_id }}
+          REPO: ${{ github.repository }}
+        run: |
+          cat <<EOF > /tmp/email-body.txt
+          MacServer CI Workflow FAILED
+          ============================
+          
+          Build Information:
+          - Workflow: CI
+          - Commit: $SHA
+          - Branch: $REF
+          - Author: $ACTOR
+          - Build URL: https://github.com/$REPO/actions/runs/$RUN_ID
+          - Started: ${{ github.run_started_at }}
+          
+          ❌ One or more checks failed. Check the build log for details:
+          https://github.com/$REPO/actions/runs/$RUN_ID
+          
+          Common Failure Points:
+          - Shell syntax / ShellCheck
+          - Python tests (110 tests)
+          - Self-update CI gate test
+          - Supabase pin validation (tag commit mismatch)
+          - Firewall rules (nftables -c)
+          - Gateway Compose / path filter test
+          
+          Installed MacServers will NOT update to this commit. They remain on the previous passing version.
+          
+          Action Required: Fix the failing checks and push a new commit.
+          ---
+          Automated notification from GitHub Actions
+          EOF
         with:
           server_address: smtp.gmail.com
           server_port: 465
@@ -96,4 +199,4 @@ jobs:
           subject: "❌ MacServer CI Failed - ${{ github.sha }}"
           to: ${{ secrets.NOTIFICATION_EMAIL }}
           from: MacServer CI
-          body: file://${{ github.workspace }}/.github/workflows/email-templates/ci-failure.txt
+          body: file:///tmp/email-body.txt
