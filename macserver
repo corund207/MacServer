@@ -23,6 +23,7 @@ Usage: sudo macserver COMMAND
   restart           restart Supabase and the public route
   update            back up the database, then update Debian, the T2 kernel and containers
   upgrade           install the newest MacServer version now (once it passed CI)
+  apply-latest      force-check GitHub and apply the latest CI-passed version (detailed output)
   autoupdate on|off|status   MacServer updates itself from GitHub (on by default)
   backup            write a compressed database dump to /var/backups/macserver
   public setup      turn on (or change) the public API route
@@ -110,6 +111,14 @@ cmd_doctor() {
   check "Docker" "Docker is not running" systemctl is-active --quiet docker
 }
 
+cmd_apply_latest() {
+  # Force-check GitHub and apply the latest CI-passed version with detailed output
+  # This bypasses AUTO_UPDATE setting and shows full progress
+  local LIB=/usr/local/lib/macserver
+  say "Checking GitHub for latest version..."
+  exec "$LIB/self-update" --now
+}
+
 main() {
   local cmd=${1:-}; shift || true
   case $cmd in
@@ -129,6 +138,7 @@ main() {
         *) usage; exit 2 ;;
       esac ;;
     upgrade) need_root upgrade; exec "$LIB/self-update" --now ;;
+    apply-latest) need_root apply_latest; cmd_apply_latest "$@" ;;
     autoupdate|autoupdates|auto-update)
       case ${1:-status} in
         on|off) need_root autoupdate; conf_set AUTO_UPDATE "$1"; ok "automatic updates $1" ;;

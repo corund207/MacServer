@@ -10,6 +10,8 @@
 #   self-update           what the timer runs (every 2 minutes; obeys AUTO_UPDATE)
 #   self-update --now     check and install now, even with AUTO_UPDATE=off
 #   self-update --check   only report what would happen
+#   self-update --force   force apply latest version, bypassing rolled-back cache (use with caution)
+#   self-update --verbose show detailed step-by-step progress
 set -Eeuo pipefail
 
 REPO=corund207/MacServer
@@ -32,6 +34,14 @@ LOCK=/run/macserver-self-update.lock
 source /usr/local/lib/macserver/lib.sh
 
 mode=${1:-timer}
+verbose=false
+force=false
+case $mode in
+  --verbose) verbose=true; mode=${2:-timer} ;;
+  --force) force=true; mode=${2:-timer} ;;
+esac
+if [[ $mode == --verbose ]]; then verbose=true; mode=${2:-timer}; fi
+if [[ $mode == --force ]]; then force=true; mode=${2:-timer}; fi
 [[ $EUID -eq 0 ]] || die "run as root"
 exec 9>"$LOCK"
 flock -n 9 || { say "another update is running"; exit 0; }
@@ -50,7 +60,9 @@ report() {  # report STATE "message" [latest]
   say "$1: $2"
 }
 
-if [[ $mode == timer && $(conf_get AUTO_UPDATE on) != on ]]; then
+vlog() { [[ $verbose == true ]] && say "$*" || true; }
+
+if [[ $mode == timer && $(conf_get AUTO_UPDATE on) != on && $force != true ]]; then
   report off "automatic updates are off (turn on: sudo macserver autoupdate on)"
   exit 0
 fi
@@ -67,8 +79,8 @@ if [[ $latest == "$current" ]]; then
 fi
 
 bad=$(jq -r 'select(.state == "rolled-back") | .latest' "$STATUS_KEEP" 2>/dev/null || true)
-if [[ $mode == timer && $bad == "$latest" ]]; then
-  report skipped "${latest:0:7} failed its health check before; waiting for a newer version" "$latest"
+if [[ $mode == timer && $bad == "$latest" && $force != true ]]; then
+  report skipped "${latest:0:7} failed its health check before; waiting for a newer version (use --force to retry)" "$latest"
   exit 0
 fi
 
@@ -133,27 +145,36 @@ fi
 
 report updating "installing ${latest:0:7}" "$latest"
 if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx supabase-db; then
+  vlog "Backing up database..."
   /usr/local/sbin/macserver backup >/dev/null 2>&1 || warn "database backup failed; continuing"
 fi
 
+vlog "Switching source tree to ${latest:0:7}..."
 apply() {  # apply DIR: re-run the update steps from that source tree
   local dir=$1 step
   for step in "${UPDATE_STEPS[@]}"; do
     if state_has "$step"; then
+      vlog "Re-applying step: $step"
       MACSERVER_UNATTENDED=1 "$dir/install.sh" --redo "$step" >> /var/log/macserver-self-update.log 2>&1 || return 1
+    else
+      vlog "Skipping step (not previously done): $step"
     fi
   done
 }
 
 healthy() {  # only what this Mac has installed
+  vlog "Running health checks..."
   if state_has admin; then
+    vlog "Checking admin page services..."
     systemctl start macserver-status.service || return 1
     systemctl is-active --quiet macserver-admin.service || return 1
     systemctl is-active --quiet macserver-status.timer || return 1
   fi
   if id macserver-console >/dev/null 2>&1; then
+    vlog "Checking console dashboard..."
     runuser -u macserver-console -- /usr/local/lib/macserver/dashboard --once >/dev/null 2>&1 || return 1
   fi
+  vlog "Checking macserver CLI..."
   /usr/local/sbin/macserver help >/dev/null 2>&1
 }
 
@@ -163,12 +184,14 @@ mv "$next" "$SRC_DIR"
 { echo; echo "== $(date -Is) ${current:0:7} -> ${latest:0:7}"; } >> /var/log/macserver-self-update.log
 if apply "$SRC_DIR" && healthy; then
   current=$latest
+  vlog "Health checks passed, update successful"
   report updated "now running ${latest:0:7} ($(git -C "$SRC_DIR" log -1 --format=%s | cut -c1-60))" "$latest"
   exit 0
 fi
 
 # Roll back to what ran before.
 failed_sha=$latest
+vlog "Health check failed, rolling back..."
 rm -rf "$SRC_DIR"
 mv "$SRC_DIR.prev" "$SRC_DIR"
 apply "$SRC_DIR" || true
