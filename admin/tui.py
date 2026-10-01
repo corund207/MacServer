@@ -1040,9 +1040,9 @@ def services_panel(c, sampler, x, y, w, h):
             short = short[len(prefix):] if short.startswith(prefix) else short
         item["short"] = re.sub(r"-\d+$", "", short)
     name_w = min(max(len(i["short"]) for i in items) + 4, 30)
-    cpu_top = nice_top([i.get("cpu") or 0 for i in items], 5)
+    cpu_top = 100.0                         # fixed scale: 100% = full bar
     trend_w = 18 if w >= 110 else 0         # CPU of each service over the last 15 minutes
-    cols = [("SERVICE", name_w), ("GROUP", 12), ("STATE", 11), (f"CPU (bar = {cpu_top}%)", 24)]
+    cols = [("SERVICE", name_w), ("GROUP", 12), ("STATE", 11), (f"CPU (bar = 100%)", 24)]
     if trend_w:
         cols.append(("TREND", trend_w))
     cols.append(("MEMORY", 11))
@@ -1079,7 +1079,7 @@ def services_panel(c, sampler, x, y, w, h):
         if trend_w:
             hist = sampler.svc_hist.get(item["name"])
             if hist:
-                graph(c, xx, row, trend_w - 2, 1, hist, cpu_top, "cpu")
+                graph(c, xx, row, trend_w - 2, 1, hist, 100.0, "cpu")
             else:
                 c.put(xx, row, "·" * (trend_w - 2), C["faint"] if c.rich else C["off"])
             xx += trend_w
