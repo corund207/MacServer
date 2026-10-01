@@ -3,8 +3,10 @@
 
 Detection reads the status collector's debug section (flows, listeners, requests)
 plus a root-process scan, and scores findings. Trusted activity never scores:
-Tailscale SSH and the tailnet, loopback, DNS/NTP/Tailscale control traffic, and
-the allowlisted AI-agent / owner processes (see read_allow()).
+Tailscale SSH and the tailnet, loopback, DNS/NTP/Tailscale control traffic,
+Tailscale direct LAN connections (UDP 41641) and ephemeral-port hole-punching,
+and the allowlisted AI-agent / owner processes (including the listeners of
+allowlisted services, e.g. a self-hosted remote desktop).
 
 Isolation itself lives in host/macserver-doomsday.sh (root shell): this module
 only decides *whether* to isolate, verifies the Google Authenticator (TOTP)
@@ -32,6 +34,13 @@ TOTP_FILE = Path(os.environ.get("MACSERVER_DOOMSDAY_TOTP", "/etc/macserver/dooms
 # Ports that are normal on the public Internet / infra side. Anything else out
 # to a public address scores. Tailscale control + tunnel keepalive never count.
 TRUSTED_OUT_PORTS = {53, 80, 123, 443, 465, 587, 993, 3478, 41641}
+# Tailscale peers connect directly over the LAN on UDP 41641, then keep
+# punching UDP holes on ephemeral ports: that is the tailnet working as
+# designed (tailscale status shows them as `direct <lan-ip>:41641`), not an
+# intrusion. Client-side ephemeral outbound ports are likewise normal p2p
+# traffic (Tailscale direct, WebRTC); server-side odd ports still score.
+TAILSCALE_DIRECT_PORT = 41641
+EPHEMERAL_PORT_MIN = 32768
 TRUSTED_OUT_SVC = {"tailscale", "dns", "ntp", "stun", "https", "http", "smtp", "imap"}
 # Listeners that may exist without scoring (loopback is always fine).
 EXPECTED_LISTEN_PORTS = {22, 53, 123, 443, 41641, 5432, 6543, 8000, 8080, 8090, 8091, 8443}
@@ -139,9 +148,15 @@ def score_findings(data, trusted_procs, trusted_users):
     debug = data.get("debug") or {}
     flows = debug.get("flows") or {}
     for entry in flows.get("in") or []:
-        kind, port = entry.get("kind"), entry.get("port")
+        kind = entry.get("kind")
         if kind in ("loopback", "tailnet", ""):
             continue  # Tailscale SSH and local traffic are verified, not unusual
+        try:
+            port = int(entry.get("port", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        if port == TAILSCALE_DIRECT_PORT:
+            continue  # Tailscale direct peer connection from the LAN
         if port == 22 and kind == "lan":
             score += 1  # LAN SSH is the emergency path: note it, do not fire on it alone
             reasons.append(f"LAN SSH connection from {entry.get('src', '?')}")
@@ -161,6 +176,8 @@ def score_findings(data, trusted_procs, trusted_users):
             continue
         if port in TRUSTED_OUT_PORTS:
             continue  # HTTPS/DNS/NTP/mail/Tailscale to the Internet is normal
+        if port >= EPHEMERAL_PORT_MIN:
+            continue  # client-side ephemeral port: Tailscale direct, WebRTC, not a server C2 port
         if who in trusted_procs:
             continue  # verified agent / service process
         score += 2
@@ -169,6 +186,8 @@ def score_findings(data, trusted_procs, trusted_users):
         scope = row.get("scope")
         if scope in ("loopback", "tailnet"):
             continue
+        if (row.get("proc") or "") in trusted_procs:
+            continue  # owner-allowlisted service (e.g. a self-hosted remote desktop)
         try:
             port = int(row.get("port", 0) or 0)
         except (TypeError, ValueError):

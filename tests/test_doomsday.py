@@ -78,6 +78,37 @@ class ScoringTests(unittest.TestCase):
         self.assertEqual(score, 1)
         self.assertTrue(any("SSH" in r for r in reasons))
 
+    def test_tailscale_direct_inbound_ignored(self):
+        data = flows(**{"in": [{"src": "LAN 192.168.18.41", "port": 41641, "kind": "lan", "n": 1}]})
+        self.assertEqual(doomsday.score_findings(data, self.procs, self.users), (0, []))
+
+    def test_ephemeral_outbound_ignored_but_low_odd_ports_score(self):
+        data = flows(out=[{"who": "this Mac", "dst": "64.135.140.29", "port": 35641,
+                           "kind": "public", "svc": "udp"}])
+        self.assertEqual(doomsday.score_findings(data, self.procs, self.users), (0, []))
+        score, _ = doomsday.score_findings(
+            flows(out=[{"who": "mystery", "dst": "9.9.9.9", "port": 6667,
+                        "kind": "public", "svc": "tcp"}]), self.procs, self.users)
+        self.assertGreaterEqual(score, 2)
+
+    def test_allowlisted_proc_listener_ignored(self):
+        rows = [{"port": 21117, "addr": "0.0.0.0", "scope": "all", "proc": "hbbr", "svc": ""}]
+        procs = self.procs | {"hbbs", "hbbr"}
+        self.assertEqual(doomsday.score_findings(flows(listeners=rows), procs, self.users), (0, []))
+
+    def test_rustdesk_plus_tailscale_stays_quiet(self):
+        """The real false-positive lockdown: Tailscale direct chatter plus a
+        self-hosted RustDesk server must score nothing once allowlisted."""
+        data = flows(
+            **{"in": [{"src": "LAN 192.168.18.41", "port": 41641, "kind": "lan", "n": 1}]},
+            out=[{"who": "this Mac", "dst": "64.135.140.29", "port": 35641,
+                  "kind": "public", "svc": "udp"}],
+            listeners=[{"port": p, "addr": "0.0.0.0", "scope": "all",
+                        "proc": "hbbr" if p == 21118 else "hbbs", "svc": ""}
+                       for p in (21115, 21116, 21117, 21118, 21119)])
+        procs = self.procs | {"hbbs", "hbbr"}
+        self.assertEqual(doomsday.score_findings(data, procs, self.users), (0, []))
+
     def test_lan_inbound_scores(self):
         data = flows(**{"in": [{"src": "LAN 192.168.1.5", "port": 5432, "kind": "lan", "n": 3}]})
         score, reasons = doomsday.score_findings(data, self.procs, self.users)

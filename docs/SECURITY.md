@@ -110,6 +110,13 @@ disables detection only).
   (`DOOMSDAY_CRYPT_CLOSE`), and shows the lockdown screen (console banner plus
   a red dashboard incident). The root disk is already LUKS-encrypted; doomsday
   locks what can be locked without bricking the running system.
+- **Allowlist your own services**: Tailscale direct connections (UDP 41641 from
+  the LAN, ephemeral-port hole-punching) never score, but anything else you run
+  yourself (e.g. a self-hosted RustDesk server: `hbbs`/`hbbr` on 21115-21119)
+  must be named in `DOOMSDAY_TRUSTED_PROCS` in
+  `/etc/macserver/macserver.conf`, or its listeners and traffic will fire the
+  lockdown. Check `sudo macserver doomsday status` after installing anything
+  new that listens or phones home.
 - **Recovery needs a Google Authenticator code** (TOTP, stdlib-only,
   `sudo macserver doomsday setup-totp`): `unlock --code` enters DEBUG mode
   (still isolated, amber banner, diagnose freely), `restore --code` returns to

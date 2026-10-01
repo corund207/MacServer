@@ -621,7 +621,6 @@ Not verified: a real isolation/restore cycle on the Mac (needs the owner at
 the console), the alert email delivery, and TOTP enrolment.
 
 ## 2026-10-01: CI workflows rejected for steps combining `run` and `uses`
-
 GitHub rejects a workflow file outright (zero jobs run) when a step has both
 `run:` and `uses:`. Every email notify job in `ci.yml` and
 `installer-image.yml` built the body with `run:` inside the send-mail step, so
@@ -630,3 +629,16 @@ self-updater (it only installs commits where those jobs passed). Each notify
 is now two steps (create the body file, then send it), and the new
 `doomsday-alert.yml` had the same bug and is fixed the same way.
 `tests/test_repo.py` now fails the suite if any step combines the two keys.
+
+## 2026-10-01: first doomsday lockdown was a false positive (fixed)
+
+The monitor auto-isolated the Mac (score 20): a LAN inbound to UDP 41641 from
+the owner's Windows PC, ephemeral-port outbound hole-punching, and five
+`0.0.0.0` listeners — all benign (Tailscale direct peer traffic plus the
+owner's self-hosted RustDesk `hbbs`/`hbbr` server). Three detector bugs fixed:
+LAN inbound on UDP 41641 never scores, public outbound on ephemeral ports
+(>= 32768) never scores, and listeners owned by allowlisted processes never
+score. Self-hosted services must still be named in `DOOMSDAY_TRUSTED_PROCS`.
+Recovered by hand (no TOTP was enrolled yet); the monitor re-fires within
+minutes on permanent listeners, so it stays `off` until the fix self-updates
+and the allowlist is set.
