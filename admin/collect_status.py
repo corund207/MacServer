@@ -21,6 +21,8 @@ import threading
 import time
 import urllib.request
 
+from units import parse_size
+
 SUPABASE_ENV = Path("/opt/macserver/supabase/.env")
 CONF = Path("/etc/macserver/macserver.conf")
 OUT = Path("/run/macserver/status.json")
@@ -144,17 +146,6 @@ def tailscale(status_text):
     return {"state": data.get("BackendState", "unknown"), "name": (me.get("DNSName") or "").rstrip("."),
             "ips": me.get("TailscaleIPs") or [], "online": bool(me.get("Online")),
             "peers_online": sum(1 for p in peers.values() if p.get("Online"))}
-
-
-SIZE_UNITS = {"B": 1, "KB": 1e3, "MB": 1e6, "GB": 1e9, "TB": 1e12,
-              "KIB": 1024, "MIB": 1024 ** 2, "GIB": 1024 ** 3, "TIB": 1024 ** 4}
-
-
-def parse_size(text):
-    m = re.match(r"\s*([\d.]+)\s*([a-zA-Z]+)", text or "")
-    if not m:
-        return 0
-    return int(float(m.group(1)) * SIZE_UNITS.get(m.group(2).upper(), 1))
 
 
 def container_stats(stats_json_lines):

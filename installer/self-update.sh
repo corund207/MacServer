@@ -60,7 +60,7 @@ report() {  # report STATE "message" [latest]
   say "$1: $2"
 }
 
-vlog() { [[ $verbose == true ]] && say "$*" || true; }
+vlog() { [[ $verbose == true ]] && say "$*"; true; }
 
 if [[ $mode == timer && $(conf_get AUTO_UPDATE on) != on && $force != true ]]; then
   report off "automatic updates are off (turn on: sudo macserver autoupdate on)"

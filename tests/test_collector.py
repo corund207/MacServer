@@ -1,12 +1,14 @@
 import importlib.util
 import json
 import os
+import sys
 from pathlib import Path
 import tempfile
 import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "admin"))
 spec = importlib.util.spec_from_file_location("collect_status", ROOT / "admin/collect_status.py")
 collector = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(collector)

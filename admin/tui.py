@@ -27,6 +27,8 @@ import subprocess
 import sys
 import time
 
+from units import fmt_bytes, fmt_temp, fmt_freq, fmt_pct, fmt_rpm, fmt_duration, fmt_uptime
+
 STATUS = Path(os.environ.get("MACSERVER_STATUS", "/run/macserver/status.json"))
 FANS = Path(os.environ.get("MACSERVER_FANS_STATUS", "/run/macserver/fans.json"))
 PROC = Path(os.environ.get("MACSERVER_PROC", "/proc"))
@@ -652,19 +654,6 @@ def clip(text, width):
     if width <= 0:
         return ""
     return text if len(text) <= width else text[: width - 1] + "…"
-
-
-def fmt_bytes(n, rate=False):
-    if n is None:
-        return "?"
-    units = ["B", "KB", "MB", "GB", "TB"]
-    i = 0
-    n = float(n)
-    while n >= 1000 and i < len(units) - 1:
-        n /= 1000
-        i += 1
-    s = f"{n:.0f} {units[i]}" if i == 0 or n >= 100 else f"{n:.1f} {units[i]}"
-    return s + ("/s" if rate else "")
 
 
 def fmt_count(n):

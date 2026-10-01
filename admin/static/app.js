@@ -13,15 +13,26 @@ function el(tag, text, cls) {
   return node;
 }
 
-function bytes(n) {
+function bytes(n, rate = false) {
   if (typeof n !== 'number' || Number.isNaN(n)) return '?';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  let i = 0;
-  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
-  return `${n.toFixed(i && n < 100 ? 1 : 0)} ${units[i]}`;
+  const units = [
+    { div: 1e12, unit: 'TB' },
+    { div: 1e9, unit: 'GB' },
+    { div: 1e6, unit: 'MB' },
+    { div: 1e3, unit: 'KB' },
+    { div: 1, unit: 'B' },
+  ];
+  for (const u of units) {
+    if (n >= u.div || u.div === 1) {
+      const val = n / u.div;
+      const str = u.div > 1 && val < 100 ? val.toFixed(1) : Math.round(val).toString();
+      return `${str} ${u.unit}${rate ? '/s' : ''}`;
+    }
+  }
+  return '0 B';
 }
 
-const perSecond = (n) => `${bytes(n)}/s`;
+const perSecond = (n) => bytes(n, true);
 
 function duration(s) {
   const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
