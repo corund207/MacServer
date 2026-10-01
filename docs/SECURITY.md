@@ -86,6 +86,38 @@ The terminal page alone gets a relaxed style policy (xterm.js styles itself inli
 is framed only by the admin page; xterm.js is vendored and pinned by SHA-256 in
 `tests/test_admin.py`.
 
+## Doomsday lockdown
+
+When connections or processes look like an intrusion, the Mac isolates itself
+(`installer/steps/50-doomsday.sh`, on by default; `sudo macserver doomsday off`
+disables detection only).
+
+- **Detection** (`admin/doomsday.py`, checked every minute): scores inbound
+  LAN/public connections, unexpected listeners and outbound traffic, API 5xx
+  spikes and unknown root processes. Tailscale SSH, loopback, DNS/NTP/Tailscale
+  traffic and the allowlisted AI-agent/owner processes never score; LAN SSH is
+  noted but cannot fire alone. Isolation needs a score over `DOOMSDAY_SCORE`
+  (default 6) for `DOOMSDAY_CONSECUTIVE` (default 2) checks in a row.
+- **Alert first**: the server POSTs a redacted payload (hostname, IPs, trigger,
+  score, findings; secrets stripped) to the `doomsday-alert` GitHub workflow,
+  which emails the owner. The workflow holds the SMTP secrets; the Mac holds
+  only a dispatch token in `/etc/macserver/doomsday-gh-token` (0600, set up
+  with `sudo macserver doomsday setup-gh`). The alert never blocks isolation.
+- **Isolation**: stops the public tunnel, Supabase, the admin page and
+  Tailscale; kills remaining containers; applies `host/nftables-doomsday.conf`
+  (drop on input, forward AND output; only loopback, DHCP and SSH from private
+  LAN addresses pass); drops swap, locks extra encrypted volumes
+  (`DOOMSDAY_CRYPT_CLOSE`), and shows the lockdown screen (console banner plus
+  a red dashboard incident). The root disk is already LUKS-encrypted; doomsday
+  locks what can be locked without bricking the running system.
+- **Recovery needs a Google Authenticator code** (TOTP, stdlib-only,
+  `sudo macserver doomsday setup-totp`): `unlock --code` enters DEBUG mode
+  (still isolated, amber banner, diagnose freely), `restore --code` returns to
+  normal and auto-restores the firewall, Tailscale, Docker, Supabase, the
+  public route and the admin page from a pre-isolation snapshot. OpenSSH is
+  started only during lockdown (LAN only) and returned to its prior state.
+  The lockdown firewall persists across reboots until restored.
+
 ## Supply chain
 
 - **MacServer updates itself** (`installer/self-update.sh`, every 2 minutes, root).

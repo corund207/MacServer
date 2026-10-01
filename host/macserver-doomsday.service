@@ -1,0 +1,11 @@
+[Unit]
+Description=MacServer doomsday monitor (isolate on intrusion-like behaviour)
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/macserver/doomsday check
+Nice=10
+LogLevelMax=warning
+NoNewPrivileges=yes
+PrivateTmp=yes

@@ -598,3 +598,24 @@ commands from the admin page over Tailscale.
 Verified: `tests/run.sh` green (new repo invariant: the symlink plus
 rootless `dashboard`/`status`/`doctor` dispatch); confirmed on the Mac that
 `/usr/local/sbin/macserver` exists and `/usr/local/bin/macserver` is missing.
+
+## 2026-10-01: doomsday lockdown protocol
+
+Intrusion-like behaviour (unusual inbound/outbound connections, unexpected
+listeners, API 5xx spikes, unknown root processes) isolates the Mac: an email
+goes out through the `doomsday-alert` GitHub Action BEFORE the network is cut,
+then Tailscale, the public tunnel, Supabase and the admin page stop, the
+lockdown firewall drops input/forward/output except loopback, DHCP and LAN SSH,
+swap is dropped, extra encrypted volumes lock, and the screen turns into a
+red lockdown incident. Tailscale SSH, loopback, infra traffic and allowlisted
+AI-agent/owner processes never score; LAN SSH is noted but cannot fire alone;
+firing needs repeated over-threshold checks. Recovery is a Google
+Authenticator (TOTP, stdlib-only) code: `unlock` enters an isolated DEBUG mode,
+`restore` returns to normal with everything auto-restored from a snapshot.
+New `doomsday` install step (on by default), `macserver doomsday ...` commands,
+`doomsday` in status.json, the dashboard and `macserver status`.
+
+Verified: `tests/run.sh` (new `tests/test_doomsday.py`: RFC 6238 TOTP vectors,
+scoring, hysteresis, alert redaction, repo wiring); ShellCheck clean.
+Not verified: a real isolation/restore cycle on the Mac (needs the owner at
+the console), the alert email delivery, and TOTP enrolment.

@@ -837,9 +837,9 @@ def top_bar(c, sampler, problems):
     name = (s.get("tailscale", {}) or {}).get("name") or "macserver"
     dd_state = (s.get("doomsday") or {}).get("state", "normal")
     if dd_state == "doomsday":
-        name += " · DOOMSDAY LOCKDOWN"
+        name = "DOOMSDAY " + name  # prefix: lockdown is the first thing to read, even on narrow screens
     elif dd_state == "debug":
-        name += " · DEBUG (isolated)"
+        name = "DEBUG " + name
     elif (s.get("idle") or {}).get("idle"):
         name += " · IDLE"
     c.fill(0, 0, w, 1, C["panel"] if c.rich else None)

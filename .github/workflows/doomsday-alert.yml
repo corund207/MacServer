@@ -1,0 +1,100 @@
+name: doomsday-alert
+
+# Sent by the Mac itself THROUGH this workflow: when intrusion-like behaviour
+# is detected, the server triggers this workflow (repository_dispatch from
+# host/macserver-doomsday.sh) BEFORE it cuts its own network, and this
+# workflow emails the owner with the IP and findings. The SMTP credentials
+# live only as GitHub secrets here, never on the Mac.
+on:
+  workflow_dispatch:
+    inputs:
+      hostname:
+        description: "Mac hostname"
+        required: false
+        default: "macserver"
+      ip:
+        description: "Mac IP addresses at isolation time"
+        required: false
+        default: "unknown"
+      trigger:
+        description: "auto (detection) or manual"
+        required: false
+        default: "auto"
+      score:
+        description: "Detection score that fired"
+        required: false
+        default: "0"
+      details:
+        description: "Findings (redacted, no secrets)"
+        required: false
+        default: "no details captured"
+      timestamp:
+        description: "Unix time of isolation"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  email-owner:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Send doomsday alert email
+        uses: dawidd6/action-send-mail@v3
+        env:
+          HOSTNAME: ${{ inputs.hostname }}
+          IP: ${{ inputs.ip }}
+          TRIGGER: ${{ inputs.trigger }}
+          SCORE: ${{ inputs.score }}
+          DETAILS: ${{ inputs.details }}
+          TIMESTAMP: ${{ inputs.timestamp }}
+          REPO: ${{ github.repository }}
+        run: |
+          cat <<EOF > /tmp/email-body.txt
+          MacServer DOOMSDAY LOCKDOWN
+          ===========================
+
+          The server isolated itself and cut its own network.
+
+          - Host: $HOSTNAME
+          - IP addresses at isolation: $IP
+          - Trigger: $TRIGGER (score $SCORE)
+          - Time (unix): $TIMESTAMP
+          - Repository: $REPO
+
+          Findings (redacted, secrets stripped on the Mac):
+          $DETAILS
+
+          What the Mac did, in order:
+          1. Sent this alert (this workflow) BEFORE touching the network.
+          2. Stopped the public tunnel, Supabase containers, admin page and
+             Tailscale; killed every non-essential service.
+          3. Applied the lockdown firewall: loopback + DHCP + SSH from the
+             local network only. Extra encrypted volumes locked, swap off.
+          4. Shows the lockdown screen on its own display.
+
+          What to do:
+          - The Mac is reachable ONLY from the local network over SSH, or on
+            its own console. Tailscale and the public API are down by design.
+          - Run: sudo macserver doomsday status
+          - Unlock to DEBUG (still isolated) with a Google Authenticator code:
+            sudo macserver doomsday unlock --code XXXXXX
+          - Return to normal (everything auto-restores) with a code:
+            sudo macserver doomsday restore --code XXXXXX
+
+          If you did not expect this, treat the findings above as a possible
+          intrusion attempt and review them before restoring.
+
+          ---
+          Automated notification from GitHub Actions
+          EOF
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "🚨 MacServer DOOMSDAY lockdown - ${{ inputs.hostname }} (${{ inputs.ip }})"
+          to: ${{ secrets.NOTIFICATION_EMAIL }}
+          from: MacServer Doomsday
+          body: file:///tmp/email-body.txt

@@ -1,0 +1,16 @@
+================================================================================
+  MACSERVER DOOMSDAY LOCKDOWN
+================================================================================
+  Unusual network or system behaviour was detected. This Mac is ISOLATED:
+   - network cut (Tailscale, public tunnel and containers are down)
+   - every non-essential service stopped, extra encrypted volumes locked
+   - an alert was sent through the GitHub Action BEFORE isolation
+
+  Emergency access: SSH from the local network only, or this console.
+  Nothing is lost: `macserver doomsday restore` with a Google
+  Authenticator code brings everything back automatically.
+
+  1. macserver doomsday status          what triggered it
+  2. macserver doomsday unlock --code XXXXXX   enter DEBUG mode (still isolated)
+  3. macserver doomsday restore --code XXXXXX  back to normal (auto-restore)
+================================================================================

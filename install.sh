@@ -19,7 +19,7 @@ for f in "$SRC"/installer/steps/*.sh; do
   source "$f"
 done
 
-STEPS=(preflight network base t2 host reboot wifi tailscale firewall docker supabase admin claude autoupdate public finish)
+STEPS=(preflight network base t2 host reboot wifi tailscale firewall docker supabase admin claude autoupdate public doomsday finish)
 
 declare -A TITLE=(
   [preflight]="Check this Mac and Debian"
@@ -37,6 +37,7 @@ declare -A TITLE=(
   [claude]="Install Claude Code with the MacServer skill"
   [autoupdate]="Keep MacServer up to date from GitHub (after CI passes)"
   [public]="Public API route through Cloudflare (optional)"
+  [doomsday]="Doomsday lockdown on attack (on by default)"
   [finish]="Summary"
 )
 

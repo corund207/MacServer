@@ -30,6 +30,7 @@ Usage: sudo macserver COMMAND
   public off        stop the public API route
   public on         start it again
   idle [status|auto|on|off]   low-power mode when nobody is connected (auto by default)
+  doomsday ...        lockdown on attack: status|isolate|unlock|restore|on|off|test|allow|setup-totp|setup-gh
   wifi              set up or change the built-in Wi-Fi
   doctor            check network, DNS and T2 drivers
   reboot            reboot the Mac (with disk encryption passphrase reminder)
@@ -53,6 +54,7 @@ cmd_status() {
     "Tailscale  \(.tailscale.state) \(.tailscale.name)",
     "Public     \(if .public_domain == "" then "off" else "https://\(.public_domain)" end)",
     "Idle       \(if ((.idle.mode // "auto") == "off") then "off" elif ((.idle.idle // false)) then "low-power" else "active" end)",
+    "Doomsday   \((.doomsday.state // "normal"))\(if ((.doomsday.state // "normal")) != "normal" then "  ISOLATED (\(.doomsday.trigger // "?"}))" else " (\(.doomsday.mode // "on"))" end)",
     "",
     (.containers[] | "\(if .state == "running" then "  ok  " else "  !!  " end)\(.name)  \(.status)")
   ' "$s"
@@ -96,6 +98,10 @@ cmd_idle() {
     auto|on|off) need_root idle; conf_set IDLE_MODE "$1"; "$LIB/idle" --check >/dev/null 2>&1 || true; ok "idle mode $1" ;;
     *) usage; exit 2 ;;
   esac
+}
+
+cmd_doomsday() {
+  exec "$LIB/doomsday" "$@"
 }
 
 cmd_doctor() {
@@ -157,6 +163,7 @@ main() {
       esac ;;
     wifi) need_root wifi; wifi_setup ;;
     idle) shift || true; cmd_idle "$@" ;;
+    doomsday) shift || true; cmd_doomsday "$@" ;;
     doctor) cmd_doctor ;;
     reboot) cmd_reboot ;;
     ''|-h|--help|help) usage ;;

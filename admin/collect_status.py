@@ -889,6 +889,24 @@ def count_updates():
     return sum(1 for l in (upgradable or "").splitlines() if l.startswith("Inst "))
 
 
+def doomsday_state():
+    """Lockdown state for the dashboard badge and `macserver status`.
+
+    Read-only and never fatal: a missing file means normal. Holds no secrets.
+    """
+    for path in (Path("/run/macserver/doomsday.json"), Path("/var/lib/macserver/doomsday.json")):
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        if isinstance(data, dict):
+            return {"mode": data.get("mode", "on"), "state": data.get("state", "normal"),
+                    "since": data.get("since"), "trigger": data.get("trigger", ""),
+                    "score": data.get("score", 0),
+                    "reasons": [str(r)[:160] for r in data.get("reasons", [])][:8]}
+    return {"mode": "on", "state": "normal"}
+
+
 # --- idle mode: low power when nobody is using the server ------------------------------
 # The collector decides *whether* the Mac is idle; admin/idle.py only applies the
 # reversible low-power settings (CPU governor, screen brightness, optional
@@ -1047,6 +1065,10 @@ def collect(state=None):
     active, reasons = idle_activity(data)
     data["idle"] = idle_track(state, now, active, after_s, mode)
     data["idle"]["reasons"] = reasons if active else []
+    try:   # lockdown badge only; never costs the health data
+        data["doomsday"] = doomsday_state()
+    except Exception:   # noqa: BLE001
+        data["doomsday"] = {"mode": "on", "state": "normal"}
     return data
 
 
