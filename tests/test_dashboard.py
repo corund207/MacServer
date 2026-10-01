@@ -369,7 +369,7 @@ class DashboardTests(unittest.TestCase):
         lines = [line for line in text.splitlines() if "EVENTS" in line or ":" in line[-60:]]
         self.assertTrue(lines)
         self.assertEqual(tui.fmt_count(12_300), "12.3k")
-        self.assertEqual(tui.SAMPLE_S, 0.5)
+        self.assertEqual(tui.SAMPLE_S, 0.001)
 
     def test_readings_are_smoothed(self):
         tui_fixture.machine()

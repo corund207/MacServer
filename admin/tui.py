@@ -35,8 +35,8 @@ PROC = Path(os.environ.get("MACSERVER_PROC", "/proc"))
 SYS = Path(os.environ.get("MACSERVER_SYS", "/sys"))
 DOCS = "github.com/corund207/MacServer"
 STUDIO_PORT = 8443
-SAMPLE_S = 0.5
-HISTORY = 2400        # samples kept per graph (20 minutes at two per second)
+SAMPLE_S = 0.001
+HISTORY = 1_200_000   # samples kept per graph (20 minutes at 1 ms intervals)
 # Smoothing per reading (share of each new sample taken): lower = calmer.
 SMOOTH = {"cpu": 0.35, "temp": 0.25, "mhz": 0.3, "rx": 0.3, "tx": 0.3, "ts_rx": 0.3, "ts_tx": 0.3,
           "rd": 0.3, "wr": 0.3, "ctxt": 0.3, "intr": 0.3}
@@ -835,7 +835,12 @@ def connections(sampler):
 def top_bar(c, sampler, problems):
     w, now, s = c.w, sampler.now, sampler.status or {}
     name = (s.get("tailscale", {}) or {}).get("name") or "macserver"
-    if (s.get("idle") or {}).get("idle"):
+    dd_state = (s.get("doomsday") or {}).get("state", "normal")
+    if dd_state == "doomsday":
+        name += " · DOOMSDAY LOCKDOWN"
+    elif dd_state == "debug":
+        name += " · DEBUG (isolated)"
+    elif (s.get("idle") or {}).get("idle"):
         name += " · IDLE"
     c.fill(0, 0, w, 1, C["panel"] if c.rich else None)
     x = c.put(1, 0, "◆ ", C["accent"], C["panel"] if c.rich else None)
@@ -1315,6 +1320,29 @@ def incidents(sampler):
                  "sudo journalctl -u macserver-status -n 30 --no-pager"],
                 files=["/run/macserver/status.json  (should be under 5 s old)", "/usr/local/lib/macserver/collect_status.py"])
     else:
+        dd = s.get("doomsday") or {}
+        if dd.get("state") in ("doomsday", "debug"):
+            full = dd.get("state") == "doomsday"
+            since = dd.get("since")
+            try:
+                when = time.strftime("%H:%M", time.localtime(since)) if since else "?"
+            except (TypeError, ValueError, OverflowError):
+                when = "?"
+            add("bad" if full else "warn",
+                "DOOMSDAY LOCKDOWN: this Mac is isolated" if full else "doomsday DEBUG mode: still isolated",
+                f"trigger: {dd.get('trigger') or '?'}; score {dd.get('score', 0)}; since {when}. "
+                "Network cut, non-essential services stopped, alert sent before isolation.",
+                (["sudo macserver doomsday status",
+                  "sudo macserver doomsday unlock --code XXXXXX   (DEBUG mode, still isolated)",
+                  "sudo macserver doomsday restore --code XXXXXX   (normal, everything auto-restored)"]
+                 if full else
+                 ["sudo macserver doomsday status",
+                  "diagnose, then: sudo macserver doomsday restore --code XXXXXX   (normal, auto-restored)"]),
+                facts=[f"trigger: {dd.get('trigger') or '?'}", f"score: {dd.get('score', 0)}"]
+                + [f"finding: {r}" for r in (dd.get("reasons") or [])][:6],
+                files=["/var/log/macserver-doomsday.log  (what happened, in order)",
+                       "/var/lib/macserver/doomsday.json  (lockdown state)",
+                       "/var/lib/macserver/nftables.before-doomsday  (firewall to restore)"])
         if not s.get("setup_done"):
             add("warn", "setup has not finished", "some install steps are still to do",
                 ["press 2, log in, run: sudo /opt/macserver-src/install.sh"],
@@ -2187,7 +2215,7 @@ def draw_overview(c, sampler):
 
 def render_once(width=120, height=34, rich=True):
     sampler = Sampler()
-    time.sleep(0.5)
+    time.sleep(0.001)
     sampler.sample()
     return draw(Canvas(width, height, rich), sampler, kiosk=False)
 
