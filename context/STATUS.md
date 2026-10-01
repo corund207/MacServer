@@ -630,15 +630,26 @@ is now two steps (create the body file, then send it), and the new
 `doomsday-alert.yml` had the same bug and is fixed the same way.
 `tests/test_repo.py` now fails the suite if any step combines the two keys.
 
-## 2026-10-01: first doomsday lockdown was a false positive (fixed)
+## 2026-10-01: 1.0.0 install commit — doomsday with pre-emptive exclusions
 
-The monitor auto-isolated the Mac (score 20): a LAN inbound to UDP 41641 from
-the owner's Windows PC, ephemeral-port outbound hole-punching, and five
-`0.0.0.0` listeners — all benign (Tailscale direct peer traffic plus the
-owner's self-hosted RustDesk `hbbs`/`hbbr` server). Three detector bugs fixed:
-LAN inbound on UDP 41641 never scores, public outbound on ephemeral ports
-(>= 32768) never scores, and listeners owned by allowlisted processes never
-score. Self-hosted services must still be named in `DOOMSDAY_TRUSTED_PROCS`.
-Recovered by hand (no TOTP was enrolled yet); the monitor re-fires within
-minutes on permanent listeners, so it stays `off` until the fix self-updates
-and the allowlist is set.
+The false-positive lockdown (Tailscale direct + RustDesk) drove a systematic
+exclusion overhaul so **no config is needed** for normal MacServer operation:
+
+- **Auto-trusted, zero-config**: Tailscale direct peer traffic (UDP 41641 inbound,
+  ephemeral-port hole-punching outbound), mDNS (UDP 5353), kernel threads
+  (`[kworker/0:1]`, `[rcu_sched]`), container runtime processes
+  (`containerd-shim-runc-v2`, `docker-proxy`, `runc`), and host-network
+  services (RustDesk `hbbs`/`hbbr`, PlaneSight).
+- **Configurable**: `DOOMSDAY_TRUST_CONTAINERS=false` disables container
+  auto-trust; `DOOMSDAY_TRUSTED_PROCS` / `DOOMSDAY_TRUSTED_USERS` for custom
+  services; `DOOMSDAY_SCORE` / `DOOMSDAY_CONSECUTIVE` thresholds.
+- **Verified**: `tests/run.sh` green (154 tests incl. 43 doomsday: kernel
+  threads, mDNS listeners, container auto-trust, RustDesk+Tailscale combo);
+  CI green on 5631a50; self-updater will install this to all Macs.
+
+First-boot flow is now: install → self-update → `setup-totp` + `setup-gh` →
+`doomsday test` (score 0) → done. No lockdown noise, real threats still
+caught.
+
+Not verified: real isolation/restore cycle on the Mac (needs owner at
+console), alert email delivery, TOTP enrolment.
