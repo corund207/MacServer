@@ -52,6 +52,13 @@ if it is missing. Check `sudo dmesg | grep brcmfmac`.
 Certificates at https://login.tailscale.com/admin/dns, then
 `sudo ./install.sh --redo admin`.
 
+**Over SSH, `macserver` says "command not found".** The command lives in
+`/usr/local/sbin`, which is not on unprivileged users' PATH. Newer installs
+link it into `/usr/local/bin` (read-only commands like `status`, `dashboard`
+and `doctor` then work without sudo); older ones get the link from the next
+self-update, or now with `sudo ./install.sh --redo admin`. Meanwhile use the
+full path: `/usr/local/sbin/macserver dashboard`.
+
 **The admin page does not load ("Secure Connection Failed",
 `SSL_ERROR_INTERNAL_ERROR_ALERT`, or a TLS error from curl).** Tailscale has no HTTPS
 certificate for the Mac yet. `journalctl -u tailscaled | grep -i cert` says why. If it

@@ -134,6 +134,17 @@ class RepoTests(unittest.TestCase):
         self.assertIn("def idle_activity", collector)
         self.assertIn("def idle_track", collector)
 
+    def test_macserver_command_reachable_over_ssh(self):
+        # /usr/local/sbin is not on unprivileged users' PATH, so SSH logins
+        # would get "command not found". install_tools links the command into
+        # /usr/local/bin; privileged subcommands still refuse via need_root.
+        tools = (ROOT / "installer/steps/40-access.sh").read_text()
+        self.assertIn("ln -sfn /usr/local/sbin/macserver /usr/local/bin/macserver", tools)
+        cli = (ROOT / "macserver").read_text()
+        for cmd in ("dashboard) exec", "status) cmd_status", "doctor) cmd_doctor"):
+            self.assertIn(cmd, cli)
+        self.assertNotIn("dashboard) need_root", cli)
+
     def test_no_secrets_committed(self):
         pattern = re.compile(r"(TUNNEL_TOKEN=\w|eyJ[A-Za-z0-9_-]{20,}\.|BEGIN [A-Z ]*PRIVATE KEY)")
         for path in ROOT.rglob("*"):

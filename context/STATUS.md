@@ -581,3 +581,20 @@ The web terminal is still view 3; key 4 switches to dev.
 
 Verified: full `tests/run.sh` green (109 tests), including the new dev endpoint
 authorization, same-origin gate, and allowlist check.
+
+## 2026-10-01: `macserver` command reachable over SSH
+
+Over SSH as the owner, `macserver dashboard` answered "command not found":
+the command lives in `/usr/local/sbin`, which is not on unprivileged users'
+PATH (only the login summary, which uses the absolute path, worked).
+`install_tools` now links it into `/usr/local/bin`; read-only commands
+(`status`, `dashboard`, `doctor`, `idle status`) work without sudo while
+everything privileged still refuses via `need_root`. Existing Macs get the
+link from the next self-update (it re-runs the admin step). The live
+dashboard itself needed no change: `macserver dashboard` (q quits) already
+draws in the SSH terminal, complementing the dev tab, which runs the same
+commands from the admin page over Tailscale.
+
+Verified: `tests/run.sh` green (new repo invariant: the symlink plus
+rootless `dashboard`/`status`/`doctor` dispatch); confirmed on the Mac that
+`/usr/local/sbin/macserver` exists and `/usr/local/bin/macserver` is missing.

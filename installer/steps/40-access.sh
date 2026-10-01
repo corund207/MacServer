@@ -13,6 +13,11 @@ install_tools() {
   install -d -m 0755 /usr/local/share/macserver
   cp -a "$SRC/host" "$SRC/gateway" /usr/local/share/macserver/
   install -m 0755 "$SRC/macserver" /usr/local/sbin/macserver
+  # The command lives in sbin, which is not on unprivileged users' PATH, so SSH
+  # logins would get "command not found". Link it into /usr/local/bin: read-only
+  # commands (status, dashboard, doctor, idle status) then work without sudo,
+  # while everything privileged still refuses via need_root.
+  ln -sfn /usr/local/sbin/macserver /usr/local/bin/macserver
 }
 
 step_admin() {
