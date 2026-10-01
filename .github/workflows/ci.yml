@@ -20,8 +20,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Send workflow start email
-        uses: dawidd6/action-send-mail@v3
+      - name: Create start email body
         env:
           SHA: ${{ github.sha }}
           REF: ${{ github.ref_name }}
@@ -57,6 +56,8 @@ jobs:
           ---
           Automated notification from GitHub Actions
           EOF
+      - name: Send workflow start email
+        uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
           server_port: 465
@@ -101,8 +102,7 @@ jobs:
     runs-on: ubuntu-24.04
     if: always() && needs.checks.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
-      - name: Send workflow success email
-        uses: dawidd6/action-send-mail@v3
+      - name: Create success email body
         env:
           SHA: ${{ github.sha }}
           REF: ${{ github.ref_name }}
@@ -137,6 +137,8 @@ jobs:
           ---
           Automated notification from GitHub Actions
           EOF
+      - name: Send workflow success email
+        uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
           server_port: 465
@@ -153,8 +155,7 @@ jobs:
     runs-on: ubuntu-24.04
     if: always() && needs.checks.result != 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
-      - name: Send workflow failure email
-        uses: dawidd6/action-send-mail@v3
+      - name: Create failure email body
         env:
           SHA: ${{ github.sha }}
           REF: ${{ github.ref_name }}
@@ -191,6 +192,8 @@ jobs:
           ---
           Automated notification from GitHub Actions
           EOF
+      - name: Send workflow failure email
+        uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
           server_port: 465
