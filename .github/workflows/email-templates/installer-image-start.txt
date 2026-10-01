@@ -1,0 +1,24 @@
+MacServer Installer Image Build Started
+=======================================
+
+Build Information:
+- Workflow: installer-image (disk install, image build, VM test)
+- Commit: ${{ github.sha }}
+- Branch: ${{ github.ref_name }}
+- Author: ${{ github.actor }}
+- Commit Message: ${{ github.event.head_commit.message }}
+- Build URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+Expected Duration: ~10-15 minutes total
+
+Jobs (sequential):
+1. disk-install (~3 min): Hands-off install onto loop device, 22 property checks
+2. image (~30 s with cache, ~3 min cold): Assembles bootable UEFI ISO from cached base
+3. vm-test (~4 min): QEMU/KVM install from ISO, UEFI boot, first-boot preflight + network
+4. release (tags only): Publishes ISO as GitHub release with SHA256
+
+This workflow runs on every push to main and usb-installer branch, and on version tags (v*).
+Installed MacServers only update to commits where BOTH this workflow AND ci have passed.
+
+---
+Automated notification from GitHub Actions

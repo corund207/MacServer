@@ -1,0 +1,25 @@
+MacServer CI Workflow Started
+=============================
+
+Build Information:
+- Workflow: CI (tests, shellcheck, firewall validation, gateway compose)
+- Commit: ${{ github.sha }}
+- Branch: ${{ github.ref_name }}
+- Author: ${{ github.actor }}
+- Commit Message: ${{ github.event.head_commit.message }}
+- Build URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+Expected Duration: ~3-5 minutes
+
+Jobs:
+- checks: Shell syntax, ShellCheck, library & Python tests (110 tests)
+- Self-update CI gate test
+- Supabase pin validation
+- Firewall rules parse (nftables)
+- Gateway Compose validation
+- Gateway path filter test
+
+This workflow runs on every push and PR. Only pushes to main trigger the installer-image workflow.
+
+---
+Automated notification from GitHub Actions

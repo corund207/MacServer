@@ -1,0 +1,27 @@
+MacServer CI Workflow FAILED
+============================
+
+Build Information:
+- Workflow: CI
+- Commit: ${{ github.sha }}
+- Branch: ${{ github.ref_name }}
+- Author: ${{ github.actor }}
+- Build URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+- Started: ${{ github.run_started_at }}
+
+❌ One or more checks failed. Check the build log for details:
+https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+Common Failure Points:
+- Shell syntax / ShellCheck
+- Python tests (110 tests)
+- Self-update CI gate test
+- Supabase pin validation (tag commit mismatch)
+- Firewall rules (nftables -c)
+- Gateway Compose / path filter test
+
+Installed MacServers will NOT update to this commit. They remain on the previous passing version.
+
+Action Required: Fix the failing checks and push a new commit.
+---
+Automated notification from GitHub Actions

@@ -1,0 +1,25 @@
+MacServer CI Workflow Passed
+=============================
+
+Build Information:
+- Workflow: CI
+- Commit: ${{ github.sha }}
+- Branch: ${{ github.ref_name }}
+- Author: ${{ github.actor }}
+- Build URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+- Duration: ${{ github.run_started_at }} to completion
+
+All Checks Passed:
+✅ Shell syntax & ShellCheck (0 issues)
+✅ Library tests
+✅ Python tests (110 tests)
+✅ Self-update CI gate test
+✅ Supabase pin validation
+✅ Firewall rules parse (nftables)
+✅ Gateway Compose validation
+✅ Gateway path filter test
+
+Installed MacServers will now auto-update to this commit (${{ github.sha }}) on their next 2-minute check cycle.
+
+---
+Automated notification from GitHub Actions

@@ -26,7 +26,25 @@ defaults:
     shell: bash
 
 jobs:
+  notify-start:
+    name: Send start notification
+    runs-on: ubuntu-24.04
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Send workflow start email
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "🏗️ MacServer Installer Image Build Started - ${{ github.sha }}"
+          to: ${{ secrets.NOTIFICATION_EMAIL }}
+          from: MacServer CI
+          body: file://.github/workflows/email-templates/installer-image-start.txt
+
   disk-install:
+    needs: notify-start
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -113,3 +131,39 @@ jobs:
           gh release create "$GITHUB_REF_NAME" build/macserver-*.iso build/macserver-*.iso.sha256 \
             --repo "$GITHUB_REPOSITORY" --title "MacServer $GITHUB_REF_NAME" \
             --notes "USB installer for the 2019 MacBook Air (T2). Write the .iso to a USB stick, then follow the README."
+
+  notify-success:
+    name: Send success notification
+    needs: [disk-install, image, vm-test, release]
+    runs-on: ubuntu-24.04
+    if: always() && (needs.disk-install.result == 'success' && needs.image.result == 'success' && needs.vm-test.result == 'success' && (needs.release.result == 'success' || needs.release.result == 'skipped')) && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Send workflow success email
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "✅ MacServer Installer Image Build Passed - ${{ github.sha }}"
+          to: ${{ secrets.NOTIFICATION_EMAIL }}
+          from: MacServer CI
+          body: file://.github/workflows/email-templates/installer-image-success.txt
+
+  notify-failure:
+    name: Send failure notification
+    needs: [disk-install, image, vm-test, release]
+    runs-on: ubuntu-24.04
+    if: always() && (needs.disk-install.result != 'success' || needs.image.result != 'success' || needs.vm-test.result != 'success' || needs.release.result == 'failure') && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Send workflow failure email
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "❌ MacServer Installer Image Build Failed - ${{ github.sha }}"
+          to: ${{ secrets.NOTIFICATION_EMAIL }}
+          from: MacServer CI
+          body: file://.github/workflows/email-templates/installer-image-failure.txt

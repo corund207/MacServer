@@ -1,0 +1,24 @@
+MacServer Installer Image Build PASSED
+======================================
+
+Build Information:
+- Workflow: installer-image
+- Commit: ${{ github.sha }}
+- Branch: ${{ github.ref_name }}
+- Author: ${{ github.actor }}
+- Build URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+- Started: ${{ github.run_started_at }}
+
+All Jobs Passed:
+✅ disk-install (~3 min): Hands-off install to loop device, 22 property checks
+✅ image (~30s cached / ~3 min cold): Bootable UEFI ISO assembled
+✅ vm-test (~4 min): QEMU install from ISO, UEFI boot, first-boot preflight + network
+{{#if needs.release.result == 'success'}}✅ release: ISO published as GitHub release{{/if}}
+
+ISO Artifact: Available for 14 days at the build page
+SHA256: Check build/macserver-*.iso.sha256 in artifacts
+
+Installed MacServers will now auto-update to this commit (${{ github.sha }}) on their next 2-minute check cycle (requires CI to also pass).
+
+---
+Automated notification from GitHub Actions

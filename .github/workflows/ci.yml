@@ -14,7 +14,25 @@ permissions:
   contents: read
 
 jobs:
+  notify-start:
+    name: Send start notification
+    runs-on: ubuntu-24.04
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Send workflow start email
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "🚀 MacServer CI Started - ${{ github.sha }}"
+          to: ${{ secrets.NOTIFICATION_EMAIL }}
+          from: MacServer CI
+          body: file://.github/workflows/email-templates/ci-start.txt
+
   checks:
+    needs: notify-start
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -40,3 +58,39 @@ jobs:
         run: docker compose -f gateway/compose.yml config --quiet
       - name: Gateway exposes only app API paths
         run: bash tests/gateway_test.sh
+
+  notify-success:
+    name: Send success notification
+    needs: checks
+    runs-on: ubuntu-24.04
+    if: always() && needs.checks.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Send workflow success email
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "✅ MacServer CI Passed - ${{ github.sha }}"
+          to: ${{ secrets.NOTIFICATION_EMAIL }}
+          from: MacServer CI
+          body: file://.github/workflows/email-templates/ci-success.txt
+
+  notify-failure:
+    name: Send failure notification
+    needs: checks
+    runs-on: ubuntu-24.04
+    if: always() && needs.checks.result != 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Send workflow failure email
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "❌ MacServer CI Failed - ${{ github.sha }}"
+          to: ${{ secrets.NOTIFICATION_EMAIL }}
+          from: MacServer CI
+          body: file://.github/workflows/email-templates/ci-failure.txt

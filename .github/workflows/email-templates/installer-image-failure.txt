@@ -1,0 +1,31 @@
+MacServer Installer Image Build FAILED
+======================================
+
+Build Information:
+- Workflow: installer-image
+- Commit: ${{ github.sha }}
+- Branch: ${{ github.ref_name }}
+- Author: ${{ github.actor }}
+- Build URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+- Started: ${{ github.run_started_at }}
+
+❌ One or more jobs failed. Check the build log:
+https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+Job Status:
+- disk-install: ${{ needs.disk-install.result }}
+- image: ${{ needs.image.result }}
+- vm-test: ${{ needs.vm-test.result }}
+- release: ${{ needs.release.result }}
+
+Common Failure Points:
+- disk-install: LUKS2 setup, T2 kernel initrd, GRUB config, first-boot unit
+- image: Base cache miss (rebuilds base ~3 min), squashfs, GRUB EFI
+- vm-test: QEMU KVM, OVMF UEFI, ISO boot, installer answers, first-boot
+- release: Only runs on tags (v*)
+
+Installed MacServers will NOT update to this commit. They remain on the previous passing version.
+
+Action Required: Check job logs, fix the issue, push a new commit.
+---
+Automated notification from GitHub Actions
