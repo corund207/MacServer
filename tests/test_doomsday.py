@@ -150,6 +150,44 @@ class ScoringTests(unittest.TestCase):
         procs = [{"pid": 100, "name": "docker", "user": "root", "cpu": 5.0}]
         self.assertEqual(doomsday.score_findings(flows(procs=procs), self.procs, self.users), (0, []))
 
+    def test_kernel_thread_auto_trusted(self):
+        procs = [{"pid": 10, "name": "[kworker/0:1]", "user": "root", "cpu": 50.0},
+                 {"pid": 11, "name": "[rcu_sched]", "user": "root", "cpu": 10.0}]
+        self.assertEqual(doomsday.score_findings(flows(procs=procs), self.procs, self.users), (0, []))
+
+    def test_mdns_listener_ignored(self):
+        rows = [{"port": 5353, "addr": "0.0.0.0", "scope": "all", "proc": "avahi-daemon", "svc": "mdns"}]
+        self.assertEqual(doomsday.score_findings(flows(listeners=rows), self.procs, self.users), (0, []))
+
+    def test_container_processes_auto_trusted(self):
+        conf = {"DOOMSDAY_TRUST_CONTAINERS": "true"}
+        doomsday.CONF, old = Path("/nonexistent"), doomsday.CONF
+        try:
+            procs, _ = doomsday.read_allow(conf)
+            self.assertIn("containerd-shim-runc-v2", procs)
+            self.assertIn("docker-proxy", procs)
+            self.assertIn("runc", procs)
+        finally:
+            doomsday.CONF = old
+
+    def test_host_network_rustdesk_with_config_stays_quiet(self):
+        """RustDesk + Tailscale direct + container processes = zero with config."""
+        data = flows(
+            **{"in": [{"src": "LAN 192.168.18.41", "port": 41641, "kind": "lan", "n": 1}]},
+            out=[{"who": "this Mac", "dst": "64.135.140.29", "port": 35641,
+                  "kind": "public", "svc": "udp"}],
+            listeners=[{"port": p, "addr": "0.0.0.0", "scope": "all",
+                        "proc": "hbbr" if p == 21118 else "hbbs", "svc": ""}
+                       for p in (21115, 21116, 21117, 21118, 21119)],
+            procs=[{"pid": 999, "name": "containerd-shim-runc-v2", "user": "root", "cpu": 0.1}])
+        conf = {"DOOMSDAY_TRUST_CONTAINERS": "true", "DOOMSDAY_TRUST_KERNEL_THREADS": "true"}
+        doomsday.CONF, old = Path("/nonexistent"), doomsday.CONF
+        try:
+            procs, users = doomsday.read_allow(conf)
+            self.assertEqual(doomsday.score_findings(data, procs, users), (0, []))
+        finally:
+            doomsday.CONF = old
+
     def test_hysteresis_needs_consecutive_hits(self):
         state = {}
         self.assertFalse(doomsday.should_isolate(9, 6, 2, state))

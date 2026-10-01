@@ -5,8 +5,10 @@ Detection reads the status collector's debug section (flows, listeners, requests
 plus a root-process scan, and scores findings. Trusted activity never scores:
 Tailscale SSH and the tailnet, loopback, DNS/NTP/Tailscale control traffic,
 Tailscale direct LAN connections (UDP 41641) and ephemeral-port hole-punching,
-and the allowlisted AI-agent / owner processes (including the listeners of
-allowlisted services, e.g. a self-hosted remote desktop).
+mDNS (UDP 5353), kernel threads (process names in brackets), container
+processes (containerd, docker-proxy, runc), and the allowlisted AI-agent /
+owner processes (including the listeners of allowlisted services, e.g. a
+self-hosted remote desktop, PlaneSight host-network services).
 
 Isolation itself lives in host/macserver-doomsday.sh (root shell): this module
 only decides *whether* to isolate, verifies the Google Authenticator (TOTP)
@@ -33,7 +35,7 @@ TOTP_FILE = Path(os.environ.get("MACSERVER_DOOMSDAY_TOTP", "/etc/macserver/dooms
 
 # Ports that are normal on the public Internet / infra side. Anything else out
 # to a public address scores. Tailscale control + tunnel keepalive never count.
-TRUSTED_OUT_PORTS = {53, 80, 123, 443, 465, 587, 993, 3478, 41641}
+TRUSTED_OUT_PORTS = {53, 80, 123, 443, 465, 587, 993, 3478, 41641, 5353}
 # Tailscale peers connect directly over the LAN on UDP 41641, then keep
 # punching UDP holes on ephemeral ports: that is the tailnet working as
 # designed (tailscale status shows them as `direct <lan-ip>:41641`), not an
@@ -41,17 +43,26 @@ TRUSTED_OUT_PORTS = {53, 80, 123, 443, 465, 587, 993, 3478, 41641}
 # traffic (Tailscale direct, WebRTC); server-side odd ports still score.
 TAILSCALE_DIRECT_PORT = 41641
 EPHEMERAL_PORT_MIN = 32768
-TRUSTED_OUT_SVC = {"tailscale", "dns", "ntp", "stun", "https", "http", "smtp", "imap"}
+TRUSTED_OUT_SVC = {"tailscale", "dns", "ntp", "stun", "https", "http", "smtp", "imap", "mdns"}
 # Listeners that may exist without scoring (loopback is always fine).
-EXPECTED_LISTEN_PORTS = {22, 53, 123, 443, 41641, 5432, 6543, 8000, 8080, 8090, 8091, 8443}
+EXPECTED_LISTEN_PORTS = {22, 53, 123, 443, 41641, 5432, 6543, 8000, 8080, 8090, 8091, 8443, 5353}
 # Processes that are part of normal operation (short names, as reported).
 DEFAULT_TRUSTED_PROCS = {
     "tailscaled", "tailscale", "systemd", "bash", "sshd", "dbus-daemon", "cron",
-    "docker", "dockerd", "containerd", "containerd-shim", "cloudflared", "caddy",
+    "docker", "dockerd", "containerd", "containerd-shim", "containerd-shim-runc-v2",
+    "docker-proxy", "cloudflared", "caddy",
     "claude", "node", "python3", "macserver-admin", "dashboard", "collect_status",
     "fan-control", "idle", "doomsday", "nft", "ss", "ping", "curl", "git",
+    "avahi-daemon", "avahi-dnsconfd", "systemd-resolve", "systemd-networkd",
+    "NetworkManager", "polkitd", "accounts-daemon", "udisksd", "upowerd",
+    "rtkit-daemon", "colord", "cupsd", "cups-browsed",
+    # PlaneSight / host-network services
+    "hbbs", "hbbr",
 }
 DEFAULT_TRUSTED_USERS = {"root", "macserver-admin", "macserver-console"}
+
+# Kernel thread marker: processes with names in [] are kernel threads
+KERNEL_THREAD_RE = re.compile(r"^\[.+\]$")
 
 SECRET_PATTERNS = [
     re.compile(r"eyJ[\w-]+\.[\w-]+\.[\w-]*"),
@@ -116,6 +127,20 @@ def read_allow(conf):
     owner = (conf.get("ADMIN_USER", "") or "").strip()
     if owner:
         users.add(owner)
+
+    # Auto-trust container processes (names containing container identifiers)
+    # and host-network containers (PlaneSight, etc.) if configured
+    if conf.get("DOOMSDAY_TRUST_CONTAINERS", "true").lower() == "true":
+        container_procs = {
+            "containerd", "containerd-shim", "containerd-shim-runc-v2",
+            "docker-proxy", "runc", "runc:[0:PARENT]", "runc:[1:CHILD]",
+        }
+        procs.update(container_procs)
+
+    # Auto-trust kernel threads (process names in brackets like [kworker/0:1])
+    if conf.get("DOOMSDAY_TRUST_KERNEL_THREADS", "true").lower() == "true":
+        pass  # handled in scoring via KERNEL_THREAD_RE
+
     return procs, users
 
 
@@ -210,6 +235,9 @@ def score_findings(data, trusted_procs, trusted_users):
             continue
         name = (proc.get("name") or "")[:32]
         if name in trusted_procs:
+            continue
+        # Auto-trust kernel threads (names in brackets like [kworker/0:1])
+        if KERNEL_THREAD_RE.match(name):
             continue
         score += 3
         reasons.append(f"unknown root process: {name} (pid {proc.get('pid', '?')})")
