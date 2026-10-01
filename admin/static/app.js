@@ -425,6 +425,84 @@ async function claudeAction(action) {
 $('claude-start').addEventListener('click', () => claudeAction('start'));
 $('claude-stop').addEventListener('click', () => claudeAction('stop'));
 
+// ---- dev tab --------------------------------------------------------------------------------
+
+const DEV_COMMANDS = [
+  { cmd: 'macserver status', desc: 'Health of Mac, Tailscale, containers', root: true },
+  { cmd: 'macserver dashboard', desc: 'Full-screen live dashboard (on Mac screen)', root: false },
+  { cmd: 'macserver keys', desc: 'API keys and Studio password (secret)', root: true },
+  { cmd: 'macserver logs [service]', desc: 'Follow Supabase logs (auth, rest, db, storage)', root: true },
+  { cmd: 'macserver restart', desc: 'Restart Supabase and public route', root: true },
+  { cmd: 'macserver update', desc: 'Backup DB, then update Debian, T2 kernel, containers', root: true },
+  { cmd: 'macserver upgrade', desc: 'Install newest MacServer version now', root: true },
+  { cmd: 'macserver autoupdate on|off|status', desc: 'Auto-update from GitHub (on by default)', root: true },
+  { cmd: 'macserver backup', desc: 'Write compressed DB dump to /var/backups/macserver', root: true },
+  { cmd: 'macserver public setup', desc: 'Turn on or change public API route', root: true },
+  { cmd: 'macserver public on|off', desc: 'Start/stop public API route', root: true },
+  { cmd: 'macserver idle [status|auto|on|off]', desc: 'Low-power mode when nobody connected', root: true },
+  { cmd: 'macserver wifi', desc: 'Set up or change built-in Wi-Fi', root: true },
+  { cmd: 'macserver doctor', desc: 'Check network, DNS and T2 drivers', root: false },
+];
+
+function renderDev() {
+  const tbody = $('dev-commands');
+  if (!tbody) return;
+  tbody.replaceChildren();
+  for (const c of DEV_COMMANDS) {
+    const tr = el('tr');
+    tr.append(el('td', c.cmd, 'mono'), el('td', c.desc), el('td', c.root ? 'yes' : 'no', 'dim'));
+    const td = el('td');
+    const btn = el('button', 'run');
+    btn.type = 'button';
+    btn.addEventListener('click', () => runDevCommand(c.cmd, c.root));
+    td.append(btn);
+    tr.append(td);
+    tbody.append(tr);
+  }
+
+  $('dev-status-btn').onclick = () => runDevCommand('macserver status', true);
+  $('dev-logs-btn').onclick = () => {
+    const service = $('dev-log-service').value;
+    const lines = $('dev-log-lines').value;
+    runDevCommand(`macserver logs ${service} --tail ${lines}`, true);
+  };
+  $('dev-keys-btn').onclick = () => runDevCommand('macserver keys', true);
+  $('dev-doctor-btn').onclick = () => runDevCommand('macserver doctor', false);
+  $('dev-backup-btn').onclick = () => runDevCommand('macserver backup', true);
+  $('dev-idle-status-btn').onclick = () => runDevCommand('macserver idle status', true);
+  $('dev-idle-auto-btn').onclick = () => runDevCommand('macserver idle auto', true);
+  $('dev-idle-on-btn').onclick = () => runDevCommand('macserver idle on', true);
+  $('dev-idle-off-btn').onclick = () => runDevCommand('macserver idle off', true);
+  $('dev-public-status-btn').onclick = () => runDevCommand('macserver public', false);
+  $('dev-public-on-btn').onclick = () => runDevCommand('macserver public on', true);
+  $('dev-public-off-btn').onclick = () => runDevCommand('macserver public off', true);
+  $('dev-update-btn').onclick = () => runDevCommand('macserver update', true);
+  $('dev-restart-btn').onclick = () => runDevCommand('macserver restart', true);
+}
+
+async function runDevCommand(cmd, needsRoot) {
+  const out = needsRoot ? $('dev-output') : null;
+  const target = out || $(`dev-${cmd.split(' ')[1]}-output`) || $('dev-output');
+  if (!target) return;
+  target.hidden = false;
+  target.textContent = `$ ${cmd}\n`;
+  try {
+    const res = await fetch('/api/dev', {
+      method: 'POST', cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cmd, needsRoot }),
+    });
+    const text = await res.text();
+    target.textContent += text;
+    if (!res.ok) target.className = 'detail bad';
+    else target.className = 'detail';
+  } catch (e) {
+    target.textContent += `Error: ${e}`;
+    target.className = 'detail bad';
+  }
+  target.scrollTop = target.scrollHeight;
+}
+
 async function refresh() {
   try {
     const res = await fetch('/api/status', { cache: 'no-store' });
@@ -439,7 +517,7 @@ async function refresh() {
 
 // ---- tabs ---------------------------------------------------------------------------------
 
-const TABS = ['overview', 'network', 'terminal'];
+const TABS = ['overview', 'network', 'terminal', 'dev'];
 
 function showTab(name) {
   if (!TABS.includes(name)) name = 'overview';
@@ -452,12 +530,13 @@ function showTab(name) {
     frame.contentWindow && frame.contentWindow.postMessage('focus', location.origin);
   }
   if (latest) render(latest);   // canvases in a hidden tab have no size: draw them now
+  if (name === 'dev') renderDev();
 }
 
 for (const b of document.querySelectorAll('#tabs button')) b.addEventListener('click', () => showTab(b.dataset.tab));
 document.addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
-  const i = ['1', '2', '3'].indexOf(e.key);
+  const i = ['1', '2', '3', '4'].indexOf(e.key);
   if (i >= 0) showTab(TABS[i]);
 });
 $('term-frame').addEventListener('load', () => {

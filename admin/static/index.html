@@ -14,6 +14,7 @@
     <button type="button" data-tab="overview" class="on">1 overview</button>
     <button type="button" data-tab="network">2 network</button>
     <button type="button" data-tab="terminal">3 terminal</button>
+    <button type="button" data-tab="dev">4 dev</button>
   </nav>
   <div class="tophead">
     <span id="summary" role="status">Loading…</span>
@@ -108,7 +109,99 @@
       <iframe id="term-frame" title="Terminal" allow="clipboard-read; clipboard-write"></iframe>
     </section>
   </div>
+
+  <div id="view-dev" class="view" hidden>
+    <div class="grid">
+      <section class="box b-dev-commands" data-title="macserver commands">
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr><th scope="col">command</th><th scope="col">description</th><th scope="col">needs root</th><th scope="col"></th></tr>
+            </thead>
+            <tbody id="dev-commands"></tbody>
+          </table>
+        </div>
+        <div id="dev-output" class="detail" hidden></div>
+      </section>
+
+      <section class="box b-dev-status" data-title="quick status">
+        <pre id="dev-status-output" class="detail"></pre>
+        <p class="actions"><button type="button" id="dev-status-btn" class="primary">Run status</button></p>
+      </section>
+
+      <section class="box b-dev-logs" data-title="supabase logs">
+        <div class="two">
+          <div>
+            <label class="lbl">Service</label>
+            <select id="dev-log-service">
+              <option value="">all</option>
+              <option value="auth">auth</option>
+              <option value="rest">rest (PostgREST)</option>
+              <option value="db">db (PostgreSQL)</option>
+              <option value="storage">storage</option>
+              <option value="realtime">realtime</option>
+              <option value="functions">functions (Edge Functions)</option>
+              <option value="studio">studio</option>
+              <option value="kong">kong (API gateway)</option>
+              <option value="meta">postgres-meta</option>
+              <option value="imgproxy">imgproxy</option>
+            </select>
+          </div>
+          <div>
+            <label class="lbl">Lines</label>
+            <input type="number" id="dev-log-lines" value="100" min="10" max="1000" step="10">
+          </div>
+        </div>
+        <pre id="dev-logs-output" class="detail"></pre>
+        <p class="actions"><button type="button" id="dev-logs-btn" class="primary">Fetch logs</button></p>
+      </section>
+
+      <section class="box b-dev-keys" data-title="api keys (secret)">
+        <pre id="dev-keys-output" class="detail"></pre>
+        <p class="actions"><button type="button" id="dev-keys-btn" class="primary">Show keys</button></p>
+      </section>
+
+      <section class="box b-dev-doctor" data-title="system doctor">
+        <pre id="dev-doctor-output" class="detail"></pre>
+        <p class="actions"><button type="button" id="dev-doctor-btn" class="primary">Run doctor</button></p>
+      </section>
+
+      <section class="box b-dev-backup" data-title="database backup">
+        <pre id="dev-backup-output" class="detail"></pre>
+        <p class="actions"><button type="button" id="dev-backup-btn" class="primary">Create backup</button></p>
+      </section>
+
+      <section class="box b-dev-idle" data-title="idle mode">
+        <div id="dev-idle-status" class="detail"></pre>
+        <div class="actions">
+          <button type="button" id="dev-idle-status-btn" class="primary">Check status</button>
+          <button type="button" id="dev-idle-auto-btn">Auto</button>
+          <button type="button" id="dev-idle-on-btn">On</button>
+          <button type="button" id="dev-idle-off-btn">Off</button>
+        </div>
+      </section>
+
+      <section class="box b-dev-public" data-title="public route">
+        <div id="dev-public-status" class="detail"></pre>
+        <div class="actions">
+          <button type="button" id="dev-public-status-btn" class="primary">Check status</button>
+          <button type="button" id="dev-public-on-btn">Enable</button>
+          <button type="button" id="dev-public-off-btn">Disable</button>
+        </div>
+      </section>
+
+      <section class="box b-dev-update" data-title="system update">
+        <pre id="dev-update-output" class="detail"></pre>
+        <p class="actions"><button type="button" id="dev-update-btn" class="primary">Run full update (backup + upgrade)</button></p>
+      </section>
+
+      <section class="box b-dev-restart" data-title="restart services">
+        <pre id="dev-restart-output" class="detail"></pre>
+        <p class="actions"><button type="button" id="dev-restart-btn" class="primary">Restart Supabase + public route</button></p>
+      </section>
+    </div>
+  </div>
 </main>
-<footer><span id="viewer"></span> · <span class="dim">keys: 1 2 3 switch view</span></footer>
+<footer><span id="viewer"></span> · <span class="dim">keys: 1 2 3 4 switch view</span></footer>
 </body>
 </html>

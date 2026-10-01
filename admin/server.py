@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """MacServer private admin page.
 
-Read-only except for one action: starting or stopping the Claude Code Remote Control
-session. The page cannot run anything itself; it writes "start" or "stop" to a
-request file that a root-owned systemd path unit acts on.
+Read-only except for actions: starting/stopping the Claude Code Remote Control
+session, and running macserver commands from the dev tab. The page cannot run
+anything itself; it writes "start" or "stop" to a request file that a root-owned
+systemd path unit acts on, or runs macserver commands via subprocess.
 
 Listens on 127.0.0.1 only. `tailscale serve` puts it on the tailnet over HTTPS and
 adds the Tailscale-User-Login header, which Tailscale sets itself and does not
@@ -15,6 +16,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
+import subprocess
 import time
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -42,8 +44,13 @@ def terminal_policy(tailnet_name):
 
 STALE_AFTER_S = 20
 CLAUDE_ACTIONS = ("start", "stop")
-MAX_BODY = 256
+MAX_BODY = 4096  # Increased for dev commands
 
+# Allowed macserver subcommands for the dev panel
+DEV_COMMANDS = {
+    "status", "dashboard", "keys", "logs", "restart", "update", "upgrade",
+    "autoupdate", "backup", "public", "idle", "wifi", "doctor"
+}
 
 def conf_value(conf_path, key):
     try:
@@ -76,6 +83,28 @@ def load_status(path, now=None):
         return {"error": "status not collected yet"}
     data["stale"] = now - data.get("generated_at", 0) > STALE_AFTER_S
     return data
+
+
+def run_macserver_command(cmd, needs_root):
+    """Run a macserver command and return (exit_code, output)."""
+    if needs_root and subprocess.geteuid() != 0:
+        # Re-run with sudo
+        full_cmd = ["sudo", "macserver"] + cmd.split()[1:]
+    else:
+        full_cmd = ["macserver"] + cmd.split()[1:]
+    try:
+        result = subprocess.run(
+            full_cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,  # 5 minute timeout for long operations
+            check=False
+        )
+        return result.returncode, result.stdout + result.stderr
+    except subprocess.TimeoutExpired:
+        return -1, "Command timed out after 5 minutes"
+    except Exception as e:
+        return -1, f"Error: {e}"
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -121,15 +150,56 @@ class Handler(BaseHTTPRequestHandler):
             self.send(HTTPStatus.FORBIDDEN, b"Forbidden: not an approved MacServer admin.\n",
                       "text/plain; charset=utf-8")
             return
-        if self.path.split("?", 1)[0] != "/api/claude" or not self.config.get("claude_request"):
+        path = self.path.split("?", 1)[0]
+        if path == "/api/claude":
+            if not self.config.get("claude_request"):
+                self.send(HTTPStatus.METHOD_NOT_ALLOWED, b"Read-only\n", "text/plain; charset=utf-8")
+                return
+            action = self.read_action()
+            if action is None:
+                self.send(HTTPStatus.BAD_REQUEST, b"Bad request\n", "text/plain; charset=utf-8")
+                return
+            Path(self.config["claude_request"]).write_text(action)
+            self.send(HTTPStatus.ACCEPTED, json.dumps({"action": action}).encode(), "application/json")
+        elif path == "/api/dev":
+            # Dev command endpoint
+            if self.headers.get("Content-Type", "").split(";")[0].strip() != "application/json":
+                self.send(HTTPStatus.BAD_REQUEST, b"Bad request: need application/json\n", "text/plain; charset=utf-8")
+                return
+            name = conf_value(self.config["conf"], "TAILNET_NAME")
+            if not name or self.headers.get("Origin") not in (None, f"https://{name}"):
+                self.send(HTTPStatus.BAD_REQUEST, b"Bad request: invalid origin\n", "text/plain; charset=utf-8")
+                return
+            if self.headers.get("Sec-Fetch-Site", "same-origin") != "same-origin":
+                self.send(HTTPStatus.BAD_REQUEST, b"Bad request: cross-site\n", "text/plain; charset=utf-8")
+                return
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                self.send(HTTPStatus.BAD_REQUEST, b"Bad request: invalid length\n", "text/plain; charset=utf-8")
+                return
+            if not 0 < length <= MAX_BODY:
+                self.send(HTTPStatus.BAD_REQUEST, b"Bad request: body too large\n", "text/plain; charset=utf-8")
+                return
+            try:
+                body = json.loads(self.rfile.read(length))
+            except ValueError:
+                self.send(HTTPStatus.BAD_REQUEST, b"Bad request: invalid JSON\n", "text/plain; charset=utf-8")
+                return
+            cmd = body.get("cmd", "")
+            needs_root = body.get("needsRoot", False)
+            if not cmd or not cmd.startswith("macserver "):
+                self.send(HTTPStatus.BAD_REQUEST, b"Bad request: invalid command\n", "text/plain; charset=utf-8")
+                return
+            subcmd = cmd.split()[1] if len(cmd.split()) > 1 else ""
+            if subcmd not in DEV_COMMANDS:
+                self.send(HTTPStatus.BAD_REQUEST, b"Bad request: command not allowed\n", "text/plain; charset=utf-8")
+                return
+            exit_code, output = run_macserver_command(cmd, needs_root)
+            status = HTTPStatus.OK if exit_code == 0 else HTTPStatus.INTERNAL_SERVER_ERROR
+            self.send(status, output.encode(), "text/plain; charset=utf-8")
+        else:
             self.send(HTTPStatus.METHOD_NOT_ALLOWED, b"Read-only\n", "text/plain; charset=utf-8")
-            return
-        action = self.read_action()
-        if action is None:
-            self.send(HTTPStatus.BAD_REQUEST, b"Bad request\n", "text/plain; charset=utf-8")
-            return
-        Path(self.config["claude_request"]).write_text(action)
-        self.send(HTTPStatus.ACCEPTED, json.dumps({"action": action}).encode(), "application/json")
 
     def read_action(self):
         """The requested Claude action, or None. Only same-origin JSON is accepted: a
