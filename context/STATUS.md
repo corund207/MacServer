@@ -568,3 +568,20 @@ Verified: `tests/run.sh` (shell syntax, ShellCheck 0.11, 91 Python tests: collec
 hysteresis/activity, controller apply/restore with fake sysfs, dashboard Idle row,
 repo safety invariants) plus end-to-end `--status`/`--check` with a fake status file.
 Not verified: real governor/backlight paths and wake latency on the MacBook Air.
+
+## 2026-10-01: two benign notices out of the dashboard warning label
+
+The Mac showed a persistent "2 NOTICE(S)": `1 systemd unit(s) failed` (the Claude
+Remote Control session failed on Sep 29 because Start was pressed before signing
+in — confirmed over Tailscale SSH: "You must be logged in", unit still failed)
+and `the CPU slowed itself down because of heat` (thermal-throttle bursts every
+few minutes at ~59 °C, counter 82048 and climbing slowly under normal load).
+
+`tui.muted_notice()` leaves exactly these two out of the top-bar pill and the
+edge glow; they stay in the incident details. Narrow on purpose: another failed
+unit, a Claude failure after sign-in, or a real overheat ("running hot", 90 °C+)
+still lights the label, and critical problems are never muted.
+
+Verified: new dashboard tests (muted pair reads ALL SYSTEMS NORMAL; each
+unmuted variant still warns), full `tests/run.sh` green, and the fixed `draw()`
+run against the Mac's real status.json (quiet and right-after-a-burst).

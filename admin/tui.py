@@ -1460,6 +1460,31 @@ def assess(sampler):
     return [(i["level"], i["title"]) for i in incidents(sampler)]
 
 
+def muted_notice(sampler, level, title):
+    """Warning notices left out of the top-bar pill and the edge glow.
+
+    Two known-benign notices stay out of the label. They are still listed with
+    the incident details, and the real alarms behind them still fire:
+    - the failed-unit notice when the only failed unit is the Claude Remote
+      Control session and Claude was never signed in (problem login/consent):
+      pressing "Start session" before signing in leaves this failed state
+      behind, which is setup, not a malfunction.
+    - the heat-throttle notice: brief slowdowns under burst load at normal
+      temperatures. A genuinely hot CPU still warns through "running hot".
+    """
+    if level != "warn":
+        return False
+    if title == "the CPU slowed itself down because of heat":
+        return True
+    if title.endswith("systemd unit(s) failed"):
+        s = sampler.status or {}
+        failed = set(((s.get("debug") or {}).get("system") or {}).get("failed_units") or [])
+        problem = (s.get("claude") or {}).get("problem", "")
+        if failed and failed <= {"macserver-claude.service"} and problem in ("login", "consent"):
+            return True
+    return False
+
+
 # --- panels ------------------------------------------------------------------------------------
 
 def detail_rows(item):
@@ -2110,7 +2135,9 @@ def draw(c, sampler, kiosk=True):
     """Lay out every panel for a canvas of any size (80x24 up to 250x80)."""
     w, h = c.w, c.h
     problems = assess(sampler)
-    level = alert_level(problems)
+    label = [(level, title) for (level, title) in problems
+             if not muted_notice(sampler, level, title)]
+    level = alert_level(label)
     set_theme(level == "critical")                  # an incident turns the whole screen red
     if level != "critical":
         sampler.force_overview = False
@@ -2121,7 +2148,7 @@ def draw(c, sampler, kiosk=True):
         sampler.crit_since = None
     if c.rich:
         c.fill(0, 0, w, h, C["bg"])
-    top_bar(c, sampler, problems)
+    top_bar(c, sampler, label)
     bottom_bar(c, sampler, kiosk, level)
     if level == "critical" and not sampler.force_overview:
         incident_view(c, sampler, problems, kiosk)

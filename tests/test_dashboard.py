@@ -206,6 +206,46 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("IDLE", idle_text)
         self.assertIn("low-power", idle_text)
 
+    def muted_sampler(self):
+        """A healthy Mac showing exactly the two known-benign notices: the Claude
+        session that failed for lack of sign-in, and a recent heat-throttle burst."""
+        s = tui_fixture.make_sampler("healthy")
+        s.status["debug"]["system"]["failed_units"] = ["macserver-claude.service"]
+        s.status["claude"] = {"installed": True, "state": "failed", "url": "", "problem": "login"}
+        s.status["debug"]["system"]["thermal_throttle"] = 82108
+        s.counter_changed["thermal_throttle"] = time.time()
+        return s
+
+    def test_muted_notices_leave_the_warning_label(self):
+        s = self.muted_sampler()
+        titles = tui.assess(s)
+        self.assertEqual(len(titles), 2)   # both notices still exist as incidents
+        c = tui_fixture.screen("healthy", 232, 64, sampler=s)
+        self.assertEqual(c.alert, "ok")
+        self.assertIn("ALL SYSTEMS NORMAL", c.text())
+        self.assertNotIn("NOTICE", c.text())
+
+    def test_muting_is_narrow(self):
+        # Another unit failing beside Claude: the label stays.
+        s = self.muted_sampler()
+        s.status["debug"]["system"]["failed_units"].append("macserver-fans.service")
+        c = tui_fixture.screen("healthy", 232, 64, sampler=s)
+        self.assertEqual(c.alert, "warning")
+        self.assertIn("1 NOTICE(S)", c.text())
+        # Claude failing for a real reason (not sign-in): the label stays.
+        s = self.muted_sampler()
+        s.status["claude"]["problem"] = ""
+        c = tui_fixture.screen("healthy", 232, 64, sampler=s)
+        self.assertIn("1 NOTICE(S)", c.text())
+        # A genuine overheat still warns, even with throttling muted.
+        s = self.muted_sampler()
+        s.now["temp"] = 93
+        c = tui_fixture.screen("healthy", 232, 64, sampler=s)
+        self.assertIn("NOTICE", c.text())
+        # Critical problems are never muted.
+        s = self.muted_sampler()
+        self.assertFalse(tui.muted_notice(s, "bad", "the Internet is unreachable"))
+
     def test_critical_shows_the_red_incident_view(self):
         c = tui_fixture.screen("trouble", 232, 64)
         text = c.text()
