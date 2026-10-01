@@ -32,6 +32,7 @@ Usage: sudo macserver COMMAND
   idle [status|auto|on|off]   low-power mode when nobody is connected (auto by default)
   wifi              set up or change the built-in Wi-Fi
   doctor            check network, DNS and T2 drivers
+  reboot            reboot the Mac (with disk encryption passphrase reminder)
 EOF
 }
 
@@ -111,6 +112,15 @@ cmd_doctor() {
   check "Docker" "Docker is not running" systemctl is-active --quiet docker
 }
 
+cmd_reboot() {
+  need_root reboot
+  if is_t2; then
+    warn "This Mac has disk encryption. Type the passphrase on the built-in keyboard after reboot."
+  fi
+  say "Rebooting now..."
+  systemctl reboot
+}
+
 cmd_apply_latest() {
   # Force-check GitHub and apply the latest CI-passed version with detailed output
   # This bypasses AUTO_UPDATE setting and shows full progress
@@ -148,6 +158,7 @@ main() {
     wifi) need_root wifi; wifi_setup ;;
     idle) shift || true; cmd_idle "$@" ;;
     doctor) cmd_doctor ;;
+    reboot) cmd_reboot ;;
     ''|-h|--help|help) usage ;;
     *) warn "unknown command '$cmd'"; usage; exit 2 ;;
   esac
