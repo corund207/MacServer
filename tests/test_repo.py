@@ -145,6 +145,26 @@ class RepoTests(unittest.TestCase):
             self.assertIn(cmd, cli)
         self.assertNotIn("dashboard) need_root", cli)
 
+    def test_workflow_steps_never_combine_run_and_uses(self):
+        # A step with both `run:` and `uses:` makes GitHub reject the whole
+        # workflow file (no jobs run; CI and installer-image fail). This broke
+        # every notify job in ci.yml and installer-image.yml unnoticed.
+        for workflow in sorted((ROOT / ".github/workflows").glob("*.yml")):
+            steps, current = [], None
+            for line in workflow.read_text().splitlines():
+                if re.match(r"      - (\w)", line):
+                    current = {"name": line.strip()[:60], "keys": set()}
+                    steps.append(current)
+                elif current is not None:
+                    key = re.match(r"        (\w[\w-]*):", line)
+                    if key:
+                        current["keys"].add(key.group(1))
+                    elif re.match(r"    \S", line):
+                        current = None
+            for step in steps:
+                self.assertFalse({"run", "uses"} <= step["keys"],
+                                 f"{workflow.name}: step combines run and uses: {step['name']}")
+
     def test_no_secrets_committed(self):
         pattern = re.compile(r"(TUNNEL_TOKEN=\w|eyJ[A-Za-z0-9_-]{20,}\.|BEGIN [A-Z ]*PRIVATE KEY)")
         for path in ROOT.rglob("*"):

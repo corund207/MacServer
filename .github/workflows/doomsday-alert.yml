@@ -40,8 +40,7 @@ jobs:
   email-owner:
     runs-on: ubuntu-24.04
     steps:
-      - name: Send doomsday alert email
-        uses: dawidd6/action-send-mail@v3
+      - name: Create alert email body
         env:
           HOSTNAME: ${{ inputs.hostname }}
           IP: ${{ inputs.ip }}
@@ -89,6 +88,8 @@ jobs:
           ---
           Automated notification from GitHub Actions
           EOF
+      - name: Send doomsday alert email
+        uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
           server_port: 465

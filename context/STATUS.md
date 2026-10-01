@@ -619,3 +619,14 @@ Verified: `tests/run.sh` (new `tests/test_doomsday.py`: RFC 6238 TOTP vectors,
 scoring, hysteresis, alert redaction, repo wiring); ShellCheck clean.
 Not verified: a real isolation/restore cycle on the Mac (needs the owner at
 the console), the alert email delivery, and TOTP enrolment.
+
+## 2026-10-01: CI workflows rejected for steps combining `run` and `uses`
+
+GitHub rejects a workflow file outright (zero jobs run) when a step has both
+`run:` and `uses:`. Every email notify job in `ci.yml` and
+`installer-image.yml` built the body with `run:` inside the send-mail step, so
+both workflows failed on every recent commit — which also froze the
+self-updater (it only installs commits where those jobs passed). Each notify
+is now two steps (create the body file, then send it), and the new
+`doomsday-alert.yml` had the same bug and is fixed the same way.
+`tests/test_repo.py` now fails the suite if any step combines the two keys.
