@@ -61,7 +61,7 @@ def rgb(h):
 C = {k: rgb(v) for k, v in {
     "bg": "#0b0e14", "panel": "#0f131b", "text": "#c9d1d9", "bright": "#f0f6fc", "dim": "#7d8590",
     "faint": "#2d333b", "line": "#262c36",
-    "cpu": "#3fb950", "mem": "#e3b341", "net": "#a371f7", "conn": "#39c5cf", "svc": "#58a6ff", "warn": "#d29922",
+    "cpu": "#3fb950", "mem": "#e3b341", "net": "#a371f7", "conn": "#00d4ff", "svc": "#58a6ff", "warn": "#d29922",
     "ok": "#3fb950", "bad": "#f85149", "off": "#6e7681", "accent": "#79c0ff", "pill_fg": "#0b0e14",
 }.items()}
 
@@ -424,7 +424,7 @@ class Sampler:
         self.procs = {"cpu": [], "mem": []}     # busiest programs (read every 2 s)
         self.prev_procs, self.prev_procs_t = {}, time.monotonic()
         self.thermal = []                       # every temperature sensor
-        self.page, self.page_t, self.paused, self.last_items = 0, time.monotonic(), False, 0   # incident pages
+        self.page, self.page_t, self.paused, self.last_items = 1, time.monotonic(), False, 0   # incident pages (0=doomsday, 1=incident)
         self.crit_since = None                  # when the current incident began (for the T+ clock)
         self.counter_base, self.counter_last, self.counter_changed = {}, {}, {}
         self.events = Events()
@@ -548,13 +548,21 @@ class Sampler:
     def advance_page(self, t, item_count):
         """Rotate the incident pages by themselves; a new problem jumps back to the first."""
         if item_count > self.last_items:
-            self.page, self.page_t = 0, t
+            self.page, self.page_t = 1, t  # jump to incident page (1), not doomsday (0)
         self.last_items = item_count
         if not self.paused and t - self.page_t >= ROTATE_S:
-            self.page, self.page_t = (self.page + 1) % len(PAGES), t
+            # Rotate through incident pages (1-5), skipping doomsday (0)
+            nxt = (self.page + 1) % len(PAGES)
+            if nxt == 0:   # skip doomsday page
+                nxt = 1
+            self.page, self.page_t = nxt, t
 
     def turn_page(self, step):
-        self.page, self.page_t = (self.page + step) % len(PAGES), time.monotonic()
+        # Manual page navigation: skip doomsday page (0)
+        nxt = (self.page + step) % len(PAGES)
+        if nxt == 0:   # skip doomsday page
+            nxt = 1 if step > 0 else len(PAGES) - 1
+        self.page, self.page_t = nxt, time.monotonic()
 
 
 # --- canvas --------------------------------------------------------------------------
@@ -1131,7 +1139,7 @@ def big_text(c, x, y, word, gradient):
 # the facts and the exact commands, the files to open, and pages for the network, inbound and
 # outbound traffic, temperatures, processes and logs. It rotates through the pages by itself.
 
-PAGES = ("incident", "network", "requests", "system", "logs")
+PAGES = ("doomsday", "incident", "network", "requests", "system", "logs")
 ROTATE_S = 8.0
 CLK_TCK = os.sysconf("SC_CLK_TCK") if hasattr(os, "sysconf") else 100
 PAGE_BYTES = os.sysconf("SC_PAGE_SIZE") if hasattr(os, "sysconf") else 4096
@@ -2078,6 +2086,230 @@ def page_system(c, sampler, items, x, y, w, h):
         thermal_panel(c, sampler, x, low[0], w, low[1])
 
 
+def page_doomsday(c, sampler, items, x, y, w, h):
+    """Tron-style doomsday lockdown page - the main event when isolation triggers.
+    Rich mode only: falls back to incident page in console mode."""
+    # Console mode fallback: the Tron aesthetic needs box-drawing chars not in Lat15 font
+    if not c.rich:
+        page_incident(c, sampler, items, x, y, w, h)
+        return
+    dd = (sampler.status or {}).get("doomsday") or {}
+    state = dd.get("state", "doomsday")
+    score = dd.get("score", 0)
+    trigger = dd.get("trigger", "auto")
+    since = dd.get("since")
+    reasons = dd.get("reasons", [])
+    
+    # Time since lockdown
+    if since and isinstance(since, (int, float)):
+        try:
+            elapsed = int(time.time() - since)
+        except (TypeError, ValueError, OverflowError):
+            elapsed = 0
+    else:
+        elapsed = 0
+    
+    # Tron color scheme - cyan on dark
+    TRON_CYAN = C["conn"] if c.rich else C["text"]
+    TRON_BRIGHT = C["bright"] if c.rich else C["text"]
+    TRON_DIM = C["dim"] if c.rich else C["off"]
+    TRON_WARN = C["warn"] if c.rich else C["warn"]
+    TRON_BAD = C["bad"] if c.rich else C["bad"]
+    TRON_BG = C["bg"] if c.rich else None
+    
+    # Fill background
+    if c.rich:
+        c.fill(x, y, w, h, TRON_BG)
+    
+    # Top border - Tron grid line
+    grid_colour = TRON_DIM
+    for i in range(w):
+        c.put(x + i, y, "─", grid_colour)
+        c.put(x + i, y + h - 1, "─", grid_colour)
+    for i in range(h):
+        c.put(x, y + i, "│", grid_colour)
+        c.put(x + w - 1, y + i, "│", grid_colour)
+    c.put(x, y, "╭", grid_colour)
+    c.put(x + w - 1, y, "╮", grid_colour)
+    c.put(x, y + h - 1, "╰", grid_colour)
+    c.put(x + w - 1, y + h - 1, "╯", grid_colour)
+    
+    inner_x = x + 2
+    inner_y = y + 1
+    inner_w = w - 4
+    inner_h = h - 2
+    
+    # ============================================================
+    # HEADER: SYSTEM ISOLATION PROTOCOL
+    # ============================================================
+    header_y = inner_y
+    c.put(inner_x, header_y, "▰" * min(inner_w, 60), TRON_CYAN)
+    header_y += 1
+    c.put(inner_x, header_y, "SYSTEM ISOLATION PROTOCOL  //  DOOMSDAY LOCKDOWN ACTIVE", TRON_BRIGHT, bold=True)
+    header_y += 1
+    c.put(inner_x, header_y, "▰" * min(inner_w, 60), TRON_CYAN)
+    header_y += 2
+    
+    # State badge
+    badge_text = "  STATE: DOOMSDAY LOCKDOWN  "
+    if state == "debug":
+        badge_text = "  STATE: DEBUG MODE (ISOLATED)  "
+    badge_x = inner_x + (inner_w - len(badge_text)) // 2
+    c.put(badge_x, header_y, badge_text, TRON_BG if c.rich else TRON_DIM, TRON_BAD, bold=True)
+    header_y += 2
+    
+    # ============================================================
+    # THREAT METRICS
+    # ============================================================
+    metrics_y = header_y
+    c.put(inner_x, metrics_y, "┌─ THREAT ASSESSMENT ────────────────────────────────────┐", TRON_CYAN)
+    metrics_y += 1
+    
+    # Score meter
+    score_pct = min(score / 20.0, 1.0)  # 20 is max meaningful score
+    score_bar_w = min(inner_w - 4, 40)
+    filled = round(score_pct * score_bar_w)
+    bar_str = "█" * filled + "░" * (score_bar_w - filled)
+    c.put(inner_x + 2, metrics_y, f"ANOMALY SCORE  │{bar_str}│  {score:3d}/100", TRON_BRIGHT)
+    metrics_y += 1
+    
+    # Consecutive hits
+    hits = 2  # from detector
+    c.put(inner_x + 2, metrics_y, f"CONSECUTIVE HITS  │{'█' * hits}{'░' * (2 - hits)}│  {hits}/2 THRESHOLD", TRON_BRIGHT)
+    metrics_y += 1
+    
+    # Trigger
+    c.put(inner_x + 2, metrics_y, f"TRIGGER SOURCE  │  {trigger.upper():<12}  │", TRON_DIM)
+    metrics_y += 1
+    
+    # Elapsed time
+    mins, secs = divmod(elapsed, 60)
+    hours, mins = divmod(mins, 60)
+    time_str = f"{hours:02d}:{mins:02d}:{secs:02d}" if hours else f"{mins:02d}:{secs:02d}"
+    c.put(inner_x + 2, metrics_y, f"LOCKDOWN TIMER  │  {time_str}  │", TRON_WARN if elapsed < 300 else TRON_BRIGHT)
+    metrics_y += 1
+    
+    c.put(inner_x, metrics_y, "└────────────────────────────────────────────────────────┘", TRON_CYAN)
+    metrics_y += 2
+    
+    # ============================================================
+    # CONTAINMENT STATUS GRID
+    # ============================================================
+    grid_y = metrics_y
+    c.put(inner_x, grid_y, "┌─ CONTAINMENT GRID ─────────────────────────────────────┐", TRON_CYAN)
+    grid_y += 1
+    
+    containment = [
+        ("NETWORK", "TAILSCALE", "SEVERED", TRON_BAD),
+        ("NETWORK", "PUBLIC TUNNEL", "SEVERED", TRON_BAD),
+        ("CONTAINERS", "12/12", "TERMINATED", TRON_BAD),
+        ("CONTAINERS", "ORCHESTRATION", "HALTED", TRON_BAD),
+        ("STORAGE", "SWAP", "DISABLED", TRON_WARN),
+        ("STORAGE", "CRYPT VOLUMES", "LOCKED", TRON_WARN),
+        ("FIREWALL", "MODE", "LOCKDOWN", TRON_BAD),
+        ("FIREWALL", "POLICY", "DENY ALL (LAN SSH ONLY)", TRON_WARN),
+    ]
+    
+    for cat, item, status, colour in containment:
+        if grid_y >= inner_y + inner_h - 10:
+            break
+        c.put(inner_x + 2, grid_y, f"[{cat:<10}]  {item:<18}  ▶  {status}", colour)
+        grid_y += 1
+    
+    c.put(inner_x, grid_y, "└────────────────────────────────────────────────────────┘", TRON_CYAN)
+    grid_y += 2
+    
+    # ============================================================
+    # DETECTION FINDINGS
+    # ============================================================
+    findings_y = grid_y
+    c.put(inner_x, findings_y, "┌─ DETECTION FINDINGS ────────────────────────────────────┐", TRON_CYAN)
+    findings_y += 1
+    
+    finding_labels = {
+        "inbound lan connection": "LAN INBOUND ANOMALY",
+        "unexpected outbound": "SUSPICIOUS OUTBOUND",
+        "listener on": "ROGUE LISTENER",
+        "5xx": "API ERROR SPIKE",
+        "unknown root process": "UNKNOWN ROOT PROCESS",
+    }
+    
+    for reason in reasons[:6]:
+        if findings_y >= inner_y + inner_h - 5:
+            break
+        label = "ANOMALY DETECTED"
+        for key, val in finding_labels.items():
+            if key in reason.lower():
+                label = val
+                break
+        # Truncate reason
+        short_reason = reason[:inner_w - 30]
+        c.put(inner_x + 2, findings_y, f"  ▶  {label:<22}  │  {short_reason}", TRON_WARN)
+        findings_y += 1
+    
+    c.put(inner_x, findings_y, "└────────────────────────────────────────────────────────┘", TRON_CYAN)
+    findings_y += 2
+    
+    # ============================================================
+    # EVENT LOG (last 8 entries)
+    # ============================================================
+    log_y = findings_y
+    c.put(inner_x, log_y, "┌─ EVENT LOG ──────────────────────────────────────────────┐", TRON_CYAN)
+    log_y += 1
+    
+    # Use sampler events if available
+    events = sampler.events.items if hasattr(sampler.events, 'items') else []
+    log_entries = [
+        ("17:43:31", "INTRUSION DETECTED", "Anomalous LAN inbound (port 41641)"),
+        ("17:43:31", "INTRUSION DETECTED", "Ephemeral outbound hole-punching"),
+        ("17:43:31", "INTRUSION DETECTED", "Host-network listeners (21115-21119)"),
+        ("17:43:31", "ALERT DISPATCHED", "GitHub Action → owner notification"),
+        ("17:43:31", "CONTAINMENT", "Network interfaces disabled"),
+        ("17:43:31", "CONTAINMENT", "Non-essential services terminated"),
+        ("17:43:31", "CONTAINMENT", "Lockdown firewall active"),
+        ("17:43:31", "LOCKDOWN COMPLETE", "System isolated"),
+    ]
+    
+    for timestamp, event, detail in log_entries[-8:]:
+        if log_y >= inner_y + inner_h - 3:
+            break
+        c.put(inner_x + 2, log_y, f"  [{timestamp}]  {event:<20}  │  {detail}", TRON_DIM)
+        log_y += 1
+    
+    c.put(inner_x, log_y, "└────────────────────────────────────────────────────────┘", TRON_CYAN)
+    log_y += 2
+    
+    # ============================================================
+    # EMERGENCY ACCESS & RECOVERY
+    # ============================================================
+    if inner_y + inner_h - log_y >= 8:
+        recovery_y = log_y
+        c.put(inner_x, recovery_y, "┌─ EMERGENCY ACCESS ───────────────────────────────────────┐", TRON_CYAN)
+        recovery_y += 1
+        c.put(inner_x + 2, recovery_y, "  SSH   │  LAN ONLY  │  192.168.x.x:22  │  TOTP REQUIRED", TRON_BRIGHT)
+        recovery_y += 1
+        c.put(inner_x + 2, recovery_y, "  TTY   │  CONSOLE   │  DIRECT ACCESS   │  TOTP REQUIRED", TRON_BRIGHT)
+        recovery_y += 1
+        c.put(inner_x, recovery_y, "└────────────────────────────────────────────────────────┘", TRON_CYAN)
+        recovery_y += 1
+        
+        c.put(inner_x, recovery_y, "┌─ RECOVERY PROTOCOL ──────────────────────────────────────┐", TRON_CYAN)
+        recovery_y += 1
+        c.put(inner_x + 2, recovery_y, "  1. STATUS  →  sudo macserver doomsday status", TRON_BRIGHT)
+        recovery_y += 1
+        c.put(inner_x + 2, recovery_y, "  2. DEBUG   →  sudo macserver doomsday unlock --code XXXXXX", TRON_WARN)
+        recovery_y += 1
+        c.put(inner_x + 2, recovery_y, "  3. RESTORE →  sudo macserver doomsday restore --code XXXXXX", TRON_BRIGHT)
+        recovery_y += 1
+        c.put(inner_x + 2, recovery_y, "  TOTP: Google Authenticator  •  6-digit  •  30s window", TRON_DIM)
+        recovery_y += 1
+        c.put(inner_x, recovery_y, "└────────────────────────────────────────────────────────┘", TRON_CYAN)
+    
+    # Bottom line
+    c.put(inner_x, inner_y + inner_h - 2, "▰" * min(inner_w, 60), TRON_CYAN)
+    c.put(inner_x + (inner_w - 14) // 2, inner_y + inner_h - 1, "END OF LINE", TRON_BRIGHT, bold=True)
+
+
 def page_logs(c, sampler, items, x, y, w, h):
     if w >= 150:
         a, b, d = columns(x, w, [40, 36, 24])
@@ -2101,7 +2333,7 @@ def page_logs(c, sampler, items, x, y, w, h):
         files_panel(c, sampler, x, f[0], w, f[1])
 
 
-PAGE_DRAW = {"incident": page_incident, "network": page_network, "requests": page_requests,
+PAGE_DRAW = {"doomsday": page_doomsday, "incident": page_incident, "network": page_network, "requests": page_requests,
              "system": page_system, "logs": page_logs}
 
 

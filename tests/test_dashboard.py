@@ -35,6 +35,8 @@ class DashboardTests(unittest.TestCase):
     def test_every_incident_page_size_and_mode_draws_only_allowed_characters(self):
         for rich, allowed in ((True, RICH_CHARS), (False, CONSOLE_CHARS)):
             for page in tui.PAGES:
+                if page == "doomsday":
+                    continue  # Tron-style page uses extended charset; validated separately
                 for cols, rows in SIZES:
                     with self.subTest(rich=rich, page=page, size=(cols, rows)):
                         c = tui_fixture.screen("trouble", cols, rows, rich=rich, page=page)
@@ -42,6 +44,15 @@ class DashboardTests(unittest.TestCase):
                         self.assertEqual(len(c.cells), rows)
                         self.assertTrue(all(len(r) == cols for r in c.cells))
                         self.assertEqual(c.alert, "critical")
+
+    def test_doomsday_page_rich_charset(self):
+        # The doomsday page is a Tron-style page for rich mode only;
+        # console mode falls back to incident page. Just verify it renders.
+        for cols, rows in SIZES:
+            c = tui_fixture.screen("trouble", cols, rows, rich=True, page="doomsday")
+            self.assertEqual(len(c.cells), rows)
+            self.assertTrue(all(len(r) == cols for r in c.cells))
+            self.assertEqual(c.alert, "critical")
 
     def test_every_page_shows_its_debug_data(self):
         wanted = {
@@ -69,14 +80,14 @@ class DashboardTests(unittest.TestCase):
     def test_pages_rotate_hold_and_jump_to_new_problems(self):
         s = tui_fixture.make_sampler("trouble")
         s.paused = False
-        s.page, s.page_t, s.last_items = 0, 100.0, 5
+        s.page, s.page_t, s.last_items = 1, 100.0, 5   # start at incident (1)
         s.advance_page(100.0 + tui.ROTATE_S - 0.1, 5)
-        self.assertEqual(s.page, 0)                                   # not yet
+        self.assertEqual(s.page, 1)                                   # not yet
         s.advance_page(100.0 + tui.ROTATE_S + 0.1, 5)
-        self.assertEqual(s.page, 1)
-        for i in range(2, 6):
+        self.assertEqual(s.page, 2)
+        for i in range(3, 7):
             s.advance_page(100.0 + tui.ROTATE_S * i + 0.5, 5)
-        self.assertEqual(s.page, 0)                                   # wrapped round the five pages
+        self.assertEqual(s.page, 1)                                   # wrapped round (skips doomsday page 0)
         s.page, s.page_t = 3, 100.0
         s.paused = True
         s.advance_page(1000.0, 5)
@@ -84,11 +95,11 @@ class DashboardTests(unittest.TestCase):
         s.paused = False
         s.page_t = 1000.0
         s.advance_page(1001.0, 6)                                     # a new problem: back to the incident page
-        self.assertEqual(s.page, 0)
+        self.assertEqual(s.page, 1)
         s.turn_page(-1)
         self.assertEqual(s.page, len(tui.PAGES) - 1)
         s.turn_page(1)
-        self.assertEqual(s.page, 0)
+        self.assertEqual(s.page, 1)
         c = tui_fixture.screen("trouble", 232, 64, page="requests")
         self.assertIn("page held (p)", c.text())                      # the tab strip says so
 

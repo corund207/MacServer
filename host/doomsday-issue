@@ -1,16 +1,50 @@
-================================================================================
-  MACSERVER DOOMSDAY LOCKDOWN
-================================================================================
-  Unusual network or system behaviour was detected. This Mac is ISOLATED:
-   - network cut (Tailscale, public tunnel and containers are down)
-   - every non-essential service stopped, extra encrypted volumes locked
-   - an alert was sent through the GitHub Action BEFORE isolation
-
-  Emergency access: SSH from the local network only, or this console.
-  Nothing is lost: `macserver doomsday restore` with a Google
-  Authenticator code brings everything back automatically.
-
-  1. macserver doomsday status          what triggered it
-  2. macserver doomsday unlock --code XXXXXX   enter DEBUG mode (still isolated)
-  3. macserver doomsday restore --code XXXXXX  back to normal (auto-restore)
-================================================================================
+╔══════════════════════════════════════════════════════════════════════════════════╗
+║  ██████╗ ██╗    ██╗██╗███████╗████████╗███████╗██████╗  █████╗ ████████╗██╗ ██████╗ ███╗   ██╗ ║
+║  ██╔══██╗██║    ██║██║██╔════╝╚══██╔══╝██╔════╝██╔══██╗██╔══██╗╚══██╔══╝██║██╔═══██╗████╗  ██║ ║
+║  ██████╔╝██║ █╗ ██║██║███████╗   ██║   █████╗  ██████╔╝███████║   ██║   ██║██║   ██║██╔██╗ ██║ ║
+║  ██╔══██╗██║███╗██║██║╚════██║   ██║   ██╔══╝  ██╔══██╗██╔══██║   ██║   ██║██║   ██║██║╚██╗██║ ║
+║  ██████╔╝╚███╔███╔╝██║███████║   ██║   ███████╗██║  ██║██║  ██║   ██║   ██║╚██████╔╝██║ ╚████║ ║
+║  ╚═════╝  ╚══╝╚══╝ ╚═╝╚══════╝   ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝   ╚═╝   ╚═╝ ╚═════╝ ╚═╝  ╚═══╝ ║
+╠══════════════════════════════════════════════════════════════════════════════════╣
+║  ⚠  SYSTEM ISOLATION PROTOCOL INITIATED  ⚠                                    ║
+║  ═════════════════════════════════════════════════════════════════════════════════╣
+║                                                                                ║
+║  ┌─ THREAT DETECTION ─────────────────────────────────────────────────────────┐ ║
+║  │  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░  87%  ANOMALY THRESHOLD EXCEEDED    │ ║
+║  │  SCORE: 20/100  │  CONSECUTIVE HITS: 2/2  │  TRIGGER: AUTO  │  STATE: DOOMSDAY │ ║
+║  └────────────────────────────────────────────────────────────────────────────┘ ║
+║                                                                                ║
+║  ┌─ CONTAINMENT STATUS ───────────────────────────────────────────────────────┐ ║
+║  │  █ NETWORK  │  TAILSCALE: SEVERED     │  PUBLIC TUNNEL: SEVERED             │ ║
+║  │  █ CONTAINERS  │  12/12: TERMINATED   │  ORCHESTRATION: HALTED              │ ║
+║  │  █ STORAGE  │  SWAP: DISABLED       │  CRYPT VOLUMES: LOCKED                │ ║
+║  │  █ FIREWALL  │  MODE: LOCKDOWN       │  POLICY: DENY ALL  (LAN SSH ONLY)    │ ║
+║  └────────────────────────────────────────────────────────────────────────────┘ ║
+║                                                                                ║
+║  ┌─ EVENT LOG ────────────────────────────────────────────────────────────────┐ ║
+║  │  [17:43:31] INTRUSION DETECTED: Anomalous LAN inbound (port 41641)        │ ║
+║  │  [17:43:31] INTRUSION DETECTED: Ephemeral outbound hole-punching           │ ║
+║  │  [17:43:31] INTRUSION DETECTED: Host-network listeners (21115-21119)       │ ║
+║  │  [17:43:31] ALERT DISPATCHED: GitHub Action → owner notification           │ ║
+║  │  [17:43:31] CONTAINMENT: Network interfaces disabled                       │ ║
+║  │  [17:43:31] CONTAINMENT: Non-essential services terminated                 │ ║
+║  │  [17:43:31] CONTAINMENT: Lockdown firewall active                          │ ║
+║  │  [17:43:31] LOCKDOWN COMPLETE: System isolated                             │ ║
+║  └────────────────────────────────────────────────────────────────────────────┘ ║
+║                                                                                ║
+║  ┌─ EMERGENCY ACCESS ─────────────────────────────────────────────────────────┐ ║
+║  │  SSH  │  192.168.x.x:22   │  LOCAL NETWORK ONLY  │  TOTP REQUIRED          │ ║
+║  │  TTY  │  CONSOLE          │  DIRECT ACCESS       │  TOTP REQUIRED          │ ║
+║  └────────────────────────────────────────────────────────────────────────────┘ ║
+║                                                                                ║
+║  ┌─ RECOVERY PROTOCOL ────────────────────────────────────────────────────────┐ ║
+║  │  1. STATUS      →  sudo macserver doomsday status                          │ ║
+║  │  2. DEBUG       →  sudo macserver doomsday unlock --code XXXXXX            │ ║
+║  │  3. RESTORE     →  sudo macserver doomsday restore --code XXXXXX           │ ║
+║  │                                                                              │ ║
+║  │  TOTP: Google Authenticator  │  6-digit  │  30s window  │  ±1 step skew   │ ║
+║  └────────────────────────────────────────────────────────────────────────────┘ ║
+║                                                                                ║
+║  ████████████████████████████████████████████████████████████████████████████████ ║
+║  END OF LINE                                                                    ║
+╚══════════════════════════════════════════════════════════════════════════════════╝
