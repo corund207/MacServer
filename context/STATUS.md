@@ -692,3 +692,14 @@ Not verified: a real client session (direct and relayed), the router forwards (t
 adds them; check for CGNAT first), a DDNS name (none yet: the relay is the public IP, which
 can change), the new install step in the installer-image VM test (CI), and whether the
 doomsday detector stays quiet with public RustDesk traffic (`macserver doomsday test`).
+
+## 2026-10-04: dashboard samples every 2 seconds
+
+`SAMPLE_S` 2.0 (was 0.001), `HISTORY` 600 samples (still 20 minutes), so every reading
+on the dashboard updates once per 2 s, matching the status collector. Hot-patched on the
+Mac over SSH (the same two lines in `/usr/local/lib/macserver/dashboard`, tty1 session
+restarted) and kept on branch `sampling-2s` so it does not cancel the CI run of the
+commit in the update pipeline. Merge it to `main` once that run has finished; the
+self-updater then installs identical content.
+
+Verified: dashboard and doomsday tests (74) in WSL. Not run: the full suite and CI.

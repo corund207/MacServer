@@ -35,8 +35,8 @@ PROC = Path(os.environ.get("MACSERVER_PROC", "/proc"))
 SYS = Path(os.environ.get("MACSERVER_SYS", "/sys"))
 DOCS = "github.com/corund207/MacServer"
 STUDIO_PORT = 8443
-SAMPLE_S = 0.001
-HISTORY = 1_200_000   # samples kept per graph (20 minutes at 1 ms intervals)
+SAMPLE_S = 2.0
+HISTORY = 600   # samples kept per graph (20 minutes at 2 s intervals)
 # Smoothing per reading (share of each new sample taken): lower = calmer.
 SMOOTH = {"cpu": 0.35, "temp": 0.25, "mhz": 0.3, "rx": 0.3, "tx": 0.3, "ts_rx": 0.3, "ts_tx": 0.3,
           "rd": 0.3, "wr": 0.3, "ctxt": 0.3, "intr": 0.3}
