@@ -40,6 +40,8 @@ install_doomsday() {
   [[ -n $(conf_get DOOMSDAY_SCORE) ]] || conf_set DOOMSDAY_SCORE 6
   [[ -n $(conf_get DOOMSDAY_CONSECUTIVE) ]] || conf_set DOOMSDAY_CONSECUTIVE 2
   [[ -n $(conf_get DOOMSDAY_GH_REPO) ]] || conf_set DOOMSDAY_GH_REPO "corund207/MacServer"
+  command -v qrencode >/dev/null 2>&1 || apt_quiet install qrencode >/dev/null 2>&1 \
+    || warn "could not install qrencode: setup-totp will show the key as text instead of a QR code"
   install -d -m 0700 /var/lib/macserver
   if [[ ! -f /var/lib/macserver/doomsday.json ]]; then
     jq -n --arg mode "$(conf_get DOOMSDAY_MODE on)" '{mode: $mode, state: "normal"}' \

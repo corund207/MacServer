@@ -56,6 +56,17 @@ class TotpTests(unittest.TestCase):
         url = doomsday.otpauth_url("JBSWY3DPEHPK3PXP", "macserver")
         self.assertTrue(url.startswith("otpauth://totp/MacServer:macserver?secret=JBSWY3DPEHPK3PXP"))
 
+    def test_verify_cli_checks_an_unsaved_secret(self):
+        secret = doomsday.generate_secret()
+        self.assertEqual(doomsday.main(["totp-verify", "--secret", secret, doomsday.totp_code(secret)]), 0)
+        self.assertEqual(doomsday.main(["totp-verify", "--secret", secret, "000000x"]), 1)
+
+    def test_setup_shows_qr_and_verifies_before_saving(self):
+        script = (Path(__file__).resolve().parent.parent / "host" / "macserver-doomsday.sh").read_text(encoding="utf-8")
+        body = script.split("do_setup_totp()")[1].split("do_setup_gh()")[0]
+        self.assertIn("qrencode", body)
+        self.assertLess(body.index("totp-verify --secret"), body.index('> "$TOTP_FILE.tmp"', body.index("totp-verify --secret")))
+
 
 class ScoringTests(unittest.TestCase):
     def setUp(self):

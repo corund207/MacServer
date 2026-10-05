@@ -337,6 +337,7 @@ def main(argv=None):
     p.add_argument("--account", default="macserver")
     p = sub.add_parser("totp-verify")
     p.add_argument("code")
+    p.add_argument("--secret", help="check against this secret instead of the enrolled one")
     args = parser.parse_args(argv)
     if args.cmd == "check":
         state = load_state()
@@ -351,16 +352,16 @@ def main(argv=None):
         secret = generate_secret()
         print(f"secret: {secret}")
         print(f"url: {otpauth_url(secret, args.account)}")
-        print("Add it to Google Authenticator (manual entry), then run: macserver doomsday setup-totp <secret>")
         return 0
     if args.cmd == "totp-verify":
         try:
-            secret = normalize_secret(Path(TOTP_FILE).read_text())
+            secret = normalize_secret(args.secret or Path(TOTP_FILE).read_text())
         except OSError:
             print("no TOTP secret enrolled (macserver doomsday setup-totp)")
             return 1
-        print("ok" if verify_code(secret, args.code) else "invalid code")
-        return 0 if verify_code(secret, args.code) else 1
+        valid = verify_code(secret, args.code)
+        print("ok" if valid else "invalid code")
+        return 0 if valid else 1
 
 
 if __name__ == "__main__":

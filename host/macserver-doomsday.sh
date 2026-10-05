@@ -232,10 +232,28 @@ do_setup_totp() {  # do_setup_totp [SECRET]
     ok "Authenticator enrolled. Test it: sudo macserver doomsday unlock --help (or wait for lockdown)"
     return 0
   fi
-  say "1. Run this on the Mac to print a new secret + URL:"
-  say "     sudo python3 /usr/local/lib/macserver/doomsday.py totp-setup --account macserver"
-  say "2. Add it to Google Authenticator (manual entry, then verify the 6-digit code)."
-  say "3. Enrol it: sudo macserver doomsday setup-totp <SECRET>"
+  if [[ -f $TOTP_FILE ]]; then
+    confirm "An Authenticator is already enrolled. Replace it?" n || return 0
+  fi
+  local out secret url code
+  out=$(python3 "$DOOMSDAY_PY" totp-setup --account "$(hostname)") || die "could not create a secret"
+  secret=$(sed -n 's/^secret: //p' <<<"$out")
+  url=$(sed -n 's/^url: //p' <<<"$out")
+  [[ -n $secret && -n $url ]] || die "could not create a secret"
+  say "Open Google Authenticator (or any authenticator app) > + > Scan a QR code:"
+  if command -v qrencode >/dev/null 2>&1; then
+    qrencode -t ANSIUTF8 -m 2 "$url"
+  else
+    warn "qrencode is not installed (sudo apt install qrencode); use 'Enter a setup key' instead."
+  fi
+  say "No camera? Choose 'Enter a setup key' and type: $secret (time based)"
+  code=$(ask "Type the 6-digit code the app shows now")
+  if ! python3 "$DOOMSDAY_PY" totp-verify --secret "$secret" "$code" >/dev/null; then
+    die "that code did not match, nothing was saved (check the Mac's clock and try again)"
+  fi
+  install -d -m 0755 /etc/macserver
+  printf '%s\n' "$secret" > "$TOTP_FILE.tmp" && chmod 0600 "$TOTP_FILE.tmp" && mv "$TOTP_FILE.tmp" "$TOTP_FILE"
+  ok "Authenticator enrolled; unlock and restore now ask for its code"
 }
 
 do_setup_gh() {  # do_setup_gh [owner/repo]

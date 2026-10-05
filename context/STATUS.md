@@ -653,3 +653,17 @@ caught.
 
 Not verified: real isolation/restore cycle on the Mac (needs owner at
 console), alert email delivery, TOTP enrolment.
+
+## 2026-10-04: Authenticator enrolment with a QR code
+
+`sudo macserver doomsday setup-totp` (no argument) now creates the secret, shows a QR
+code in the terminal (`qrencode`, installed by the doomsday step; falls back to the
+setup key as text), asks for the 6-digit code the app shows and saves the secret only
+if that code matches. `doomsday.py totp-verify --secret S CODE` checks an unsaved
+secret. `setup-totp <SECRET>` still works for a secret made elsewhere.
+
+Verified: `tests/run.sh` in WSL Debian (157 tests, 1 skipped), ShellCheck clean; new
+tests for the verify CLI and for "QR shown, code checked before the file is written".
+Not verified: the QR rendering on the Mac's console or in the admin web terminal, and
+a real enrolment with Google Authenticator. Codes are still not single-use (replay
+within about 90 s is possible).
