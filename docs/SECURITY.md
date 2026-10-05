@@ -9,9 +9,11 @@
 | Studio + full Supabase API | 127.0.0.1:8000, published by `tailscale serve` on :8443 | Your tailnet; Studio has its own password |
 | PostgreSQL / pooler | 127.0.0.1:5432 / 6543 | This Mac only |
 | Public app API | none: cloudflared connects out to Cloudflare | The Internet, only the paths below |
+| RustDesk server (optional) | hbbs and hbbr on TCP 21115-21117, UDP 21116 (host networking) | The Internet, if the owner forwards those ports on the router; see [RUSTDESK.md](RUSTDESK.md) |
 
 - **Firewall** (`host/nftables.conf`): input is dropped unless it arrives on
-  `tailscale0`, is a reply, ICMP (pings rate-limited), DHCP, or Tailscale's UDP port.
+  `tailscale0`, is a reply, ICMP (pings rate-limited), DHCP, Tailscale's UDP port, or the
+  RustDesk server's TCP 21115-21117 and UDP 21116 (`tests/test_repo.py` pins that list).
   A forward chain that runs before Docker's drops every new connection from the Wi-Fi,
   a cable or a phone to a container, whatever address the container publishes on. It
   lives in its own table and does not flush Docker's or Tailscale's rules.
@@ -29,8 +31,8 @@
 - **Kernel network settings** (`host/sysctl.conf`): no ICMP redirects or source
   routing accepted or sent, SYN cookies, loose reverse-path filtering (strict mode
   breaks Tailscale).
-- **No OpenSSH, no router port forwarding.** The installer offers to disable OpenSSH
-  if Debian installed it.
+- **No OpenSSH, and no router port forwarding except the optional RustDesk server's
+  four ports.** The installer offers to disable OpenSSH if Debian installed it.
 
 ## Public route
 

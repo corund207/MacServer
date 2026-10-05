@@ -31,6 +31,7 @@ Usage: sudo macserver COMMAND
   public on         start it again
   idle [status|auto|on|off]   low-power mode when nobody is connected (auto by default)
   doomsday ...        lockdown on attack: status|isolate|unlock|restore|on|off|test|allow|setup-totp|setup-gh
+  rustdesk setup|on|off|key|update   self-hosted RustDesk server (hbbs + hbbr)
   wifi              set up or change the built-in Wi-Fi
   doctor            check network, DNS and T2 drivers
   reboot            reboot the Mac (with disk encryption passphrase reminder)
@@ -159,6 +160,17 @@ main() {
       case ${1:-status} in
         on|off) need_root autoupdate; conf_set AUTO_UPDATE "$1"; ok "automatic updates $1" ;;
         status) jq -r '"\(.state): \(.message)"' /run/macserver/self-update.json 2>/dev/null || say "no update check yet" ;;
+        *) usage; exit 2 ;;
+      esac ;;
+    rustdesk)
+      need_root rustdesk
+      case ${1:-} in
+        setup) rustdesk_setup ;;
+        on) rustdesk_compose up -d; ok "RustDesk server on" ;;
+        off) rustdesk_compose down; ok "RustDesk server off (data kept in $RUSTDESK_DIR/data)" ;;
+        update) install -m 0644 "$SRC/rustdesk/compose.yml" "$RUSTDESK_DIR/compose.yml"   # picks up a new image pin
+                rustdesk_compose pull --quiet; rustdesk_compose up -d; ok "RustDesk server updated" ;;
+        key) rustdesk_key ;;
         *) usage; exit 2 ;;
       esac ;;
     wifi) need_root wifi; wifi_setup ;;

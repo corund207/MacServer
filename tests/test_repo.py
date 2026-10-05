@@ -40,6 +40,18 @@ class RepoTests(unittest.TestCase):
     def test_no_host_ports_in_gateway(self):
         self.assertNotIn("ports:", (ROOT / "gateway/compose.yml").read_text())
 
+    def test_rustdesk_compose(self):
+        compose = (ROOT / "rustdesk/compose.yml").read_text()
+        self.assertRegex(compose, r"image:\s*rustdesk/rustdesk-server:[\w.-]+@sha256:[0-9a-f]{64}\n")
+        self.assertEqual(compose.count("network_mode: host"), 1)  # shared via the anchor
+        self.assertIn("restart: unless-stopped", compose)
+        self.assertIn("./data:/root", compose)
+        self.assertIn("-r", compose)
+        self.assertIn(":21117", compose)
+        self.assertNotIn("ALWAYS_USE_RELAY", compose)  # direct connections stay direct
+        self.assertNotIn("id_ed25519", compose)
+        self.assertNotRegex(compose, r"(?m)^\s+ports:")  # host networking: ports are not mapped
+
     def test_docker_binds_loopback(self):
         self.assertEqual(json.loads((ROOT / "host/docker-daemon.json").read_text())["ip"], "127.0.0.1")
         # The daemon setting does not cover Compose networks: Supabase's published ports
@@ -55,7 +67,10 @@ class RepoTests(unittest.TestCase):
                           if not line.lstrip().startswith("#"))
         self.assertIn("policy drop;", rules)
         self.assertNotIn("flush ruleset", rules)
-        self.assertNotRegex(rules, r"tcp dport")
+        # The only ports admitted from outside (besides Tailscale's UDP 41641) are the
+        # self-hosted RustDesk server's: TCP 21115-21117 and UDP 21116, nothing else.
+        self.assertEqual(re.findall(r"tcp dport (\{[^}]*\}|\S+)", rules), ["{ 21115, 21116, 21117 }"])
+        self.assertEqual(re.findall(r"udp dport (\S+)", rules), ["41641", "21116", "68", "546"])  # + DHCP replies
         # Docker forwards published ports around the input chain: new connections from
         # the LAN must be dropped in a forward chain that runs before Docker's.
         self.assertRegex(rules, r"hook forward priority filter - 1")

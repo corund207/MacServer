@@ -667,3 +667,28 @@ tests for the verify CLI and for "QR shown, code checked before the file is writ
 Not verified: the QR rendering on the Mac's console or in the admin web terminal, and
 a real enrolment with Google Authenticator. Codes are still not single-use (replay
 within about 90 s is possible).
+
+## 2026-10-04: self-hosted RustDesk server (hbbs + hbbr)
+
+Replaced a hand-made RustDesk setup (`/opt/rustdesk`, unpinned, no `-r`, ports closed
+by the firewall so it was unreachable from outside) with a project-managed one:
+`rustdesk/compose.yml` (image pinned `1.1.16@sha256:8ecdab65...`, host networking,
+`./data:/root`, `restart: unless-stopped`, `hbbs -r $RUSTDESK_RELAY:21117`, no
+always-relay switch, `cap_drop: ALL`), deployed to `/opt/macserver/rustdesk` by the new
+optional `rustdesk` install step or `sudo macserver rustdesk setup`. `host/nftables.conf`
+admits TCP 21115-21117 and UDP 21116 (the web-client ports 21118/21119 stay closed);
+`tests/test_repo.py` now pins that exact list. Docs: `docs/RUSTDESK.md`.
+
+Done on the Mac by hand (the updater has not shipped this commit yet): backed up the old
+data and firewall file to `/var/backups/macserver/`, removed the old `hbbs`/`hbbr`
+containers, started the new project with a fresh keypair and `RUSTDESK_RELAY` set to
+the public IP, loaded the new firewall rules.
+
+Verified: `ss` shows hbbs on TCP 21115/21116/21118 + UDP 21116 and hbbr on TCP 21117/21119;
+logs show `ALWAYS_USE_RELAY=N`, `relay-servers=["<ip>:21117"]`, no errors; TCP 21115-21117
+answer from another PC on the LAN and 21118 does not; the repo invariants pass.
+
+Not verified: a real client session (direct and relayed), the router forwards (the owner
+adds them; check for CGNAT first), a DDNS name (none yet: the relay is the public IP, which
+can change), the new install step in the installer-image VM test (CI), and whether the
+doomsday detector stays quiet with public RustDesk traffic (`macserver doomsday test`).

@@ -1,0 +1,25 @@
+# Self-hosted RustDesk server. hbbs (ID/rendezvous) hands the two clients each other's
+# address so they connect directly; hbbr (relay) is only the fallback. Relaying is never
+# forced (no always-relay switch). Host networking: hbbs needs the clients' real source
+# addresses. The firewall (host/nftables.conf) admits only TCP 21115-21117 and
+# UDP 21116 from outside. RUSTDESK_RELAY (the public DDNS name) comes from ./.env.
+name: macserver-rustdesk
+
+x-rustdesk: &rustdesk
+  image: rustdesk/rustdesk-server:1.1.16@sha256:8ecdab65deb7c84652a626380e31d11a8f1fbafd97916d57f95c20628f943c00
+  network_mode: host
+  restart: unless-stopped
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  volumes:
+    - ./data:/root
+
+services:
+  hbbs:
+    <<: *rustdesk
+    command: ["hbbs", "-r", "${RUSTDESK_RELAY:?set RUSTDESK_RELAY in .env}:21117"]
+    depends_on: [hbbr]
+
+  hbbr:
+    <<: *rustdesk
+    command: ["hbbr"]

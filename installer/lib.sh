@@ -9,6 +9,7 @@ MACSERVER_STATE=$MACSERVER_STATE_DIR/install.state
 MACSERVER_OPT=/opt/macserver
 SUPABASE_DIR=$MACSERVER_OPT/supabase
 GATEWAY_DIR=$MACSERVER_OPT/gateway
+RUSTDESK_DIR=$MACSERVER_OPT/rustdesk
 ADMIN_DIR=$MACSERVER_OPT/admin
 ADMIN_PORT=8090
 STUDIO_TAILNET_PORT=8443
@@ -177,6 +178,7 @@ tailnet_name() {  # MagicDNS name without trailing dot, or empty
 
 supabase_compose() { (cd "$SUPABASE_DIR" && docker compose "$@"); }
 gateway_compose() { docker compose -p macserver-gateway --project-directory "$GATEWAY_DIR" -f "$GATEWAY_DIR/compose.yml" "$@"; }
+rustdesk_compose() { docker compose -p macserver-rustdesk --project-directory "$RUSTDESK_DIR" -f "$RUSTDESK_DIR/compose.yml" "$@"; }
 
 # make_initrds ROOT: create or refresh the initramfs of every kernel under ROOT.
 # (update-initramfs -u only refreshes existing images; a kernel installed before

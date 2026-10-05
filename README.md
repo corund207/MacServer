@@ -44,5 +44,5 @@ sudo macserver public off  # take the API off the Internet now
 ```
 
 More: [guide](docs/GUIDE.md) · [troubleshooting](docs/TROUBLESHOOTING.md) ·
-[network](docs/NETWORK.md) · [security design](docs/SECURITY.md) ·
+[network](docs/NETWORK.md) · [RustDesk server](docs/RUSTDESK.md) · [security design](docs/SECURITY.md) ·
 [install Debian yourself](docs/MANUAL-INSTALL.md) · [development](docs/DEVELOPMENT.md)

@@ -11,7 +11,9 @@ manually installed Debian 13.
 ## Security rules
 
 - Administration happens only over Tailscale: Tailscale SSH and `tailscale serve`.
-  No SSH daemon, no router port forwarding, and nothing listens on the LAN.
+  No SSH daemon, no router port forwarding, and nothing listens on the LAN. The one
+  exception is the optional self-hosted RustDesk server (`rustdesk/`): TCP 21115-21117
+  and UDP 21116 are open in `host/nftables.conf`, and nothing else may be added.
 - Docker publishes ports on 127.0.0.1 only (`host/docker-daemon.json`). Never
   publish PostgreSQL, Studio, postgres-meta, Docker or the admin page publicly.
 - The public route is outbound-only (cloudflared) and passes only the Supabase

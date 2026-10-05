@@ -19,7 +19,7 @@ for f in "$SRC"/installer/steps/*.sh; do
   source "$f"
 done
 
-STEPS=(preflight network base t2 host reboot wifi tailscale firewall docker supabase admin claude autoupdate public doomsday finish)
+STEPS=(preflight network base t2 host reboot wifi tailscale firewall docker supabase admin claude autoupdate public doomsday rustdesk finish)
 
 declare -A TITLE=(
   [preflight]="Check this Mac and Debian"
@@ -38,6 +38,7 @@ declare -A TITLE=(
   [autoupdate]="Keep MacServer up to date from GitHub (after CI passes)"
   [public]="Public API route through Cloudflare (optional)"
   [doomsday]="Doomsday lockdown on attack (on by default)"
+  [rustdesk]="Self-hosted RustDesk server (optional)"
   [finish]="Summary"
 )
 
