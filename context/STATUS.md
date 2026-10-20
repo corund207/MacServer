@@ -668,6 +668,16 @@ Not verified: the QR rendering on the Mac's console or in the admin web terminal
 a real enrolment with Google Authenticator. Codes are still not single-use (replay
 within about 90 s is possible).
 
+## 2026-10-20: public RustDesk route is the web-client ports over a Cloudflare Tunnel (the connection is behind CGNAT)
+
+Found while setting the public name: on the home connection `curl ifconfig.me` (64.135.140.29) differs from the router's WAN IP, so router forwards cannot work. The setup from 2026-10-04 was therefore completed differently: `RUSTDESK_RELAY=rustdesk.jonahchang.com` in `/opt/macserver/rustdesk/.env` (hbbs logs `relay-servers=["rustdesk.jonahchang.com:21117"]`, `ALWAYS_USE_RELAY=N`), and a second compose project `~/rustdesk-ws` on the Mac runs only cloudflared (same pinned image `2026.9.3@sha256:072c067...` as gateway/compose.yml, host networking, publishes nothing, token in `~/rustdesk-ws/.env` 0600). Tunnel ingress (remote-managed, seen in cloudflared's log): `rustdesk.jonahchang.com` -> `^/ws/id` to `127.0.0.1:21118`, `^/ws/relay` to `127.0.0.1:21119`, everything else 404, warp-routing off.
+
+Cloudflare terminates WSS and sets X-Real-IP itself, so the web-client-ports spoofing warning is contained by design: the firewall accepts 21115-21117/TCP and 21116/UDP but never 21118/21119, so only this tunnel reaches them (checked `nft list table inet macserver`).
+
+Verified on 2026-10-20: hbbs/hbbr up (hbbr 10 days, hbbs 16 h after the relay change); `ss` shows hbbs on 21115/21116 TCP+UDP and 21118, hbbr on 21117/21119; an HTTP/1.1 WebSocket handshake through `https://rustdesk.jonahchang.com/ws/id` and `/ws/relay` returns `101 Switching Protocols` both from the Mac and from the Windows PC (the earlier 502 probes were plain HTTP ones, which correctly fail: these are upgrade-only ports). `macserver rustdesk key` prints `w0VRhJI6MHzbHbULGlK04uGheb54esQP8ZyScyfeEps=`; `macserver doomsday test` is quiet (mode on, state normal). Docs: docs/RUSTDESK.md gains the CGNAT section with web-client IDs `wss://rustdesk.jonahchang.com/ws/id` + `/ws/relay`, and tailnet devices speak to hbbs directly at `macserver.tail9e3c7b.ts.net` (ports 21115-21117, UDP 21116), since the firewall admits everything from `tailscale0`.
+
+Not verified yet: a real RustDesk session (web client direct and relayed; the hand-held PC's installed client can only reach the server while inside the tailnet), and the tunnel's price/limits under real relay traffic (web-only route through Cloudflare).
+
 ## 2026-10-04: self-hosted RustDesk server (hbbs + hbbr)
 
 Replaced a hand-made RustDesk setup (`/opt/rustdesk`, unpinned, no `-r`, ports closed

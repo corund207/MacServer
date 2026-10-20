@@ -33,6 +33,46 @@ outside the Mac:
 3. **A real public IP.** Compare `curl ifconfig.me` on the Mac with the router's WAN IP.
    If they differ, the provider uses CGNAT and forwarding cannot work.
 
+## If the connection is behind CGNAT (jonahchang.com setup)
+
+When `curl ifconfig.me` differs from the router's WAN IP, port forwarding is impossible.
+MacServer then exposes the server's **web-client ports only, through a Cloudflare Tunnel**
+(outbound-only, like the Supabase route; no ports in, nothing new on the firewall):
+
+- hbbs and hbbr run the same way (`macserver-rustdesk`, host networking, data in
+  `/opt/macserver/rustdesk/data`), but with `RUSTDESK_RELAY=<your domain>` in its `.env`.
+- A second, tiny compose project on the Mac (`~/rustdesk-ws`, run as the owner) runs only
+  cloudflared, the same pinned image as MacServer's own gateway, with the tunnel token in
+  `~/rustdesk-ws/.env` (0600). It publishes nothing; it only dials out.
+- The tunnel's ingress (set in the Cloudflare Zero Trust dashboard) is exactly two routes:
+  `ws://<domain>/ws/id -> 127.0.0.1:21118` and `ws://<domain>/ws/relay -> 127.0.0.1:21119`.
+  Every other path on the hostname gets a 404. The gateways are Cloudflare itself (WSS), so
+  X-Real-IP is set by Cloudflare and the spoofing warning on the web-client ports applies
+  to nobody else: the firewall does not admit 21118/21119 from the LAN or the Internet at
+  all, so only this tunnel reaches them.
+
+**Web client settings** (the browser-based RustDesk client, `rustdesk.com/web`, or a
+self-hosted copy): ID server `wss://<domain>/ws/id`, relay `wss://<domain>/ws/relay`,
+key `sudo macserver rustdesk key`. Only the web client speaks websocket.
+
+**RustDesk apps on devices inside your tailnet** can skip all of that: with Tailscale on,
+set ID/relay server to the Mac (`<macserver host>.<tailnet>.ts.net`) — the firewall admits
+every thing arriving over `tailscale0`, so ports 21115-21117 and UDP 21116 work directly,
+even installed (non-web) apps. Direct sessions will connect straight through hbbs.
+
+## Check the public route is alive
+
+On the Mac, `sudo docker compose logs -f` in `~/rustdesk-ws` shows the tunnel state, and
+an HTTP/1.1 WebSocket handshake must return `101 Switching Protocols` (a plain HTTP probe
+correctly gets a 502 / dropped connection):
+
+```
+curl -sk -i --http1.1 \
+  -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
+  -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
+  https://<domain>/ws/id
+```
+
 ## Client settings (both RustDesk apps)
 
 Settings > Network > ID/Relay server (unlock first):
