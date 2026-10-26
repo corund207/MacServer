@@ -16,7 +16,7 @@ installer built around the MacBook Air's T2 chip.
 - `admin/`: root status collector plus a read-only admin page behind `tailscale serve`.
 - `gateway/`: Caddy path filter plus cloudflared (pinned by digest).
 - Pins: Supabase `self-hosted/v0.8.2` = commit `564eab8a…` (was wrongly the tag object `47111f95…` until 2026-09-28); APT key fingerprints for
-  t2linux, Docker and Tailscale; Caddy 2.11.4, cloudflared 2026.9.3.
+  t2linux, Docker and Tailscale; Caddy 2.11.4, cloudflared 2026.10.3.
 
 ### Verified
 
@@ -702,3 +702,23 @@ Not verified: a real client session (direct and relayed), the router forwards (t
 adds them; check for CGNAT first), a DDNS name (none yet: the relay is the public IP, which
 can change), the new install step in the installer-image VM test (CI), and whether the
 doomsday detector stays quiet with public RustDesk traffic (`macserver doomsday test`).
+
+## 2026-10-26: cloudflared 2026.10.3 (eMudhra intermediates)
+
+Cloudflare asked every tunnel to move to cloudflared 2026.10.2 or later: older builds
+still trust eight eMudhra (emSign) intermediates with weak keys. Pin bumped to
+`2026.10.3@sha256:faa8e0a1…` (multi-arch index, checked on Docker Hub) in
+`gateway/compose.yml` and the two jonahchang.com stacks (`~/apps`, `~/rustdesk-ws`).
+
+Done on the Mac by hand (the updater does not re-run the gateway step): the running
+gateway is `~/api-gateway` (not `/opt/macserver/gateway`). Each compose file was backed
+up to `compose.yml.bak-2026-10-26`, then only the cloudflared service was recreated, one tunnel at a
+time. All origins are plain HTTP, so the stricter trust store rejects nothing.
+
+Verified: all three containers log `Version 2026.10.3` and 4 registered connections, no
+ERR/WRN; vexvortex, jonahchang.com and planesight answer 200 through the tunnel.
+Found, not caused by this: `planesight-api.jonahchang.com` returned 404 because the
+remote-managed ingress of `macserver-apps` had no rule for that hostname (the DNS record
+existed). Fixed in `jonahchang.com/domains.json` (`planesight-api` ->
+`http://planesight:8080`) and applied with `cloudflare-setup.mjs apply`; `/`,
+`/api/health` answer 200 and `/ws` upgrades (101).
