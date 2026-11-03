@@ -750,3 +750,39 @@ suite has six failures that are identical with and without this change: `pwd`, `
 and POSIX file modes do not exist there (`test_collector`, `test_live_stats`,
 `test_terminal`, `test_once_prints_a_summary`, and two in `test_fans`); run it with
 `PYTHONUTF8=1`.
+
+## 2026-11-03: status.json gains the detail sections (for the redesigned dashboards)
+
+`admin/collect_status.py` now also writes: `system` (host facts and logged-in sessions; CPU model,
+cores, governor, turbo, frequency range and pressure-stall averages; memory detail; swap devices;
+run queue, open files, conntrack fill; filesystems with space and inodes; disks with NVMe state and
+firmware; Docker's disk use; every network interface with counters, errors, drops and addresses;
+Wi-Fi network, band, channel, rate and live signal; TCP health; every temperature sensor with its
+own limits; the T2 fans; battery health, cycles, power flow and time left; per compose project
+roll-ups; every Tailscale device with route and last seen; Postgres size, connections, cache hit,
+transactions per second, auth users and storage objects), per-container extras (restarts, start
+time, health, processes, memory limit, network and block-I/O rates), and in `live` the CPU time
+breakdown (user/system/iowait/irq/steal), kernel rates (context switches, interrupts, forks, swap
+traffic, major faults) and per-disk throughput, IOPS and busy %.
+
+Fixed on the way: `host.sensors.fans_rpm` was always empty on this Mac because the T2 fans are on
+the SMC's ACPI device, not hwmon (now read from `/sys/bus/acpi/devices/APP0001:00`); Tailscale's
+`funnel-ingress-node` relays (20+ of them here) counted as "devices online" and are now left out
+of `peers_online`; Wi-Fi's reported -256 dBm noise floor is dropped.
+
+Fixed, found while checking how the new code gets installed: `admin/units.py`, imported by both
+`collect_status.py` and the dashboard, was never installed by any step. It is on this Mac only
+because it was copied by hand on 2026-10-01 (file date), so a fresh install from the USB image would
+have stopped both with `No module named 'units'`, and CI cannot tell (the VM test waits for a log
+line). `install_tools` now installs it; `test_python_modules_that_installed_scripts_import_are_installed_too`
+fails without that line.
+
+Verified: 174 tests on the Windows PC (the collector tests now import there: `pwd` is optional);
+each reader has a test fed text copied from this Mac. The new collector was run twice
+on the Mac as the unprivileged `admin` user with output in /tmp (removed after): all sections filled, no errors,
+31 KB of JSON; the new code costs about 0.25 s when its caches expire (every 10 s) and the first
+`docker system df` takes 4.7 s once per 15 minutes.
+
+Not verified: a run as root from the real timer (the Mac's root-only sources: `dmesg`, conntrack
+flows), the installer change in the VM test (CI), and the six Windows-only test failures
+(`getloadavg`, `statvfs`, `pty`, POSIX file modes) which are the same with or without these changes.

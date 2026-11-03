@@ -5,6 +5,9 @@ install_tools() {
   install -d -m 0755 /usr/local/lib/macserver
   install -m 0644 "$SRC/installer/lib.sh" /usr/local/lib/macserver/lib.sh
   install -m 0644 "$SRC/installer/steps/"*.sh -t /usr/local/lib/macserver/
+  # collect_status.py and the dashboard import units.py from their own directory; without it
+  # both stop at start-up with "No module named 'units'".
+  install -m 0644 "$SRC/admin/units.py" /usr/local/lib/macserver/units.py
   install -m 0755 "$SRC/admin/collect_status.py" /usr/local/lib/macserver/collect_status.py
   install -m 0755 "$SRC/admin/idle.py" /usr/local/lib/macserver/idle
   install -m 0755 "$SRC/admin/tui.py" /usr/local/lib/macserver/dashboard

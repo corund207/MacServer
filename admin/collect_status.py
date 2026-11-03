@@ -3,6 +3,18 @@
 
 Runs as root from macserver-status.timer (every 2 s). The output holds no secrets: only the
 public (anon/publishable) app keys, which are meant to ship inside client apps.
+
+Sections of status.json (each is optional and never costs the others):
+  host, tailscale, containers, live, debug   the health snapshot and the live graphs' numbers
+  idle, doomsday, claude, macserver_update   what the dashboards' state rows show
+  system     the detail pages: host (OS, boot time, sessions), cpu (model, governor, pressure,
+             throttle counts), memory, swap, kernel (run queue, open files, conntrack), storage
+             (filesystems, disks, Docker's disk use), network (interfaces, Wi-Fi, TCP), sensors
+             (every temperature, the T2 fans), power (battery health, time left), docker (per
+             compose project), tailscale (every device, route, key expiry), db (Postgres)
+Per-container extras (restarts, started, health, pids, memory limit, network and block I/O rates)
+are merged into each entry of `containers`; live.cpu.times, live.rates and live.disks add the CPU
+time breakdown, kernel rates and per-disk throughput and busy %.
 """
 import calendar
 import collections
@@ -10,7 +22,10 @@ import ipaddress
 import json
 import os
 from pathlib import Path
-import pwd
+try:
+    import pwd
+except ImportError:   # Windows: only the tests are ever run there, never the collector itself
+    pwd = None
 import re
 import shutil
 import socket
@@ -67,7 +82,7 @@ def memory(meminfo_text):
     return {"total": total, "used": total - fields.get("MemAvailable", total)}
 
 
-def hwmon(root="/sys/class/hwmon"):
+def hwmon(root="/sys/class/hwmon", acpi_fans="/sys/bus/acpi/devices/APP0001:00"):
     """Hottest CPU package temperature (C) and fan speeds (RPM)."""
     temps, fans = [], []
     for mon in sorted(Path(root).glob("hwmon*")):
@@ -81,6 +96,8 @@ def hwmon(root="/sys/class/hwmon"):
             value = read(sensor)
             if value and value.isdigit():
                 fans.append(int(value))
+    if not fans:   # T2 Macs: the fans are on the SMC's ACPI device, not in hwmon
+        fans = [f["rpm"] for f in fan_list(acpi_fans, root)]
     return {"cpu_temp_c": max(temps) if temps else None, "fans_rpm": fans}
 
 
@@ -136,6 +153,11 @@ def containers(ps_json_lines):
     return sorted(result, key=lambda c: (c["project"], c["name"]))
 
 
+def is_funnel_node(peer):
+    """Tailscale's own Funnel ingress relays show up as dozens of online peers; they are not the owner's devices."""
+    return peer.get("HostName") == "funnel-ingress-node"
+
+
 def tailscale(status_text):
     try:
         data = json.loads(status_text or "")
@@ -145,7 +167,7 @@ def tailscale(status_text):
     peers = data.get("Peer") or {}
     return {"state": data.get("BackendState", "unknown"), "name": (me.get("DNSName") or "").rstrip("."),
             "ips": me.get("TailscaleIPs") or [], "online": bool(me.get("Online")),
-            "peers_online": sum(1 for p in peers.values() if p.get("Online"))}
+            "peers_online": sum(1 for p in peers.values() if p.get("Online") and not is_funnel_node(p))}
 
 
 def container_stats(stats_json_lines):
@@ -243,6 +265,50 @@ def disk_bytes(diskstats_text, block_root="/sys/block"):
     return read_b, write_b
 
 
+CPU_KINDS = ("user", "nice", "system", "idle", "iowait", "irq", "softirq", "steal")
+
+
+def cpu_breakdown(stat_text):
+    """Cumulative clock ticks of the all-CPU line, by kind of work (/proc/stat's first line)."""
+    for line in stat_text.splitlines():
+        if line.startswith("cpu "):
+            f = [int(x) for x in line.split()[1:9]]
+            return dict(zip(CPU_KINDS, f + [0] * (8 - len(f))))
+    return {}
+
+
+def stat_counters(stat_text):
+    """Cumulative counters from /proc/stat: context switches, interrupts, forks; boot time, run queue."""
+    out = {}
+    for line in stat_text.splitlines():
+        name, _, rest = line.partition(" ")
+        first = rest.split()[0] if rest.split() else ""
+        if first.isdigit() and name in ("ctxt", "intr", "processes", "btime", "procs_running", "procs_blocked"):
+            out[name] = int(first)
+    return out
+
+
+def vmstat_counters(text):
+    """Swap traffic, page faults and OOM kills (cumulative) from /proc/vmstat."""
+    out = {}
+    for line in text.splitlines():
+        name, _, value = line.partition(" ")
+        if name in ("pswpin", "pswpout", "pgmajfault", "pgfault", "oom_kill") and value.strip().isdigit():
+            out[name] = int(value)
+    return out
+
+
+def disk_devices(diskstats_text, block_root="/sys/block"):
+    """Per whole disk: (sectors read, sectors written, reads, writes, milliseconds busy)."""
+    out = {}
+    for line in diskstats_text.splitlines():
+        f = line.split()
+        if len(f) < 13 or SKIP_DISKS.match(f[2]) or not Path(block_root, f[2]).exists():
+            continue
+        out[f[2]] = (int(f[5]), int(f[9]), int(f[3]), int(f[7]), int(f[12]))
+    return out
+
+
 def process_ticks(proc_root, page_size):
     """{pid: {name, user, ticks, start, rss, state, threads}} for every process. Only the
     short process name is reported: command lines can carry secrets."""
@@ -261,7 +327,7 @@ def process_ticks(proc_root, page_size):
             continue
         try:
             user = pwd.getpwuid(uid).pw_name
-        except KeyError:
+        except (KeyError, AttributeError):
             user = str(uid)
         out[int(entry.name)] = {"name": head.partition("(")[2][:24], "user": user, "state": f[0],
                                 "ticks": int(f[11]) + int(f[12]), "start": int(f[19]),
@@ -293,9 +359,12 @@ def live_stats(prev, now, proc_root="/proc", sys_root="/sys", tick_hz=None, page
     tick_hz = tick_hz or os.sysconf("SC_CLK_TCK")
     page_size = page_size or os.sysconf("SC_PAGE_SIZE")
     p = Path(proc_root)
-    cpu = cpu_times(read(p / "stat", ""))
+    stat_text = read(p / "stat", "")
+    cpu = cpu_times(stat_text)
+    kinds, counters, vm = cpu_breakdown(stat_text), stat_counters(stat_text), vmstat_counters(read(p / "vmstat", ""))
     net = net_bytes(read(p / "net/dev", ""))
     disk = disk_bytes(read(p / "diskstats", ""), f"{sys_root}/block")
+    disks_now = disk_devices(read(p / "diskstats", ""), f"{sys_root}/block")
     procs = process_ticks(p, page_size)
     span = now - prev.get("at", now)
     known = span > 0
@@ -330,10 +399,48 @@ def live_stats(prev, now, proc_root="/proc", sys_root="/sys", tick_hz=None, page
                      "cpu": cpu_pct, "rss": info["rss"], "threads": info["threads"],
                      "mem": round(100 * info["rss"] / mem_total, 1) if mem_total else 0.0})
     busy.sort(key=lambda x: (-x["cpu"], -x["rss"]))
+
+    def times():
+        """Where the CPU's time went since the last reading, in % (nice counts as user, softirq as irq)."""
+        before = prev.get("cpu_kinds")
+        if not known or not before:
+            return {}
+        d = {k: max(kinds.get(k, 0) - before.get(k, 0), 0) for k in CPU_KINDS}
+        total = sum(d.values())
+        if not total:
+            return {}
+        share = {"user": d["user"] + d["nice"], "system": d["system"], "iowait": d["iowait"],
+                 "irq": d["irq"] + d["softirq"], "steal": d["steal"]}
+        return {k: round(100 * v / total, 1) for k, v in share.items()}
+
+    def per_second(table, before, name, scale=1):
+        if not known or name not in table or name not in (before or {}):
+            return 0
+        return round(max(table[name] - before[name], 0) * scale / span)
+
+    disks = {}
+    for name, now_d in disks_now.items():
+        old = (prev.get("disks") or {}).get(name)
+        if known and old:
+            disks[name] = {"read": round(max(now_d[0] - old[0], 0) * 512 / span),
+                           "write": round(max(now_d[1] - old[1], 0) * 512 / span),
+                           "riops": round(max(now_d[2] - old[2], 0) / span),
+                           "wiops": round(max(now_d[3] - old[3], 0) / span),
+                           "busy": round(min(100.0, max(now_d[4] - old[4], 0) / (span * 10)), 1)}
+        else:
+            disks[name] = {"read": 0, "write": 0, "riops": 0, "wiops": 0, "busy": 0.0}
     stats = {
         "span_s": round(span, 2) if known else 0,
         "cpu": {"total": pct("cpu") if "cpu" in cpu else 0.0, "cores": [pct(n) for n in cores],
-                "freq_mhz": cpu_freqs(f"{sys_root}/devices/system/cpu")},
+                "freq_mhz": cpu_freqs(f"{sys_root}/devices/system/cpu"), "times": times()},
+        "rates": {"ctxt": per_second(counters, prev.get("stat"), "ctxt"),
+                  "intr": per_second(counters, prev.get("stat"), "intr"),
+                  "forks": per_second(counters, prev.get("stat"), "processes"),
+                  "swap_in": per_second(vm, prev.get("vm"), "pswpin", page_size),
+                  "swap_out": per_second(vm, prev.get("vm"), "pswpout", page_size),
+                  "major_faults": per_second(vm, prev.get("vm"), "pgmajfault")},
+        "run_queue": {"running": counters.get("procs_running", 0), "blocked": counters.get("procs_blocked", 0)},
+        "disks": disks,
         "mem": {"total": mem_total, "used": mem_total - mem.get("MemAvailable", mem_total),
                 "cached": mem.get("Cached", 0), "buffers": mem.get("Buffers", 0)},
         "swap": {"total": mem.get("SwapTotal", 0), "used": mem.get("SwapTotal", 0) - mem.get("SwapFree", 0)},
@@ -344,8 +451,8 @@ def live_stats(prev, now, proc_root="/proc", sys_root="/sys", tick_hz=None, page
                   "threads": sum(i["threads"] for i in procs.values())},
         "procs": busy[:LIVE_PROCS] + sorted(busy[LIVE_PROCS:], key=lambda x: -x["rss"])[:LIVE_PROCS_BY_MEM],
     }
-    reading = {"at": now, "cpu": cpu, "net": net, "disk": disk,
-               "procs": {str(pid): (i["ticks"], i["start"]) for pid, i in procs.items()}}
+    reading = {"at": now, "cpu": cpu, "net": net, "disk": disk, "cpu_kinds": kinds, "stat": counters, "vm": vm,
+               "disks": disks_now, "procs": {str(pid): (i["ticks"], i["start"]) for pid, i in procs.items()}}
     return stats, reading
 
 
@@ -1004,6 +1111,577 @@ def idle_track(state, now, active, after_s, mode):
     return {"mode": mode, "idle": False, "since": None, "after_s": after_s, "reasons": []}
 
 
+# --- the detail pages: every stat worth showing, one section each -----------------------------
+# Every reader takes already-read text or a path root, so the tests feed it a fake /proc and
+# /sys, and every section is guarded in system_info(): one unreadable file never costs the rest.
+
+def part(fn, *args, **kwargs):
+    """Run one reader; None when it fails, so that section is simply missing."""
+    try:
+        return fn(*args, **kwargs)
+    except Exception:   # noqa: BLE001
+        return None
+
+
+def iso_epoch(stamp):
+    """Epoch seconds from an ISO time like 2026-11-02T15:13:34.1Z; None for empty or year-1 'never' values."""
+    try:
+        return calendar.timegm(time.strptime((stamp or "")[:19], "%Y-%m-%dT%H:%M:%S")) if (stamp or "")[:4] > "2000" else None
+    except ValueError:
+        return None
+
+
+def integer(text):
+    """A whole number from text (None when missing or not numeric)."""
+    try:
+        return int(str(text).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def number(text, scale=1.0):
+    """A sysfs number as float (None when missing or not numeric)."""
+    try:
+        return int(str(text).strip()) / scale
+    except (TypeError, ValueError):
+        return None
+
+
+def os_pretty(os_release_text):
+    return parse_env(os_release_text).get("PRETTY_NAME", "").strip('"')
+
+
+def logged_in(who_text):
+    """Interactive logins from `who`, without the address they came from: [{user, tty, since}]."""
+    sessions = []
+    for line in (who_text or "").splitlines():
+        f = line.split()
+        if len(f) >= 2 and f[1] != "seat0":
+            sessions.append({"user": f[0], "tty": f[1], "since": " ".join(f[2:4])})
+    return sessions
+
+
+def cpu_static(cpuinfo_text, sys_root="/sys"):
+    """Model, core/thread counts, frequency range and governor: facts that do not change."""
+    model, microcode, threads, cores = "", "", 0, set()
+    for block in cpuinfo_text.split("\n\n"):
+        f = {}
+        for line in block.splitlines():
+            key, _, value = line.partition(":")
+            f[key.strip()] = value.strip()
+        if "processor" not in f:
+            continue
+        threads += 1
+        model = model or f.get("model name", "")
+        microcode = microcode or f.get("microcode", "")
+        cores.add((f.get("physical id", "0"), f.get("core id", str(threads))))
+    cpu = Path(sys_root) / "devices/system/cpu"
+    freq = cpu / "cpu0/cpufreq"
+    no_turbo = read(cpu / "intel_pstate/no_turbo")
+    return {"model": re.sub(r"\s+", " ", re.sub(r"\((R|TM)\)|CPU|@.*", "", model)).strip(), "threads": threads,
+            "cores": len(cores) or threads, "microcode": microcode,
+            "min_mhz": number(read(freq / "cpuinfo_min_freq"), 1000), "max_mhz": number(read(freq / "cpuinfo_max_freq"), 1000),
+            "governor": read(freq / "scaling_governor"), "driver": read(freq / "scaling_driver"),
+            "turbo": None if no_turbo is None else no_turbo == "0"}
+
+
+def pressure(text):
+    """One /proc/pressure file: how long work stalled waiting for the resource, as 10/60/300 s averages (%)."""
+    out = {}
+    for line in (text or "").splitlines():
+        kind, _, rest = line.partition(" ")
+        values = dict(kv.split("=", 1) for kv in rest.split() if "=" in kv)
+        if kind in ("some", "full") and "avg10" in values:
+            out[kind] = {"avg10": float(values["avg10"]), "avg60": float(values.get("avg60", 0)),
+                         "avg300": float(values.get("avg300", 0))}
+    return out
+
+
+def read_pressure(root="/proc/pressure"):
+    return {name: pressure(read(Path(root) / name, "")) for name in ("cpu", "memory", "io") if (Path(root) / name).exists()}
+
+
+MEM_NAMES = {"MemTotal": "total", "MemFree": "free", "MemAvailable": "available", "Buffers": "buffers",
+             "Cached": "cached", "SwapCached": "swap_cached", "Active": "active", "Inactive": "inactive",
+             "AnonPages": "anon", "Mapped": "mapped", "Shmem": "shmem", "Slab": "slab",
+             "SReclaimable": "slab_reclaimable", "KernelStack": "kernel_stack", "PageTables": "page_tables",
+             "Dirty": "dirty", "Writeback": "writeback", "SwapTotal": "swap_total", "SwapFree": "swap_free",
+             "Committed_AS": "committed", "CommitLimit": "commit_limit"}
+
+
+def memory_detail(meminfo_text):
+    """Where the memory is: free, available, caches, kernel, shared, dirty, swap and commit (bytes)."""
+    f = meminfo_fields(meminfo_text)
+    out = {name: f.get(key, 0) for key, name in MEM_NAMES.items()}
+    out["used"] = out["total"] - out["available"]
+    out["swap_used"] = out["swap_total"] - out["swap_free"]
+    return out
+
+
+def swap_devices(swaps_text):
+    """[{name, kind, size, used}] in bytes (/proc/swaps lists kilobytes)."""
+    rows = []
+    for line in (swaps_text or "").splitlines()[1:]:
+        f = line.split()
+        if len(f) >= 4 and f[2].isdigit() and f[3].isdigit():
+            rows.append({"name": f[0], "kind": f[1], "size": int(f[2]) * 1024, "used": int(f[3]) * 1024})
+    return rows
+
+
+def throttle_counts(sys_root="/sys"):
+    """Times the CPU slowed itself for heat, by kind. Hyper-threads share their core's count and
+    every core shares the package's, so take the largest rather than adding the copies up."""
+    found = {"core": 0, "package": 0}
+    for kind in found:
+        for path in (Path(sys_root) / "devices/system/cpu").glob(f"cpu*/thermal_throttle/{kind}_throttle_count"):
+            found[kind] = max(found[kind], number(read(path)) or 0)
+    return {k: int(v) for k, v in found.items()}
+
+
+def kernel_facts(loadavg_text, filenr_text, conntrack_count, conntrack_max):
+    """Run queue and thread counts, open file handles and connection-tracking table fill."""
+    load = loadavg_text.split()
+    running, _, total = (load[3] if len(load) > 3 else "0/0").partition("/")
+    files = filenr_text.split()
+    return {"load": [float(x) for x in load[:3]] if len(load) >= 3 else [],
+            "sched_running": int(running or 0), "sched_total": int(total or 0),
+            "files_open": int(files[0]) if files and files[0].isdigit() else None,
+            "conntrack": {"count": integer(conntrack_count), "max": integer(conntrack_max)}}
+
+
+def iface_kind(name, base):
+    if name.startswith("tailscale"):
+        return "tailscale"
+    if name.startswith("veth"):
+        return "container"
+    if name == "docker0" or name.startswith("br-"):
+        return "bridge"
+    if (Path(base) / "wireless").exists() or name.startswith("wl"):
+        return "wifi"
+    if name.startswith(("en", "eth")):
+        return "ethernet"
+    return "other"
+
+
+def ip_addresses(ip_json_text):
+    """{interface: ["192.168.1.5/24", ...]} from `ip -j addr`, without link-local IPv6."""
+    try:
+        data = json.loads(ip_json_text or "[]")
+    except ValueError:
+        return {}
+    out = {}
+    for item in data:
+        addrs = [f"{a['local']}/{a.get('prefixlen', '')}".rstrip("/") for a in item.get("addr_info", [])
+                 if a.get("local") and a.get("scope") != "link"]
+        if addrs:
+            out[item.get("ifname", "")] = addrs
+    return out
+
+
+def interface_stats(dev_text, sys_root="/sys", addresses=None):
+    """Every network interface with its counters, link state and addresses. Container veth pairs
+    are one summed row: there is one per container and they are not worth a line each."""
+    rows, veth = [], None
+    for line in dev_text.splitlines()[2:]:
+        name, _, rest = line.partition(":")
+        name, f = name.strip(), rest.split()
+        if not name or name == "lo" or len(f) < 16:
+            continue
+        base = Path(sys_root) / "class/net" / name
+        kind = iface_kind(name, base)
+        counters = {"rx_bytes": int(f[0]), "rx_packets": int(f[1]), "rx_errors": int(f[2]), "rx_drops": int(f[3]),
+                    "tx_bytes": int(f[8]), "tx_packets": int(f[9]), "tx_errors": int(f[10]), "tx_drops": int(f[11])}
+        if kind == "container":
+            veth = veth or {"name": "containers", "kind": "container", "state": "up", "count": 0, **{k: 0 for k in counters}}
+            veth["count"] += 1
+            for k, v in counters.items():
+                veth[k] += v
+            continue
+        speed = integer(read(base / "speed"))
+        rows.append({"name": name, "kind": kind, "state": read(base / "operstate", "unknown"),
+                     "mtu": integer(read(base / "mtu")), "speed_mbps": speed if speed and speed > 0 else None,
+                     "addresses": (addresses or {}).get(name, []), **counters})
+    if veth:
+        rows.append(veth)
+    return rows
+
+
+def split_nmcli(line):
+    """Fields of one `nmcli -t` line: colons and backslashes inside a field are backslash-escaped."""
+    parts, current, escaped = [], "", False
+    for ch in line:
+        if escaped:
+            current, escaped = current + ch, False
+        elif ch == "\\":
+            escaped = True
+        elif ch == ":":
+            parts.append(current)
+            current = ""
+        else:
+            current += ch
+    parts.append(current)
+    return parts
+
+
+def first_number(text):
+    m = re.match(r"\s*(\d+)", text or "")
+    return int(m.group(1)) if m else None
+
+
+def wifi_info(nmcli_text, wireless_text="", iface=""):
+    """The connected Wi-Fi network: name, band, channel, link rate and live signal."""
+    info = None
+    for line in (nmcli_text or "").splitlines():
+        f = split_nmcli(line)
+        if len(f) >= 7 and f[0] == "*":
+            freq = first_number(f[4])
+            info = {"ssid": f[1], "signal_pct": first_number(f[2]), "rate_mbps": first_number(f[3]), "freq_mhz": freq,
+                    "channel": first_number(f[5]), "security": f[6],
+                    "band": None if freq is None else "6 GHz" if freq >= 5925 else "5 GHz" if freq >= 4900 else "2.4 GHz"}
+            break
+    if info is None:
+        return None
+    for line in (wireless_text or "").splitlines()[2:]:     # live, unlike nmcli's cached scan
+        name, _, rest = line.partition(":")
+        values = rest.split()
+        if name.strip() == iface and len(values) >= 3:
+            try:
+                info["signal_dbm"] = int(float(values[2]))
+                noise = int(float(values[3]))
+                info["noise_dbm"] = noise if noise > -200 else None      # the driver reports -256 for "no reading"
+            except (ValueError, IndexError):
+                pass
+    return info
+
+
+def tcp_stats(snmp_text, sockstat_text):
+    """TCP connection counts and health from /proc/net/snmp and /proc/net/sockstat."""
+    names = values = None
+    for line in (snmp_text or "").splitlines():
+        if line.startswith("Tcp:"):
+            if names is None:
+                names = line.split()[1:]
+            else:
+                values = line.split()[1:]
+    tcp = dict(zip(names or [], (int(v) for v in values or []))) if names and values else {}
+    sock = re.search(r"^TCP: inuse (\d+) orphan (\d+) tw (\d+)", sockstat_text or "", re.M)
+    return {"established": tcp.get("CurrEstab"), "active_opens": tcp.get("ActiveOpens"),
+            "passive_opens": tcp.get("PassiveOpens"), "failed_attempts": tcp.get("AttemptFails"),
+            "resets": tcp.get("EstabResets"), "in_segments": tcp.get("InSegs"), "out_segments": tcp.get("OutSegs"),
+            "retransmitted": tcp.get("RetransSegs"), "in_errors": tcp.get("InErrs"),
+            "in_use": int(sock.group(1)) if sock else None, "time_wait": int(sock.group(3)) if sock else None}
+
+
+REAL_FILESYSTEMS = {"ext2", "ext3", "ext4", "xfs", "btrfs", "f2fs", "vfat", "exfat", "ntfs", "ntfs3", "zfs"}
+
+
+def filesystems(mounts_text, statvfs=None):
+    """Mounted disk filesystems with space and inode use (Docker's overlays and tmpfs are left out)."""
+    statvfs = statvfs or os.statvfs
+    seen, rows = set(), []
+    for line in (mounts_text or "").splitlines():
+        f = line.split()
+        if len(f) < 4 or f[2] not in REAL_FILESYSTEMS or f[0] in seen:
+            continue
+        seen.add(f[0])
+        mount = f[1].replace("\\040", " ")
+        try:
+            st = statvfs(mount)
+        except OSError:
+            continue
+        total = st.f_blocks * st.f_frsize
+        rows.append({"mount": mount, "device": f[0], "fstype": f[2], "total": total,
+                     "used": total - st.f_bfree * st.f_frsize, "avail": st.f_bavail * st.f_frsize,
+                     "inodes": st.f_files, "inodes_used": st.f_files - st.f_ffree,
+                     "readonly": "ro" in f[3].split(",")})
+    return sorted(rows, key=lambda r: (r["mount"] != "/", r["mount"]))
+
+
+def block_devices(sys_root="/sys"):
+    """Whole disks: model, size, kind and (for NVMe) controller state and firmware."""
+    rows = []
+    block = Path(sys_root) / "block"
+    if not block.exists():
+        return rows
+    for disk in sorted(block.iterdir()):
+        if SKIP_DISKS.match(disk.name):
+            continue
+        parts = sorted(p.name for p in disk.glob(disk.name + "*") if (p / "partition").exists())
+        ctrl = re.match(r"(nvme\d+)n\d+$", disk.name)
+        nvme = Path(sys_root) / "class/nvme" / ctrl.group(1) if ctrl else None
+        rows.append({"name": disk.name, "model": read(disk / "device/model") or (read(nvme / "model") if nvme else None),
+                     "size": (integer(read(disk / "size")) or 0) * 512, "ssd": read(disk / "queue/rotational") == "0",
+                     "removable": read(disk / "removable") == "1", "partitions": len(parts),
+                     "state": read(nvme / "state") if nvme else None,
+                     "firmware": read(nvme / "firmware_rev") if nvme else None})
+    return rows
+
+
+def sensor_list(root="/sys/class/hwmon"):
+    """Every temperature sensor with its own limits: [{chip, label, temp_c, max_c, crit_c}]."""
+    rows = []
+    for mon in sorted(Path(root).glob("hwmon*")):
+        chip = read(mon / "name", "") or mon.name
+        for sensor in sorted(mon.glob("temp*_input")):
+            value = number(read(sensor), 1000)
+            if value is None or not 0 < value < 125:
+                continue
+            base = sensor.name[: -len("_input")]
+            rows.append({"chip": chip, "label": read(mon / f"{base}_label", base), "temp_c": value,
+                         "max_c": number(read(mon / f"{base}_max"), 1000), "crit_c": number(read(mon / f"{base}_crit"), 1000)})
+    return rows
+
+
+def fan_list(acpi_root="/sys/bus/acpi/devices/APP0001:00", hwmon_root="/sys/class/hwmon"):
+    """Fans: [{rpm, min, max, target}]. The T2 Macs' fans sit on the SMC's ACPI device, not in hwmon."""
+    fans = []
+    for base in (Path(acpi_root), *sorted(Path(hwmon_root).glob("hwmon*"))):
+        for sensor in sorted(base.glob("fan*_input")):
+            n = sensor.name[: -len("_input")]
+            rpm = integer(read(sensor))
+            if rpm is not None:
+                fans.append({"rpm": rpm, "min": integer(read(base / f"{n}_min")), "max": integer(read(base / f"{n}_max")),
+                             "target": integer(read(base / f"{n}_output"))})
+        if fans:
+            break
+    return fans
+
+
+def battery_detail(root="/sys/class/power_supply"):
+    """Battery and mains: charge, health, wear, power flow and the time left; None without a battery."""
+    supplies = sorted(Path(root).glob("*"))
+    ac = any(read(s / "type") == "Mains" and read(s / "online") == "1" for s in supplies)
+    for s in supplies:
+        if read(s / "type") != "Battery":
+            continue
+        status = read(s / "status", "Unknown")
+        volts, amps, watts = number(read(s / "voltage_now"), 1e6), number(read(s / "current_now"), 1e6), number(read(s / "power_now"), 1e6)
+        unit = "charge" if read(s / "charge_full") else "energy"      # microamp-hours or microwatt-hours
+        now, full, design = (number(read(s / f"{unit}_{k}")) for k in ("now", "full", "full_design"))
+        if watts is None and volts is not None and amps is not None:
+            watts = volts * abs(amps)
+        # the rate in the same unit as `now`: microwatts for energy (µWh), microamps for charge (µAh)
+        flow = (watts * 1e6 if unit == "energy" and watts is not None
+                else abs(amps) * 1e6 if unit == "charge" and amps is not None else None)
+        left = None
+        if flow and now is not None and full is not None:
+            hours = (now / flow if status == "Discharging" else (full - now) / flow if status == "Charging" else None)
+            left = int(hours * 3600) if hours is not None and hours >= 0 else None
+        volt_design = number(read(s / "voltage_min_design"), 1e6)
+        wh = (lambda v: None if v is None else round(v / 1e6 * (volt_design or volts or 0) if unit == "charge" else v / 1e6, 1))
+        percent, cycles = number(read(s / "capacity")), number(read(s / "cycle_count"))
+        return {"percent": None if percent is None else int(percent), "status": status, "ac_online": ac,
+                "cycles": None if cycles is None else int(cycles), "technology": read(s / "technology"),
+                "health_pct": round(100 * full / design, 1) if full and design else None,
+                "capacity_wh": wh(full), "design_wh": wh(design),
+                "voltage_v": volts, "current_a": amps, "power_w": None if watts is None else round(watts, 2),
+                "temp_c": number(read(s / "temp"), 10), "seconds_left": left,
+                "limit": read(s / "charge_control_end_threshold")}
+    return None
+
+
+def project_rollup(items):
+    """One row per compose project: containers, how many run, and their summed CPU and memory."""
+    projects = {}
+    for c in items:
+        p = projects.setdefault(c.get("project") or "-", {"name": c.get("project") or "-", "total": 0, "running": 0,
+                                                          "unhealthy": 0, "cpu": 0.0, "mem": 0})
+        p["total"] += 1
+        p["running"] += c.get("state") == "running"
+        p["unhealthy"] += "unhealthy" in c.get("status", "")
+        p["cpu"] = round(p["cpu"] + (c.get("cpu") or 0), 2)
+        p["mem"] += c.get("mem") or 0
+    return sorted(projects.values(), key=lambda p: (-p["mem"], p["name"]))
+
+
+def docker_inspect_lines(text):
+    """`docker inspect --format` lines (name|restarts|started|health|pid|policy|image) by container name."""
+    out = {}
+    for line in (text or "").splitlines():
+        f = line.split("|")
+        if len(f) < 7:
+            continue
+        image = f[6]
+        out[f[0].lstrip("/")] = {"restarts": integer(f[1]), "started": iso_epoch(f[2]), "health": f[3], "pid": integer(f[4]),
+                                 "policy": f[5], "image": re.sub(r"@sha256:[0-9a-f]+", "", image)}
+    return out
+
+
+def docker_df(text):
+    """`docker system df --format '{{json .}}'`: what Docker's images, volumes and build cache take."""
+    out = {}
+    for line in (text or "").splitlines():
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        kind = {"Images": "images", "Containers": "containers", "Local Volumes": "volumes", "Build Cache": "build_cache"}.get(row.get("Type"))
+        if kind:
+            out[kind] = {"count": integer(row.get("TotalCount")), "active": integer(row.get("Active")),
+                         "size": parse_size(row.get("Size", "")), "reclaimable": parse_size((row.get("Reclaimable") or "").split(" ")[0])}
+    return out
+
+
+def cgroup_extras(ids, prev, now, root=CGROUP_ROOT):
+    """Per container: process count, memory limit and block-IO rates (cgroup v2). The first run has no rates."""
+    out, io_now = {}, {}
+    span = now - prev.get("at", now)
+    for name, cid in ids.items():
+        base = root / "system.slice" / f"docker-{cid}.scope"
+        try:
+            pids = int((base / "pids.current").read_text())
+        except (OSError, ValueError):
+            continue
+        limit = read(base / "memory.max")
+        rbytes = wbytes = 0
+        for line in (read(base / "io.stat", "") or "").splitlines():
+            for field in line.split()[1:]:
+                key, _, value = field.partition("=")
+                if key == "rbytes" and value.isdigit():
+                    rbytes += int(value)
+                elif key == "wbytes" and value.isdigit():
+                    wbytes += int(value)
+        io_now[name] = [rbytes, wbytes]
+        old = prev.get("io", {}).get(name)
+        rates = {"blk_read": 0, "blk_write": 0}
+        if old and span > 0:
+            rates = {"blk_read": round(max(rbytes - old[0], 0) / span), "blk_write": round(max(wbytes - old[1], 0) / span)}
+        out[name] = {"pids": pids, "mem_limit": int(limit) if limit and limit.isdigit() else None, **rates}
+    return out, {"at": now, "io": io_now}
+
+
+def container_net(pid, proc_root="/proc"):
+    """Bytes received and sent by a container (its eth interfaces), via its main process's /proc/<pid>/net/dev."""
+    rx = tx = 0
+    for line in (read(Path(proc_root) / str(pid) / "net/dev", "") or "").splitlines()[2:]:
+        name, _, rest = line.partition(":")
+        f = rest.split()
+        if name.strip() != "lo" and len(f) >= 9:
+            rx, tx = rx + int(f[0]), tx + int(f[8])
+    return rx, tx
+
+
+DB_QUERY = """select json_build_object(
+ 'version', current_setting('server_version'),
+ 'size', pg_database_size(current_database()),
+ 'uptime_s', extract(epoch from now() - pg_postmaster_start_time())::bigint,
+ 'connections', (select count(*) from pg_stat_activity where backend_type = 'client backend' and pid <> pg_backend_pid()),
+ 'active', (select count(*) from pg_stat_activity where backend_type = 'client backend' and state = 'active' and pid <> pg_backend_pid()),
+ 'idle_in_transaction', (select count(*) from pg_stat_activity where state like 'idle in transaction%'),
+ 'max_connections', current_setting('max_connections')::int,
+ 'commits', d.xact_commit, 'rollbacks', d.xact_rollback, 'deadlocks', d.deadlocks, 'temp_bytes', d.temp_bytes,
+ 'blocks_hit', d.blks_hit, 'blocks_read', d.blks_read,
+ 'rows_returned', d.tup_returned, 'rows_inserted', d.tup_inserted, 'rows_updated', d.tup_updated, 'rows_deleted', d.tup_deleted,
+ 'users', case when to_regclass('auth.users') is not null then (select count(*) from auth.users) end,
+ 'storage_objects', case when to_regclass('storage.objects') is not null then (select count(*) from storage.objects) end
+) from pg_stat_database d where d.datname = current_database()"""
+
+
+def db_stats(raw, prev, now):
+    """Postgres numbers from DB_QUERY's JSON, with transactions per second and the cache hit ratio.
+    Returns (stats, reading to pass as `prev` next time)."""
+    try:
+        d = json.loads(raw)
+    except (TypeError, ValueError):
+        return {"error": "no answer from the database"}, prev
+    commits = (d.get("commits") or 0) + (d.get("rollbacks") or 0)
+    span = now - prev.get("at", now)
+    d["tps"] = round(max(commits - prev["commits"], 0) / span, 1) if prev.get("commits") is not None and span > 0 else 0.0
+    reads = (d.get("blocks_hit") or 0) + (d.get("blocks_read") or 0)
+    d["cache_hit_pct"] = round(100 * (d.get("blocks_hit") or 0) / reads, 2) if reads else None
+    return d, {"at": now, "commits": commits}
+
+
+def db_container(ids):
+    """The Postgres container's name among the running containers (supabase-db)."""
+    return next((n for n in sorted(ids) if re.search(r"(^|[-_.])db($|[-_.]\d)", n) and "supabase" in n), None)
+
+
+def tailscale_detail(status_text, now):
+    """Version, health warnings, key expiry and every device on the tailnet (no addresses beyond Tailscale's own)."""
+    try:
+        data = json.loads(status_text or "")
+    except ValueError:
+        return {}
+    me = data.get("Self") or {}
+
+    peers, funnel = [], 0
+    for p in (data.get("Peer") or {}).values():
+        if is_funnel_node(p):
+            funnel += 1
+            continue
+        route = "direct" if p.get("CurAddr") else f"relay {p['Relay']}" if p.get("Relay") else "idle"
+        peers.append({"name": p.get("HostName") or (p.get("DNSName") or "").split(".")[0], "os": p.get("OS", ""),
+                      "ip": (p.get("TailscaleIPs") or [""])[0], "online": bool(p.get("Online")),
+                      "last_seen": iso_epoch(p.get("LastSeen")), "rx_bytes": p.get("RxBytes", 0), "tx_bytes": p.get("TxBytes", 0),
+                      "route": route if p.get("Online") else "offline", "exit_node": bool(p.get("ExitNode"))})
+    return {"version": (data.get("Version") or "").split("-")[0], "health": [str(h)[:160] for h in data.get("Health") or []],
+            "key_expiry": iso_epoch(me.get("KeyExpiry")), "tailnet": (data.get("CurrentTailnet") or {}).get("Name", ""),
+            "update_available": bool(data.get("ClientVersion") and not data["ClientVersion"].get("RunningLatest", True)),
+            "funnel_relays": funnel,
+            "peers": sorted(peers, key=lambda p: (not p["online"], p["name"]))}
+
+
+def system_info(state, now, containers_now, ids, ts_text, proc_root="/proc", sys_root="/sys"):
+    """The detail sections: host facts, CPU, memory, storage, network, power, Docker, database."""
+    p = Path(proc_root)
+    meminfo = read(p / "meminfo", "")
+    uptime = number((read(p / "uptime", "0") or "0").split()[0].split(".")[0]) or 0
+    addresses = cached(state, "ip_addr", 30, now, lambda: ip_addresses(run("ip", "-j", "addr")))
+    interfaces = part(interface_stats, read(p / "net/dev", ""), sys_root, addresses)
+    wifi_iface = next((i["name"] for i in interfaces or [] if i["kind"] == "wifi"), "")
+    uname = os.uname() if hasattr(os, "uname") else None
+    inspected = cached(state, "docker_inspect", 10, now, lambda: docker_inspect_lines(run(
+        "docker", "inspect", "--format",
+        "{{.Name}}|{{.RestartCount}}|{{.State.StartedAt}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}|"
+        "{{.State.Pid}}|{{.HostConfig.RestartPolicy.Name}}|{{.Config.Image}}", *ids.values(), timeout=10) if ids else ""))
+    extras, state["cgroup_extras"] = cgroup_extras(ids, state.get("cgroup_extras", {}), now)
+    for item in containers_now:          # per-container details, merged into the container rows
+        name = item["name"]
+        info = inspected.get(name, {})
+        if info.get("pid") and item.get("state") == "running":
+            prev = state.setdefault("net_prev", {}).get(name)
+            rx, tx = container_net(info["pid"], proc_root)
+            span = now - prev["at"] if prev else 0
+            item["net_rx"] = round(max(rx - prev["rx"], 0) / span) if prev and span > 0 else 0
+            item["net_tx"] = round(max(tx - prev["tx"], 0) / span) if prev and span > 0 else 0
+            state["net_prev"][name] = {"at": now, "rx": rx, "tx": tx}
+        item.update({k: v for k, v in info.items() if k != "pid"})
+        item.update(extras.get(name, {}))
+    db_name = db_container(ids)
+    db = None
+    if db_name:
+        raw = cached(state, "db_raw", 10, now, lambda: run(
+            "docker", "exec", "-e", "PGOPTIONS=-c statement_timeout=2000 -c default_transaction_read_only=on", db_name,
+            "psql", "-U", "postgres", "-d", "postgres", "-X", "-A", "-t", "-c", DB_QUERY, timeout=8))
+        db, state["db"] = db_stats(raw, state.get("db", {}), now) if raw else ({"error": "the database did not answer"}, state.get("db", {}))
+    return {
+        "host": {"os": part(os_pretty, read("/etc/os-release", "")), "hostname": socket.gethostname(),
+                 "arch": uname.machine if uname else "", "firmware": read("/sys/class/dmi/id/bios_version"),
+                 "boot_time": int(now - uptime), "sessions": cached(state, "who", 20, now, lambda: logged_in(run("who") or "")),
+                 "timezone": cached(state, "timezone", 600, now, lambda: (run("timedatectl", "show", "-p", "Timezone", "--value") or "").strip()),
+                 "docker": cached(state, "docker_version", 600, now, lambda: (run("docker", "version", "--format", "{{.Server.Version}}") or "").strip())},
+        "cpu": {**(part(cpu_static, read(p / "cpuinfo", ""), sys_root) or {}), "pressure": part(read_pressure, p / "pressure"),
+                "throttle": part(throttle_counts, sys_root)},
+        "memory": part(memory_detail, meminfo), "swap": part(swap_devices, read(p / "swaps", "")),
+        "kernel": part(kernel_facts, read(p / "loadavg", ""), read(p / "sys/fs/file-nr", ""),
+                       read(p / "sys/net/netfilter/nf_conntrack_count"), read(p / "sys/net/netfilter/nf_conntrack_max")),
+        "storage": {"filesystems": part(filesystems, read(p / "mounts", "")), "disks": part(block_devices, sys_root),
+                    "docker": cached(state, "docker_df", 900, now, lambda: docker_df(run(
+                        "docker", "system", "df", "--format", "{{json .}}", timeout=20)))},
+        "network": {"interfaces": interfaces,
+                    "wifi": cached(state, "wifi", 30, now, lambda: wifi_info(run(
+                        "nmcli", "-t", "-f", "IN-USE,SSID,SIGNAL,RATE,FREQ,CHAN,SECURITY", "dev", "wifi", "list", "--rescan", "no"),
+                        read(p / "net/wireless", ""), wifi_iface)) if wifi_iface else None,
+                    "tcp": part(tcp_stats, read(p / "net/snmp", ""), read(p / "net/sockstat", ""))},
+        "sensors": {"temps": part(sensor_list, f"{sys_root}/class/hwmon"), "fans": part(fan_list, f"{sys_root}/bus/acpi/devices/APP0001:00", f"{sys_root}/class/hwmon")},
+        "power": part(battery_detail, f"{sys_root}/class/power_supply"),
+        "docker": {"projects": project_rollup(containers_now)},
+        "tailscale": part(tailscale_detail, ts_text, now),
+        "db": db,
+    }
+
+
 def collect(state=None):
     """One health snapshot. `state` carries what a 2-second cadence must not redo every run:
     the last cgroup reading (for CPU %) and cached slow values (apt, the public route)."""
@@ -1058,6 +1736,10 @@ def collect(state=None):
         data["live"], state["live"] = live_stats(state.get("live", {}), now)
     except Exception as err:   # noqa: BLE001
         data["live"] = {"error": repr(err)[:200]}
+    try:   # the detail pages' sections likewise
+        data["system"] = system_info(state, now, data["containers"], ids, ts_text)
+    except Exception as err:   # noqa: BLE001
+        data["system"] = {"error": repr(err)[:200]}
     try:   # the incident pages' extras must never cost the basic health data
         data["debug"] = debug_info(state, now, ps, ids, data["containers"], tailscale_peers(ts_text))
     except Exception as err:   # noqa: BLE001

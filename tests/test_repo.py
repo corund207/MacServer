@@ -18,6 +18,18 @@ class RepoTests(unittest.TestCase):
         self.assertEqual(re.findall(r"temp\w*\s*[<>]=?\s*\d", app), [])
         self.assertNotIn("running hot", app)
 
+    def test_python_modules_that_installed_scripts_import_are_installed_too(self):
+        """The collector and the dashboard are installed as single files, so a sibling module they
+        import (units.py) must be installed beside them or both stop with ModuleNotFoundError. CI's
+        VM test only waits for a log line, so it cannot notice."""
+        siblings = {p.stem for p in (ROOT / "admin").glob("*.py")}
+        installer = "\n".join(p.read_text(encoding="utf-8") for p in SHELL)
+        for script in ("collect_status", "tui", "idle", "fan_control", "doomsday", "terminal", "server"):
+            text = (ROOT / f"admin/{script}.py").read_text(encoding="utf-8")
+            for module in re.findall(r"^(?:from|import) (\w+)", text, re.M):
+                if module in siblings and module != script:
+                    self.assertIn(f"admin/{module}.py", installer, f"admin/{script}.py imports {module}, which no step installs")
+
     def test_every_installed_source_file_exists(self):
         for script in SHELL:
             for ref in re.findall(r'\$SRC/((?:host|admin|gateway|installer)/[\w./-]+)', script.read_text()):
