@@ -881,3 +881,31 @@ true and a reboot is the owner's call. `macserver-apps-calmlist-1` logs `Status 
 {"error":"Supabase is not configured"}` every few minutes: that is the app's own check, not MacServer.
 `~/rustdesk-ws` could also set `TUNNEL_METRICS=127.0.0.1:20241` so cloudflared's metrics stop binding every
 address (the firewall already drops them); that restarts the web-client tunnel, so it was left for the owner.
+
+## 2026-11-03: text alerts to the owner's phone
+
+`admin/notify.py` (timer `macserver-notify.timer`, every 30 s, installed by the `admin` step so the self-update
+delivers it) texts the owner when the dashboards show an issue. It reuses the screen's own `tui.incidents()`
+and `tui.muted_notice()`, so it says what the screen says and heat is never an issue (a test pins: 100 C with
+the fan at 8071 rpm is silent; only a warm CPU with a stopped fan counts). The text is sent through the new
+`alert-sms` workflow (same route as the doomsday email): the Mac POSTs a `workflow_dispatch` with the doomsday
+dispatch token, and the workflow emails `SMS_GATEWAY_ADDRESS` (Verizon: `<number>@vtext.com`) with the existing
+`SMTP_USERNAME` / `SMTP_PASSWORD` secrets. The phone number exists only in that secret, never in the repo or
+on the Mac. The repository is public, so the workflow reads the message from `GITHUB_EVENT_PATH` and never from
+an expression or env var (a test pins that), so the text does not land in the run log.
+
+Rules: a critical (bad) issue is texted after 60 s and again every 4 h while open; a warning after 180 s, once,
+and not within 15 min of the last text; one text lists everything open, worst first, in 160 ASCII characters
+ending with `https://<tailscale name>/` (the live name from status.json; the phone needs the Tailscale app);
+at most 4 an hour and 12 a day; a failed send retries every 5 min and does not count. `sudo macserver notify
+status|test|on|off`. It cannot say the Mac is off or offline.
+
+Verified: 25 new tests (what counts as an issue, the full timeline of texts, the 160-character limit, the
+dispatch request and its error hints, workflow hygiene, install wiring, loading the installed `dashboard`
+file); the rest of the suite shows the same six Windows-only failures. Not verified: any real text. Needs, once:
+the `SMS_GATEWAY_ADDRESS` repo secret (setting a secret was refused in this session, so the owner adds it),
+`sudo macserver doomsday setup-gh` on the Mac (`/etc/macserver/doomsday-gh-token` does not exist there yet, so
+the doomsday email alert has not been working either), then `sudo macserver notify test`. Until the token
+exists the service logs one line every 6 h and does nothing. Verizon's gateway is best-effort (filtering, no
+delivery receipt); if the test never arrives, switch the secret to `<number>@vzwpix.com` (MMS) or move to a
+paid SMS API.

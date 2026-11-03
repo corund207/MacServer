@@ -179,6 +179,32 @@ switches to the normal dashboard and back):
 
 The screen returns to normal by itself once everything works again.
 
+**Text alerts.** The Mac can also text your phone when the screen shows an issue, with a
+one-line summary and the link to your admin page (the link opens over Tailscale, so keep
+the Tailscale app on). It texts what the screen calls an issue and nothing else: never
+heat, and never the notices the screen itself mutes.
+
+- A **critical** issue (a service stopped, the public API down, Tailscale or the Internet
+  gone) is texted after it lasts a minute, and again every 4 hours while it stays open.
+- Any other issue is texted once, after three minutes, and not within 15 minutes of the
+  last text. One text lists everything that is open, worst first.
+- At most 4 texts an hour and 12 a day. A text that could not be sent is retried every
+  5 minutes.
+
+Set it up once. The text is sent by GitHub (the same route as the doomsday email), so
+your phone number and the email login stay in GitHub, never on the Mac:
+
+1. In the repository's **Settings → Secrets and variables → Actions**, add the secret
+   `SMS_GATEWAY_ADDRESS`: your number at your carrier's email-to-text gateway, for example
+   `5551234567@vtext.com` for a Verizon number. (`SMTP_USERNAME` and `SMTP_PASSWORD`, the Gmail
+   login the other alert emails use, must exist too.)
+2. On the Mac, give it the GitHub token: `sudo macserver doomsday setup-gh`.
+3. Check it: `sudo macserver notify test` sends a test text.
+
+`sudo macserver notify status` shows what is open and what was texted, and
+`sudo macserver notify off` / `on` switches it. It cannot text you that the Mac itself is
+off or offline (nothing on the Mac can); for that you need a monitor outside it.
+
 **Fans.** The fans never run below 60% of full speed, and speed up as CPU load or
 temperature rises (full speed above 95 °C). The Hardware page shows the fan speed and
 target. Change the floor with `FAN_MIN_PCT=70` in `/etc/macserver/macserver.conf`, or

@@ -1,0 +1,61 @@
+name: alert-sms
+
+# Sent by the Mac itself THROUGH this workflow: admin/notify.py triggers it (workflow_dispatch)
+# when the dashboards show an issue, and this workflow texts the owner. The text goes out as an
+# email to the carrier's email-to-text gateway, using the same Gmail SMTP secrets as the other
+# alert emails. The owner's phone number exists only as the SMS_GATEWAY_ADDRESS secret
+# (<number>@<carrier gateway>), never in the repository and never on the Mac.
+#
+# The repository is public, so the text must not land in the run log: it is read from the event
+# file by the script (no expression ever puts an input into a step), and the secrets are masked
+# by GitHub.
+on:
+  workflow_dispatch:
+    inputs:
+      message:
+        description: "The text: 160 ASCII characters at most, with the admin link in it"
+        required: true
+      level:
+        description: "critical, issue or test"
+        required: false
+        default: "issue"
+
+permissions:
+  contents: read
+
+jobs:
+  text-owner:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Send the text through the carrier gateway
+        env:
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMS_GATEWAY_ADDRESS: ${{ secrets.SMS_GATEWAY_ADDRESS }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import smtplib
+          import sys
+          from email.message import EmailMessage
+
+          for name in ("SMTP_USERNAME", "SMTP_PASSWORD", "SMS_GATEWAY_ADDRESS"):
+              if not os.environ.get(name):
+                  sys.exit(f"the {name} secret is not set")
+          with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as f:
+              inputs = json.load(f).get("inputs") or {}
+          # One SMS is 160 GSM characters; anything else (emoji, accents) would cut it to 70.
+          text = " ".join(str(inputs.get("message", "")).split()).encode("ascii", "replace").decode()[:160]
+          if not text:
+              sys.exit("the message is empty")
+          msg = EmailMessage()
+          msg["From"] = os.environ["SMTP_USERNAME"]
+          msg["To"] = os.environ["SMS_GATEWAY_ADDRESS"]
+          msg.set_content(text)
+          with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as smtp:
+              smtp.login(os.environ["SMTP_USERNAME"], os.environ["SMTP_PASSWORD"])
+              smtp.send_message(msg)
+          print(f"text handed to the mail server ({len(text)} characters, level {inputs.get('level', 'issue')})")
+          PY

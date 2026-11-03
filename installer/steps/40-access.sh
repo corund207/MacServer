@@ -10,6 +10,7 @@ install_tools() {
   install -m 0644 "$SRC/admin/units.py" /usr/local/lib/macserver/units.py
   install -m 0755 "$SRC/admin/collect_status.py" /usr/local/lib/macserver/collect_status.py
   install -m 0755 "$SRC/admin/idle.py" /usr/local/lib/macserver/idle
+  install -m 0755 "$SRC/admin/notify.py" /usr/local/lib/macserver/notify.py   # text alerts; loads the dashboard file above
   install -m 0755 "$SRC/admin/tui.py" /usr/local/lib/macserver/dashboard
   install -m 0755 "$SRC/host/macserver-console" /usr/local/lib/macserver/console
   install -m 0755 "$SRC/installer/self-update.sh" /usr/local/lib/macserver/self-update
@@ -32,11 +33,12 @@ step_admin() {
   install -d -m 0755 "$ADMIN_DIR/static"
   install -m 0644 "$SRC/admin/static/"* -t "$ADMIN_DIR/static/"
   local unit
-  for unit in macserver-status.service macserver-status.timer macserver-admin.service; do
+  for unit in macserver-status.service macserver-status.timer macserver-admin.service macserver-notify.service macserver-notify.timer; do
     put_file "$SRC/admin/$unit" "/etc/systemd/system/$unit" 0644
   done
   systemctl daemon-reload
   systemctl enable --now macserver-status.timer >/dev/null
+  systemctl enable --now macserver-notify.timer >/dev/null   # idle until `sudo macserver doomsday setup-gh` gives it a token
   systemctl start macserver-status.service
   systemctl enable --now macserver-admin.service >/dev/null
   systemctl restart macserver-admin.service
