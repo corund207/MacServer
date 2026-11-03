@@ -168,6 +168,11 @@ temperature rises (full speed above 95 °C). The CPU panel shows the fan speed a
 target. Change the floor with `FAN_MIN_PCT=70` in `/etc/macserver/macserver.conf`, or
 give the fans back to the Mac with `FAN_MODE=auto`; it applies within seconds.
 
+**Heat is not a warning.** A MacBook Air under load runs in the 90s and touches the CPU's
+own 100 °C limit many times a minute with the fans at full speed; that is how it works.
+So no temperature turns the screen amber or adds a notice. The one cooling alarm is a
+fault: a CPU at 85 °C or more whose fan is not turning.
+
 If the Mac's graphics ever fail, the screen falls back to a simpler text version of
 the same dashboard by itself.
 

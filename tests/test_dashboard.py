@@ -248,14 +248,50 @@ class DashboardTests(unittest.TestCase):
         s.status["claude"]["problem"] = ""
         c = tui_fixture.screen("healthy", 232, 64, sampler=s)
         self.assertIn("1 NOTICE(S)", c.text())
-        # A genuine overheat still warns, even with throttling muted.
+        # A real cooling fault (a hot CPU, a fan that is not turning) still warns, even with throttling muted.
         s = self.muted_sampler()
-        s.now["temp"] = 93
+        s.now.update(temp=97, fans=[0])
         c = tui_fixture.screen("healthy", 232, 64, sampler=s)
         self.assertIn("NOTICE", c.text())
         # Critical problems are never muted.
         s = self.muted_sampler()
         self.assertFalse(tui.muted_notice(s, "bad", "the Internet is unreachable"))
+
+    def test_heat_alone_is_never_a_notice_only_a_stopped_fan_is(self):
+        """This Mac sits in the 90s and touches the CPU's 100 °C limit many times a minute with
+        the fan at full speed. That must never raise a notice, turn the screen amber or read
+        "warm"/"hot". Only a warm CPU whose fan is not turning is a fault."""
+        for temp in (62, 80, 90, 95, 100):
+            with self.subTest(temp=temp):
+                s = tui_fixture.make_sampler("healthy")
+                s.now.update(temp=temp, fans=[8071])
+                self.assertEqual(tui.assess(s), [])
+                c = tui_fixture.screen("healthy", 232, 64, sampler=s)
+                self.assertEqual(c.alert, "ok")
+                self.assertIn("ALL SYSTEMS NORMAL", c.text())
+                panel = tui.Canvas(100, 14)
+                tui.thermal_panel(panel, s, 0, 0, 100, 14)
+                for word in ("warm", "hot", "HOT"):
+                    self.assertNotIn(word, panel.text())
+                self.assertIn("at its limit" if temp >= 100 else "normal", panel.text())
+        # No fan reading at all (some Macs expose none) is not a fault either, nor is a cool CPU with a stopped fan.
+        for temp, fans in ((97, []), (97, None), (60, [0]), (None, [0])):
+            s = tui_fixture.make_sampler("healthy")
+            s.now.update(temp=temp, fans=fans)
+            self.assertEqual(tui.assess(s), [], (temp, fans))
+        s = tui_fixture.make_sampler("healthy")
+        s.now.update(temp=90, fans=[0])
+        self.assertEqual(tui.assess(s), [("warn", "the fan is not turning (90°C)")])
+        # The event log carries the same fault, once, and says when the fan is back.
+        ev = tui.Events()
+        for temp, fans, expected in ((97, [8071], 0), (97, [0], 1), (97, [0], 1), (97, [2400], 2)):
+            stalled = tui.cooling_fault(temp, fans)
+            ev.edge("cooling", stalled is not None, "bad", f"cooling fault: {stalled}", "fan turning again")
+            self.assertEqual(len(ev.items), expected)
+        # Temperature numbers stay on a calm colour scale: 100 °C is not alarm red.
+        self.assertEqual([tui.temp_pos(t) for t in (30, 100)], [0.0, 0.8])
+        red = tui.GRADIENTS["temp"][-1]
+        self.assertNotEqual(tui.grad("temp", tui.temp_pos(100)), red)
 
     def test_critical_shows_the_red_incident_view(self):
         c = tui_fixture.screen("trouble", 232, 64)
@@ -265,7 +301,7 @@ class DashboardTests(unittest.TestCase):
                          "1) sudo docker logs --tail 50 supabase-edge-functions", "3) sudo macserver restart",
                          "exit code 1 · not killed for memory · restarted 3 time(s)",
                          "/opt/macserver/supabase/volumes/functions/",
-                         'error: Module not found', "public API not answering", "running hot (93°C)",
+                         'error: Module not found', "public API not answering", "the fan is not turning (97°C)",
                          "3 port(s) reachable from the local network", "LAN 192.168.18.20 → :5432",
                          "the API answered 2 request(s) with a server error",
                          "VITALS", "EVENTS", "THERMAL", "BUSIEST PROGRAMS", "SYSTEM STATE", "14/15 running",

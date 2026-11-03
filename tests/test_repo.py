@@ -10,6 +10,14 @@ SHELL = [ROOT / "install.sh", ROOT / "macserver", ROOT / "installer/lib.sh",
 
 
 class RepoTests(unittest.TestCase):
+    def test_heat_alone_never_raises_a_notice_on_the_web_page(self):
+        """This Mac touches its 100 C limit all day with the fan at full speed: that is normal.
+        The page may show temperatures but never turn one into a warning (the screen's only
+        cooling alarm is a stopped fan, tests/test_dashboard.py)."""
+        app = (ROOT / "admin/static/app.js").read_text(encoding="utf-8")
+        self.assertEqual(re.findall(r"temp\w*\s*[<>]=?\s*\d", app), [])
+        self.assertNotIn("running hot", app)
+
     def test_every_installed_source_file_exists(self):
         for script in SHELL:
             for ref in re.findall(r'\$SRC/((?:host|admin|gateway|installer)/[\w./-]+)', script.read_text()):

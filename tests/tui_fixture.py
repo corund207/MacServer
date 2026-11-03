@@ -20,6 +20,8 @@ os.environ.update(MACSERVER_PROC=str(BASE / "proc"), MACSERVER_SYS=str(BASE / "s
 sys.path.insert(0, str(ROOT / "admin"))
 import tui  # noqa: E402
 
+HISTORY_N = 2400   # samples of made-up history per graph (see make_sampler)
+
 # (name, compose project, CPU %, memory MiB)
 SERVICES = [("supabase-db", "supabase", 3.4, 412), ("supabase-auth", "supabase", 0.3, 38),
             ("supabase-rest", "supabase", 0.8, 61), ("realtime-dev.supabase-realtime", "supabase", 1.9, 188),
@@ -43,7 +45,7 @@ def write(rel, text):
     path.write_text(text)
 
 
-def machine(temp_c=62, tick=0):
+def machine(temp_c=62, tick=0, fan_rpm=2400):
     """Write the sample /proc and /sys. tick=1 advances the counters by one second."""
     busy = [27, 41, 18, 22]      # busy jiffies per thread in that second (of 100)
     lines = [f"cpu  {sum(busy) * tick} 0 0 {sum(100 - b for b in busy) * tick} 0 0 0 0 0 0"]
@@ -73,7 +75,7 @@ def machine(temp_c=62, tick=0):
     write("sys/class/hwmon/hwmon0/temp3_input", f"{(temp_c - 4) * 1000}\n")
     write("sys/class/hwmon/hwmon0/temp3_label", "Core 1\n")
     write("sys/class/hwmon/hwmon1/name", "applesmc\n")
-    write("sys/class/hwmon/hwmon1/fan1_input", "2400\n")
+    write("sys/class/hwmon/hwmon1/fan1_input", f"{fan_rpm}\n")
     write("sys/class/hwmon/hwmon1/temp1_input", "41000\n")
     write("sys/class/hwmon/hwmon1/temp1_label", "TC0P\n")
     write("sys/class/hwmon/hwmon2/name", "nvme\n")
@@ -199,14 +201,15 @@ def make_sampler(scenario="healthy", overview=False, page=None):
     overview=True shows the normal dashboard during an incident (as Space does).
     page=NAME (incident, network, requests, system, logs) picks the incident page and holds it."""
     trouble = scenario == "trouble"
-    temp = 93 if trouble else 62
+    # Trouble includes a broken cooling system: a hot CPU whose fan is not turning (tui.cooling_fault).
+    temp, fan = (97, 0) if trouble else (62, 2400)
     (BASE / "fans.json").write_text(json.dumps({"mode": "curve", "min_pct": 60, "target_pct": 64.0 if not trouble else 100.0,
-                                                  "fans": [{"fan": "1", "rpm": 2400, "max_rpm": 6000}]}))
-    machine(temp, tick=0)
+                                                  "fans": [{"fan": "1", "rpm": fan, "max_rpm": 6000}]}))
+    machine(temp, tick=0, fan_rpm=fan)
     status(scenario)
     tui.disk = lambda: (41_200_000_000, 233_000_000_000)
     sampler = tui.Sampler()
-    machine(temp, tick=1)
+    machine(temp, tick=1, fan_rpm=fan)
     sampler.prev_t -= 1.0            # about one second between the two readings
     sampler.sample()
     # Rates depend on the measured gap; pin them so tests never depend on timing.
@@ -235,7 +238,9 @@ def make_sampler(scenario="healthy", overview=False, page=None):
     h = sampler.hist
     for k in list(h):
         h[k].clear()
-    for i in range(tui.HISTORY):
+    # The screen draws only the newest few hundred samples, so a short made-up history looks
+    # the same as 20 minutes of it and builds in milliseconds instead of seconds.
+    for i in range(HISTORY_N):
         wave = (math.sin(i / 23) + 1) / 2
         fast = (math.sin(i / 5.3) + 1) / 2
         burst = 1 if 900 < i < 960 else 0

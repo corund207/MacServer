@@ -177,7 +177,7 @@ function renderCpu(s) {
   foot.replaceChildren(
     el('span', `total ${live ? live.cpu.total.toFixed(0) : '?'}%`, live ? heat(live.cpu.total) : 'dim'),
     el('span', `load ${h.load.join(' ')}  (${h.cpus} threads)`),
-    el('span', `temp ${temp === null ? '?' : `${temp.toFixed(0)}°C`}`, temp !== null && temp >= 90 ? 'bad' : temp !== null && temp >= 75 ? 'warn' : ''),
+    el('span', `temp ${temp === null ? '?' : `${temp.toFixed(0)}°C`}`),   // heat is a reading here, never a warning
     ...(mhz.length ? [el('span', `${Math.round(mhz.reduce((a, b) => a + b, 0) / mhz.length)} MHz`)] : []),
     ...(live ? [el('span', `${live.tasks.total} tasks, ${live.tasks.running} running, ${live.tasks.threads} threads`, 'dim')] : []),
     el('span', `up ${duration(h.uptime_s)}`, 'dim'),
@@ -368,10 +368,8 @@ function render(s) {
   latest = s;
   const h = s.host;
   const down = s.containers.filter((c) => c.state !== 'running');
-  const temp = h.sensors.cpu_temp_c;
   if (s.stale) setSummary('status is out of date: the collector has stopped', 'bad');
   else if (down.length) setSummary(`${down.length} service(s) not running`, 'bad');
-  else if (temp !== null && temp >= 90) setSummary('running hot', 'warn');
   else if (h.reboot_required) setSummary('restart needed to finish updates', 'warn');
   else setSummary('everything is running', 'good');
   $('viewer').textContent = `signed in through Tailscale as ${s.viewer}`;

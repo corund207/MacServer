@@ -722,3 +722,31 @@ remote-managed ingress of `macserver-apps` had no rule for that hostname (the DN
 existed). Fixed in `jonahchang.com/domains.json` (`planesight-api` ->
 `http://planesight:8080`) and applied with `cloudflare-setup.mjs apply`; `/`,
 `/api/health` answer 200 and `/ws` upgrades (101).
+
+## 2026-11-03: heat is a reading, not a warning
+
+The owner's Mac "just runs kinda hot", and the dashboard kept calling that a problem
+(a "running hot" notice and amber glow from 90 °C, an event from 85 °C, "warm" from 80 °C
+on the thermal panel, amber on the web page from 75 °C). Measured on the real Mac over
+SSH (read-only): the package temperature swung 89 to 100 °C within 12 seconds with the
+fan at 8071 of 8000 rpm, `coretemp` reports `max` and `crit` of 100 °C, and the lifetime
+heat-throttle counters are 487180 (core) and 1718858 (package). Hitting the chip's own
+limit is how this machine normally works, so any fixed "too hot" line below 100 °C would
+flicker all day.
+
+Now: no temperature raises a notice, an amber glow, a warning label or an event
+(`admin/tui.py`, `admin/static/app.js`). The temperature colour scale stops short of alarm
+red. The one cooling alarm left is a fault, not heat: a CPU at 85 °C or more whose fan
+reads under 300 rpm (`tui.cooling_fault`); no fan reading at all is not a fault. The thermal
+panel says "normal" or "at its limit" (100 °C).
+
+Tests: `test_heat_alone_is_never_a_notice_only_a_stopped_fan_is`,
+`test_heat_alone_never_raises_a_notice_on_the_web_page`. The dashboard test fixture now
+builds a 2,400-sample history instead of 1.2 million (the screen draws only the newest few
+hundred), which takes the dashboard tests from 505 s to about 10 s.
+
+Not verified: the change on the Mac's own screen. On the Windows development PC the full
+suite has six failures that are identical with and without this change: `pwd`, `os.statvfs`
+and POSIX file modes do not exist there (`test_collector`, `test_live_stats`,
+`test_terminal`, `test_once_prints_a_summary`, and two in `test_fans`); run it with
+`PYTHONUTF8=1`.

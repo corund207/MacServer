@@ -45,6 +45,31 @@ SMOOTH = {"cpu": 0.35, "temp": 0.25, "mhz": 0.3, "rx": 0.3, "tx": 0.3, "ts_rx": 
 def ema(prev, value, alpha):
     return prev + alpha * (value - prev)
 
+
+# Heat is never a notice by itself. This MacBook Air sits in the 90s under ordinary load and
+# touches the CPU's own 100 °C limit many times a minute, with the fan at full speed; its
+# heat-throttle counter is in the hundreds of thousands. That is how this machine works, so
+# no temperature raises a notice, an amber glow or a "warm" label. Only a broken cooling
+# system does: a hot CPU whose fan is not turning (see cooling_fault).
+COOLING_CHECK_C = 85.0     # a stopped fan only matters once the CPU is this warm
+FAN_STALLED_RPM = 300      # the T2 fan idles at ~1200 rpm, so under this it is not turning
+
+
+def cooling_fault(temp, fans):
+    """A sentence when the fan is not turning on a warm CPU, else None. Never about heat alone:
+    no fan reading at all is not a fault either (some Macs expose none), the panel says so."""
+    if temp is None or temp < COOLING_CHECK_C or not fans:
+        return None
+    if max(fans) < FAN_STALLED_RPM:
+        return f"fan reads {max(fans)} rpm while the CPU is at {temp:.0f}°C"
+    return None
+
+
+def temp_pos(t):
+    """Where a temperature sits on the "temp" colour scale: calm blue to pink across the whole
+    range. It never reaches alarm red, because on this machine 100 °C is a normal reading."""
+    return min(max((t - 30) / 70, 0.0), 1.0) * 0.8
+
 # Characters drawn in console mode besides printable ASCII: all exist in the
 # Lat15-Terminus console font (tests/test_dashboard.py checks it against the font).
 GLYPHS = "─│╭╮╰╯├┤┬┴█▒░■●✗·°↑↓→…▲▼"
@@ -504,8 +529,8 @@ class Sampler:
         ev, temp = self.events, self.now["temp"]
         ev.edge("cpu", self.now["cpu"] >= 85 or ("cpu" in ev.flags and self.now["cpu"] >= 60), "warn",
                 f"CPU busy: {self.now['cpu']:.0f}%", "CPU back to normal")
-        ev.edge("hot", temp is not None and (temp >= 85 or ("hot" in ev.flags and temp >= 75)), "warn",
-                f"running hot: {temp or 0:.0f}°C", "temperature back to normal")
+        stalled = cooling_fault(temp, self.now.get("fans"))
+        ev.edge("cooling", stalled is not None, "bad", f"cooling fault: {stalled}", "fan turning again")
         ev.edge("net", self.now["rx"] >= 5e6, "info", f"download burst: {fmt_bytes(self.now['rx'], True)}")
         ev.edge("offline", not iface, "bad", "network connection lost", "network connected")
         try:                                     # what the fan controller is doing
@@ -918,7 +943,7 @@ def cpu_panel(c, sampler, x, y, w, h):
         meter(c, xx, row, meter_w, value / 100, "cpu")
         xx = c.put(xx + meter_w + 1, row, f"{value:3.0f}%", C["bright"])
         if t is not None:
-            c.put(xx + 1, row, f"{t:3.0f}°C", grad("temp", (t - 30) / 70))
+            c.put(xx + 1, row, f"{t:3.0f}°C", grad("temp", temp_pos(t)))
         graph_rows = per - 2 if per >= 3 else per - 1
         if n > 0 and graph_rows > 0 and c.rich:
             graph(c, sx + 5, row + 1, side_w - 6, graph_rows, hist, 100, "cpu")
@@ -1461,15 +1486,14 @@ def incidents(sampler):
             facts=[f"Wi-Fi signal {now['signal']} dBm" if now.get("signal") is not None else "no Wi-Fi signal reading"],
             files=["/etc/NetworkManager/system-connections/  (saved Wi-Fi)"])
     temp = now.get("temp")
-    if temp is not None and temp >= 90:
-        fan = (now.get("fans") or [None])[0]
+    stalled = cooling_fault(temp, now.get("fans"))
+    if stalled:
         top = (sampler.procs.get("cpu") or [None])[0] if getattr(sampler, "procs", None) else None
-        facts = [f"fan {fan} rpm" + (f" · controller target {sampler.fans['target_pct']:.0f}%" if sampler.fans and sampler.fans.get("target_pct") else "")
-                 if fan is not None else "no fan reading: the fan controller may not be running"]
+        facts = [stalled + (f" · controller target {sampler.fans['target_pct']:.0f}%" if sampler.fans and sampler.fans.get("target_pct") else "")]
         if top and top["cpu"] > 20:
             facts.append(f"busiest program: {top['name']} at {top['cpu']:.0f}% of one core")
-        add("warn", f"running hot ({temp:.0f}°C)", "the CPU is near its limit",
-            ["sensors", "systemctl status macserver-fans", "keep the vents clear; open the lid, use the charger"],
+        add("warn", f"the fan is not turning ({temp:.0f}°C)", "the CPU is warm and nothing is cooling it",
+            ["sensors", "systemctl status macserver-fans", "sudo macserver doctor", "keep the vents clear; use the charger"],
             facts=facts, files=["/sys/class/hwmon/  (sensor files)", "/run/macserver/fans.json  (fan controller)"])
     used, total = now.get("disk", (0, 0))
     if total and used / total > 0.9:
@@ -1596,15 +1620,15 @@ def services_panel_compact(c, sampler, x, y, w, h):
 def thermal_panel(c, sampler, x, y, w, h):
     now = sampler.now
     temp = now.get("temp")
-    box(c, x, y, w, h, "thermal", C["warn"] if temp is not None and temp >= 85 else C["accent"],
+    box(c, x, y, w, h, "thermal", C["warn"] if cooling_fault(temp, now.get("fans")) else C["accent"],
         f"{(now.get('mhz') or 0) / 1000:.2f} GHz" if now.get("mhz") else "")
     inner, row, bottom = w - 4, y + 1, y + h - 1
     mw = max(inner - 26, 6)
     if temp is not None and row < bottom:
         xx = c.put(x + 2, row, f"CPU {temp:4.0f}°C ", C["bright"], bold=True)
         meter(c, xx, row, mw, (temp - 30) / 70, "temp")
-        note = "HOT" if temp >= 90 else "warm" if temp >= 80 else "ok"
-        c.put(xx + mw + 1, row, note, C["bad"] if temp >= 90 else C["warn"] if temp >= 80 else C["dim"], bold=temp >= 90)
+        note = "at its limit" if temp >= 100 else "normal"       # 100 °C is the chip's own ceiling, not a fault
+        c.put(xx + mw + 1, row, note, C["dim"])
         row += 1
     fans = now.get("fans") or []
     fi = sampler.fans or {}
@@ -1642,7 +1666,7 @@ def thermal_panel(c, sampler, x, y, w, h):
         if row >= bottom:
             break
         limit = r["limit"] or 100
-        colour = grad("temp", (r["temp"] - 30) / 70)
+        colour = grad("temp", temp_pos(r["temp"]))
         xx = fields(c, x + 2, row, x + w - 2, (r["chip"], C["dim"], 10), (r["label"], C["dim"], 14),
                     (f"{r['temp']:4.0f}°C", colour, 7))
         bar(c, xx, row, max(x + w - 3 - xx, 0), r["temp"] / limit, colour)
