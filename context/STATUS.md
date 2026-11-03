@@ -873,8 +873,8 @@ service error. Web page: the listening-ports table has the same two new labels.
 
 Verified: tests for the real `host/nftables.conf` against the parser, the listener ordering, the direct-peer
 rule (the same PC on another port stays LAN) and the rendered panel; same six Windows-only failures as before.
-Not verified: the collector on the real Mac (it runs as root; the change reaches the Mac with the next
-self-update, then check `/run/macserver/status.json` `debug.listeners` for `open`/`blocked`).
+Verified on the real Mac after the self-update (2026-11-03): `debug.listeners` reports 21115-21117 as `open`
+and 20241, 21118, 21119 as `blocked`, and no inbound LAN flow is flagged.
 
 Open, not changed: a newer kernel (6.18.60) is installed but 6.18.54 is running, so "restart needed" is
 true and a reboot is the owner's call. `macserver-apps-calmlist-1` logs `Status check failed (503):
