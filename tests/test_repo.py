@@ -30,6 +30,14 @@ class RepoTests(unittest.TestCase):
                 if module in siblings and module != script:
                     self.assertIn(f"admin/{module}.py", installer, f"admin/{script}.py imports {module}, which no step installs")
 
+    def test_no_admin_module_defines_the_same_function_twice(self):
+        """A second `def` of a name silently replaces the first, so every test still passes while
+        half the code is dead. (A bad splice once duplicated a thousand lines of the dashboard.)"""
+        for path in sorted((ROOT / "admin").glob("*.py")):
+            names = re.findall(r"^def (\w+)\(", path.read_text(encoding="utf-8"), re.M)
+            twice = sorted({n for n in names if names.count(n) > 1})
+            self.assertEqual(twice, [], f"{path.name} defines these more than once")
+
     def test_every_installed_source_file_exists(self):
         for script in SHELL:
             for ref in re.findall(r'\$SRC/((?:host|admin|gateway|installer)/[\w./-]+)', script.read_text()):

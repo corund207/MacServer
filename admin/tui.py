@@ -35,8 +35,9 @@ PROC = Path(os.environ.get("MACSERVER_PROC", "/proc"))
 SYS = Path(os.environ.get("MACSERVER_SYS", "/sys"))
 DOCS = "github.com/corund207/MacServer"
 STUDIO_PORT = 8443
-SAMPLE_S = 0.001
-HISTORY = 1_200_000   # samples kept per graph (20 minutes at 1 ms intervals)
+SAMPLE_S = 2.0        # numbers are read this often, as often as the collector writes status.json
+DRAW_S = 1.0          # the screen is redrawn this often, so the clock and the page countdown tick every second
+HISTORY = 600   # samples kept per graph (20 minutes at 2 s intervals)
 # Smoothing per reading (share of each new sample taken): lower = calmer.
 SMOOTH = {"cpu": 0.35, "temp": 0.25, "mhz": 0.3, "rx": 0.3, "tx": 0.3, "ts_rx": 0.3, "ts_tx": 0.3,
           "rd": 0.3, "wr": 0.3, "ctxt": 0.3, "intr": 0.3}
@@ -450,6 +451,8 @@ class Sampler:
         self.prev_procs, self.prev_procs_t = {}, time.monotonic()
         self.thermal = []                       # every temperature sensor
         self.page, self.page_t, self.paused, self.last_items = 1, time.monotonic(), False, 0   # incident pages (0=doomsday, 1=incident)
+        self.home, self.home_t = 0, time.monotonic()    # the normal pages (HOME_PAGES) and when this one came up
+        self.status_hist = collections.defaultdict(lambda: collections.deque(maxlen=HISTORY))   # series read from status.json
         self.crit_since = None                  # when the current incident began (for the T+ clock)
         self.counter_base, self.counter_last, self.counter_changed = {}, {}, {}
         self.events = Events()
@@ -513,6 +516,7 @@ class Sampler:
         self.now["signal"] = wifi_signal(iface)
         self.now["uptime"] = uptime_s()
         self.now["load"] = loadavg()
+        self.hist["load"].append(self.now["load"][0])
         self.smooth_readings()
         m = self.now["mem"]
         h = self.hist
@@ -550,6 +554,7 @@ class Sampler:
                 for c in (new or {}).get("containers", []):
                     if c.get("cpu") is not None:
                         self.svc_hist[c["name"]].append(c["cpu"])
+                self.status_hist["svc_cpu"].append(sum(c.get("cpu") or 0 for c in (new or {}).get("containers", [])))
                 self.status_stamp = stamp
             self.status = new
             self.update_slow_readings(t)
@@ -581,6 +586,16 @@ class Sampler:
             if nxt == 0:   # skip doomsday page
                 nxt = 1
             self.page, self.page_t = nxt, t
+
+    def advance_home(self, t):
+        """Turn the normal pages by themselves (the overview stays longest). Not while held, not while an
+        incident's normal view is open on Space."""
+        name = HOME_PAGES[self.home % len(HOME_PAGES)]
+        if not self.paused and not self.force_overview and t - self.home_t >= HOME_DWELL_S[name]:
+            self.home, self.home_t = (self.home + 1) % len(HOME_PAGES), t
+
+    def turn_home(self, step):
+        self.home, self.home_t = (self.home + step) % len(HOME_PAGES), time.monotonic()
 
     def turn_page(self, step):
         # Manual page navigation: skip doomsday page (0)
@@ -1060,72 +1075,6 @@ def conn_panel(c, sampler, x, y, w, h):
         row += 1
         xx = c.put(x + 2, row, f"{label:<8}", C["dim"])
         c.put(xx, row, clip(url, x + w - 2 - xx), C["accent"])
-
-
-def services_panel(c, sampler, x, y, w, h):
-    s = sampler.status or {}
-    items = list(s.get("containers", []) if s else [])
-    up = sum(1 for i in items if i.get("state") == "running")
-    note = f"{up}/{len(items)} running" if items else ""
-    box(c, x, y, w, h, "services", C["svc"], note)
-    if not items:
-        c.put(x + 2, y + 1, "Supabase is installed by setup. Nothing to show yet.", C["dim"])
-        return
-    items.sort(key=lambda i: (i.get("state") == "running", -(i.get("cpu") or 0), i.get("name", "")))
-    for item in items:   # "realtime-dev.supabase-realtime" -> "realtime"; the group column says supabase
-        short = item["name"].split(".")[-1]
-        for prefix in ("supabase-", f"{item.get('project') or '-'}-"):
-            short = short[len(prefix):] if short.startswith(prefix) else short
-        item["short"] = re.sub(r"-\d+$", "", short)
-    name_w = min(max(len(i["short"]) for i in items) + 4, 30)
-    cpu_top = 100.0                         # fixed scale: 100% = full bar
-    trend_w = 18 if w >= 110 else 0         # CPU of each service over the last 15 minutes
-    cols = [("SERVICE", name_w), ("GROUP", 12), ("STATE", 11), (f"CPU (bar = 100%)", 24)]
-    if trend_w:
-        cols.append(("TREND", trend_w))
-    cols.append(("MEMORY", 11))
-    fixed = sum(cw for _, cw in cols)
-    status_w = max(w - 4 - fixed, 0)
-    xx = x + 2
-    for title, cw in cols + [("STATUS", status_w)]:
-        c.put(xx, y + 1, title[:cw], C["dim"], bold=True)
-        xx += cw
-    max_rows = h - 3
-    shown = items if len(items) <= max_rows else items[: max_rows - 1]
-    for n, item in enumerate(shown):
-        row = y + 2 + n
-        running = item.get("state") == "running"
-        state = "ok" if running else "bad"
-        healthy = "unhealthy" not in item.get("status", "")
-        if running and not healthy:
-            state = "warn"
-        xx = x + 2
-        dot(c, xx, row, state)
-        c.put(xx + 2, row, clip(item["short"], name_w - 3), C["bright"] if running else C["bad"])
-        xx += name_w
-        c.put(xx, row, clip(item.get("project") or "-", 11), C["dim"])
-        xx += 12
-        c.put(xx, row, item.get("state", "?"), STATE_COLOUR[state])
-        xx += 11
-        cpu = item.get("cpu")
-        if cpu is not None:
-            meter(c, xx, row, 14, min(cpu / cpu_top, 1), "cpu")
-            c.put(xx + 15, row, f"{cpu:5.1f}%", C["text"])
-        else:
-            c.put(xx, row, "-", C["dim"])
-        xx += 24
-        if trend_w:
-            hist = sampler.svc_hist.get(item["name"])
-            if hist:
-                graph(c, xx, row, trend_w - 2, 1, hist, 100.0, "cpu")
-            else:
-                c.put(xx, row, "·" * (trend_w - 2), C["faint"] if c.rich else C["off"])
-            xx += trend_w
-        c.put(xx, row, fmt_bytes(item.get("mem")) if item.get("mem") is not None else "-", C["text"])
-        xx += 11
-        c.put(xx, row, clip(item.get("status", ""), status_w), C["dim"])
-    if len(shown) < len(items):
-        c.put(x + 2, y + 2 + len(shown), f"… {len(items) - len(shown)} more", C["dim"])
 
 
 EVENT_COLOUR = {"ok": C["ok"], "warn": C["warn"], "bad": C["bad"], "info": C["accent"]}
@@ -1918,7 +1867,7 @@ def files_panel(c, sampler, x, y, w, h):
             break
         fresh = f["age_s"] < 600
         path_w = min(max(inner * 48 // 100, 18), 58)
-        shown = f["path"] if len(f["path"]) <= path_w else "…" + f["path"][-(path_w - 1):]    # keep the file name
+        shown = f["path"] if len(f["path"]) < path_w else "…" + f["path"][-(path_w - 2):]    # keep the file name, and a gap
         fields(c, x + 2, row, x + w - 2, ("● " if fresh else "  ", C["warn"], 2),
                (shown, C["accent"] if fresh else C["svc"], path_w),
                (f"{fmt_ago(f['age_s'])} ago", C["bright"] if fresh else C["dim"], 10),
@@ -2393,8 +2342,9 @@ def bottom_bar(c, sampler, kiosk, level="ok"):
     links = ([("admin", f"https://{name}/"), ("studio", f"https://{name}:{STUDIO_PORT}")] if name else [])
     links.append(("guide", DOCS))
     hint = "press 2 to log in · back here: Ctrl+Option+1" if kiosk else "q quit · sudo macserver help"
+    hint = "n/b page · p hold · " + hint
     if level == "critical":
-        hint = "n/b page · p hold · space: incident / overview · " + hint
+        hint = "space: incident / overview · " + hint
     x = 1
     for label, url in links:
         if x + len(label) + len(url) + 4 > w - len(hint) - 3:
@@ -2402,6 +2352,938 @@ def bottom_bar(c, sampler, kiosk, level="ok"):
         x = c.put(x, y, label + " ", C["dim"], bg)
         x = c.put(x, y, url, C["accent"], bg) + 3
     c.put(w - len(hint) - 1, y, hint, C["dim"], bg)
+
+
+# --- the home pages: the screen's normal state ----------------------------------------------------
+# Five pages that turn by themselves (the overview stays longest): OVERVIEW, HARDWARE, NETWORK,
+# SERVICES, SYSTEM. n / b turn the page, p holds it. Every panel reads status.json's `system` section
+# (admin/collect_status.py) and draws only what it can read, so an older collector or a missing
+# source leaves a gap, never an error. Only characters from GLYPHS and ASCII are used (console mode).
+
+HOME_PAGES = ("overview", "hardware", "network", "services", "system")
+HOME_DWELL_S = {"overview": 30.0, "hardware": 15.0, "network": 15.0, "services": 15.0, "system": 15.0}
+
+
+def sysdata(sampler):
+    return (sampler.status or {}).get("system") or {}
+
+
+def livedata(sampler):
+    live = (sampler.status or {}).get("live") or {}
+    return {} if live.get("error") else live
+
+
+def level_colour(frac, warn=0.85, bad=0.95):
+    """Colour of a how-full bar: calm until it matters."""
+    return C["bad"] if frac >= bad else C["warn"] if frac >= warn else C["ok"]
+
+
+def fmt_since(epoch, now=None):
+    """Time since an epoch moment: 12s, 5m, 3h, 4d."""
+    if not epoch:
+        return "never"
+    s = max(int((now or time.time()) - epoch), 0)
+    return f"{s}s" if s < 90 else f"{s // 60}m" if s < 5400 else f"{s // 3600}h" if s < 129600 else f"{s // 86400}d"
+
+
+def per_cent(part, whole):
+    return 100.0 * part / whole if whole else 0.0
+
+
+def stacked(c, x, y, w, parts):
+    """One bar split into coloured shares of the whole: parts = [(fraction, colour)]."""
+    edges, acc = [], 0.0
+    for frac, colour in parts:
+        acc += max(frac, 0.0)
+        edges.append((round(min(acc, 1.0) * w), colour))
+    for i in range(w):
+        colour = next((col for edge, col in edges if i < edge), None)
+        c.put(x + i, y, "■" if (c.rich or colour) else "·", colour or (C["faint"] if c.rich else C["off"]))
+
+
+def table(c, x, y, w, h, cols, rows, gap=2):
+    """Header row, then as many rows as fit. cols = [(title, width or None, "l"|"r")]: the one column
+    with width None takes what is left. rows = [[(text, colour[, bold]) per column]]. Returns rows drawn."""
+    if h < 1 or w < 4:
+        return 0
+    fixed = sum(cw for _, cw, _ in cols if cw) + gap * (len(cols) - 1)
+    widths = [cw if cw else max(w - fixed, 0) for _, cw, _ in cols]
+    xx = x
+    for (title, _, align), cw in zip(cols, widths):
+        if cw <= 0 or xx >= x + w:
+            break
+        text = clip(title, cw)
+        c.put(xx, y, text.rjust(cw) if align == "r" else text, C["dim"], bold=True)
+        xx += cw + gap
+    drawn = 0
+    for row in rows[: max(h - 1, 0)]:
+        xx = x
+        for (_, _, align), cw, cell in zip(cols, widths, row):
+            if cw <= 0 or xx >= x + w:
+                break
+            text = clip(str(cell[0]), min(cw, x + w - xx))
+            c.put(xx, y + 1 + drawn, text.rjust(cw) if align == "r" else text, cell[1], bold=len(cell) > 2 and cell[2])
+            xx += cw + gap
+        drawn += 1
+    return drawn
+
+
+# --- the KPI strip: the numbers worth seeing from across the room ---------------------------------------------
+
+def kpi_cards(sampler):
+    """The headline cards in the order they are kept when the screen is narrow."""
+    s, now, hist = sampler.status or {}, sampler.now, sampler.hist
+    sd, ld = sysdata(sampler), livedata(sampler)
+    cpu_info_ = sd.get("cpu") or {}
+    la = now.get("load") or [0.0, 0.0, 0.0]
+    psi = (((cpu_info_.get("pressure") or {}).get("cpu") or {}).get("some") or {}).get("avg10")
+    threads = len(now.get("cores") or []) or cpu_info_.get("threads") or 0
+    ghz = (now.get("mhz") or 0) / 1000
+    cards = [{"title": "cpu", "colour": C["cpu"], "value": f"{now['cpu']:.0f}%", "series": hist["cpu"], "top": 100, "grad": "cpu",
+              "sub": f"{threads} threads" + (f" · {ghz:.1f} GHz" if ghz else ""),
+              "foot": f"load {la[0]:.2f}" + (f" · stall {psi:.0f}%" if psi is not None else "")}]
+    m = now["mem"]
+    used_pct = per_cent(m["used"], m["total"])
+    cards.append({"title": "memory", "colour": C["mem"], "value": f"{used_pct:.0f}%", "series": hist["mem"], "top": 100, "grad": "mem",
+                  "vcolour": level_colour(1 - per_cent(m.get("available", m["total"] - m["used"]), m["total"]) / 100, 0.9, 0.95)
+                  if m["total"] else None,
+                  "sub": f"{fmt_bytes(m['used'])} of {fmt_bytes(m['total'])}",
+                  "foot": f"free {fmt_bytes(m.get('available'))} · swap {fmt_bytes(m.get('swap_used', 0))}"})
+    rx_top = nice_top(list(hist["rx"])[-120:], 100_000)
+    iface = sampler.iface or "offline"
+    sig = now.get("signal")
+    cards.append({"title": "network", "colour": C["net"], "value": f"▼ {fmt_bytes(now['rx'], True)}", "series": hist["rx"], "top": rx_top,
+                  "grad": "down", "sub": f"▲ {fmt_bytes(now['tx'], True)}",
+                  "foot": f"{iface}" + (f" · {sig} dBm" if sig is not None else "")})
+    used, total = now.get("disk", (0, 0))
+    cards.append({"title": "disk /", "colour": C["svc"], "value": f"{per_cent(used, total):.0f}%", "series": hist["wr"],
+                  "top": nice_top(list(hist["wr"])[-120:], 1_000_000), "grad": "disk",
+                  "vcolour": level_colour(used / total) if total else None, "sub": f"{fmt_bytes(used)} of {fmt_bytes(total)}",
+                  "foot": f"R {fmt_bytes(now['rd'], True)} · W {fmt_bytes(now['wr'], True)}"})
+    temp = now.get("temp")
+    fans = now.get("fans") or [f["rpm"] for f in ((sd.get("sensors") or {}).get("fans") or [])]
+    fi = sampler.fans or {}
+    stalled = cooling_fault(temp, fans)
+    cards.append({"title": "temperature", "colour": C["accent"], "value": "?" if temp is None else f"{temp:.0f}°C",
+                  "vcolour": C["bad"] if stalled else None if temp is None else grad("temp", temp_pos(temp)),
+                  "series": hist["temp"], "top": 100, "grad": "temp", "sub": f"fan {fans[0]} rpm" if fans else "no fan reading",
+                  "foot": "fan is not turning!" if stalled else f"fan target {fi['target_pct']:.0f}%" if fi.get("target_pct") else ""})
+    containers = s.get("containers", []) or []
+    up = sum(1 for i in containers if i.get("state") == "running")
+    db = sd.get("db") or {}
+    cards.append({"title": "services", "colour": C["svc"], "value": f"{up}/{len(containers)}" if containers else "-",
+                  "vcolour": C["bad"] if containers and up < len(containers) else None, "series": sampler.status_hist["svc_cpu"],
+                  "top": nice_top(list(sampler.status_hist["svc_cpu"]), 50),
+                  "grad": "cpu", "sub": "running",
+                  "foot": (f"db {db['connections']}/{db['max_connections']} conn · {db['tps']:.1f} tps" if db.get("connections") is not None
+                           and db.get("max_connections") else "load " + f"{sum(i.get('cpu') or 0 for i in containers):.0f}% cpu")})
+    bat = sd.get("power") or {}
+    pct = bat.get("percent")
+    if pct is None:
+        pct, stat, watts = now.get("battery") or (None, None, None)
+        bat = {"status": stat}
+    if pct is not None:
+        cards.append({"title": "power", "colour": C["conn"], "value": f"{pct}%", "frac": pct / 100, "bcolour": level_colour(1 - pct / 100, 0.8, 0.9),
+                      "sub": f"{bat.get('status') or ''}" + (" · AC" if bat.get("ac_online") else ""),
+                      "foot": (f"health {bat['health_pct']:.0f}% · {bat['cycles']} cycles" if bat.get("health_pct") and bat.get("cycles") is not None
+                               else "")})
+    cards.append({"title": "load", "colour": C["accent"], "value": f"{la[0]:.2f}", "series": hist["load"], "top": max(float(threads or 4) * 2, 4.0),
+                  "grad": "cpu", "sub": f"{la[1]:.2f} · {la[2]:.2f}",
+                  "foot": f"{now.get('running', 0)} running · {now.get('tasks', 0)} tasks"})
+    return cards
+
+
+def kpi_card(c, x, y, w, h, card):
+    box(c, x, y, w, h, card["title"], card["colour"])
+    xx = c.put(x + 2, y + 1, card["value"], card.get("vcolour") or C["bright"], bold=True)
+    line(c, xx + 2, y + 1, x + w - 2 - (xx + 2), (card["sub"], C["dim"]))
+    gh = h - 4
+    if gh >= 1 and card.get("series") is not None:
+        graph(c, x + 2, y + 2, w - 4, gh, card["series"], card.get("top") or 100, card.get("grad", "cpu"))
+    elif gh >= 1 and card.get("frac") is not None:
+        bar(c, x + 2, y + 2, w - 4, card["frac"], card.get("bcolour", C["accent"]))
+    line(c, x + 2, y + h - 2, w - 4, (card.get("foot", ""), C["text"]))
+
+
+def kpi_strip(c, sampler, x, y, w, h):
+    cards = kpi_cards(sampler)
+    n = max(1, min(len(cards), w // 27))
+    for card, (cx, cw) in zip(cards[:n], columns(x, w, [1] * n)):
+        kpi_card(c, cx, y, cw, h, card)
+
+
+# --- panels ----------------------------------------------------------------------------------------------------
+
+def cpu_detail_panel(c, sampler, x, y, w, h):
+    if tiny(w, h):
+        return
+    now, sd, ld = sampler.now, sysdata(sampler), livedata(sampler)
+    info = sd.get("cpu") or {}
+    cores = now.get("cores") or []
+    threads = info.get("threads") or len(cores)
+    box(c, x, y, w, h, "cpu", C["cpu"], clip(f"{sampler.model} · {info.get('cores', '?')} cores / {threads} threads", max(w // 2 + 8, 12)))
+    ix, row, bottom, iw = x + 2, y + 1, y + h - 1, w - 4
+    mw = max(min(iw - 26, 40), 6)
+    xx = c.put(ix, row, "Total ", C["dim"])
+    bar(c, xx, row, mw, now["cpu"] / 100, C["cpu"])
+    xx = c.put(xx + mw + 1, row, f"{now['cpu']:3.0f}%", C["bright"], bold=True)
+    freq = now.get("mhz")
+    if freq:
+        line(c, xx + 2, row, ix + iw - xx - 2, (f"{freq / 1000:.2f} GHz", C["text"]))
+    row += 1
+    per_row = 2 if iw >= 64 else 1
+    cw = iw // per_row
+    core_temps = now.get("core_temps") or {}
+    for i in range(0, len(cores), per_row):
+        if row >= bottom:
+            return
+        for j in range(per_row):
+            k = i + j
+            if k >= len(cores):
+                break
+            cx = ix + j * cw
+            xx = c.put(cx, row, f"C{k:<2}", C["dim"])
+            m = max(cw - 17, 4)
+            bar(c, xx, row, m, cores[k] / 100, C["cpu"])
+            xx = c.put(xx + m + 1, row, f"{cores[k]:3.0f}%", C["text"])
+            t = core_temps.get(sampler.core_of.get(k, k))
+            if t is not None:
+                c.put(xx + 1, row, f"{t:3.0f}°C", grad("temp", temp_pos(t)))
+        row += 1
+    times = (ld.get("cpu") or {}).get("times") or {}
+    if times and row + 2 < bottom:
+        row += 1
+        kinds = (("user", C["accent"]), ("system", C["conn"]), ("iowait", C["net"]), ("irq", C["mem"]), ("steal", C["bad"]))
+        stacked(c, ix, row, iw, [(times.get(k, 0) / 100, col) for k, col in kinds])
+        row += 1
+        xx = ix
+        for k, col in kinds:
+            xx = c.put(xx, row, "■ ", col)
+            xx = c.put(xx, row, f"{k} {times.get(k, 0):.0f}%   ", C["text"])
+        row += 1
+    la = now.get("load") or [0.0, 0.0, 0.0]
+    if row < bottom - 1:
+        row += 1
+        line(c, ix, row, iw, ("load ", C["dim"]), (f"{la[0]:.2f}  {la[1]:.2f}  {la[2]:.2f}", C["bright"]),
+             ("  (1, 5, 15 min)   ", C["dim"]), (f"{now.get('running', 0)} running / {now.get('tasks', 0)} tasks", C["text"]))
+        row += 1
+    pressure = info.get("pressure") or {}
+    if pressure and row + 3 < bottom:
+        row += 1
+        line(c, ix, row, iw, (f"{'STALL':<8}", C["dim"], True), (f"{'10 s':>8}{'60 s':>8}{'5 min':>8}", C["dim"]),
+             ("   share of time work waited for it", C["faint"] if c.rich else C["off"]))
+        row += 1
+        for name, warn in (("cpu", 60), ("memory", 5), ("io", 10)):
+            some = (pressure.get(name) or {}).get("some") or {}
+            if not some:
+                continue
+            vals = [some.get(k, 0.0) for k in ("avg10", "avg60", "avg300")]
+            line(c, ix, row, iw, (f"{name:<8}", C["dim"]), ("".join(f"{v:7.1f}%" for v in vals), C["warn"] if vals[0] >= warn else C["text"]))
+            row += 1
+    rates = ld.get("rates") or {}
+    if rates and row < bottom:
+        row += 1 if row < bottom - 1 else 0
+        line(c, ix, row, iw, (f"switches {fmt_count(rates.get('ctxt', 0))}/s   interrupts {fmt_count(rates.get('intr', 0))}/s   "
+                              f"forks {fmt_count(rates.get('forks', 0))}/s", C["dim"]))
+        row += 1
+    if info and row < bottom:
+        turbo = {True: "turbo on", False: "turbo off"}.get(info.get("turbo"), "")
+        line(c, ix, row, iw, (f"{info.get('governor') or '?'} governor · {info.get('min_mhz', 0):.0f}-{info.get('max_mhz', 0):.0f} MHz · {turbo}", C["dim"]))
+        row += 1
+    thr = info.get("throttle") or {}
+    if any(thr.values()) and row < bottom:
+        line(c, ix, row, iw, (f"heat slow-downs since boot: core {fmt_count(thr.get('core', 0))}, package {fmt_count(thr.get('package', 0))} (normal on this Mac)", C["faint"] if c.rich else C["off"]))
+        row += 1
+    room = bottom - row
+    if room >= 4:                                   # whatever room is left shows the last minutes
+        graph(c, x + 1, row + 1, w - 2, room - 1, sampler.hist["cpu"], 100, "cpu")
+        secs = int((w - 2) * (2 if c.rich else 1) * SAMPLE_S)
+        c.put(x + 2, row, f"last {secs // 60} min" if secs >= 120 else f"last {secs} s", C["dim"])
+
+
+def memory_detail_panel(c, sampler, x, y, w, h):
+    if tiny(w, h):
+        return
+    sd, ld = sysdata(sampler), livedata(sampler)
+    m = {**sampler.now["mem"], **(sd.get("memory") or {})}
+    total = m["total"]
+    box(c, x, y, w, h, "memory", C["mem"], f"{fmt_bytes(total)} total")
+    ix, row, bottom, iw = x + 2, y + 1, y + h - 1, w - 4
+    mw = max(min(iw - 24, 36), 4)
+    shown = [("Used", m["used"], level_colour(1 - per_cent(m.get("available", 0), total) / 100, 0.9, 0.95)),
+             ("Available", m.get("available", 0), C["svc"]),
+             ("Cached", m.get("cached", 0) + m.get("buffers", 0), C["svc"]),
+             ("Kernel slab", m.get("slab", 0), C["net"]), ("Shared", m.get("shmem", 0), C["net"]), ("Free", m.get("free", 0), C["off"])]
+    for label, value, colour in shown:
+        if row >= bottom or (label in ("Kernel slab", "Shared", "Free") and not value):
+            continue
+        xx = c.put(ix, row, f"{label:<12}", C["dim"])
+        xx = c.put(xx, row, f"{fmt_bytes(value):>9} ", C["bright"])
+        bar(c, xx, row, mw, value / total if total else 0, colour)
+        c.put(xx + mw + 1, row, f"{per_cent(value, total):3.0f}%", C["text"])
+        row += 1
+    swap_total, swap_used = m.get("swap_total", 0), m.get("swap_used", 0)
+    if swap_total and row < bottom:
+        xx = c.put(ix, row, f"{'Swap':<12}", C["dim"])
+        xx = c.put(xx, row, f"{fmt_bytes(swap_used):>9} ", C["bright"])
+        bar(c, xx, row, mw, swap_used / swap_total, level_colour(swap_used / swap_total, 0.6, 0.85))
+        c.put(xx + mw + 1, row, f"{per_cent(swap_used, swap_total):3.0f}%", C["text"])
+        row += 1
+    rates = ld.get("rates") or {}
+    notes = []
+    if sd.get("memory"):
+        notes.append(f"dirty {fmt_bytes(m.get('dirty', 0))} · writeback {fmt_bytes(m.get('writeback', 0))} · page tables {fmt_bytes(m.get('page_tables', 0))}")
+        if m.get("commit_limit"):
+            notes.append(f"committed {fmt_bytes(m.get('committed', 0))} of a {fmt_bytes(m['commit_limit'])} limit "
+                         f"({per_cent(m.get('committed', 0), m['commit_limit']):.0f}%): promised, not used")
+    if rates:
+        notes.append(f"swap in {fmt_bytes(rates.get('swap_in', 0), True)} · out {fmt_bytes(rates.get('swap_out', 0), True)} · "
+                     f"hard page faults {rates.get('major_faults', 0)}/s")
+    if (sd.get("swap") or []) and len(sd["swap"]) > 0:
+        notes.append("swap on " + ", ".join(f"{d['name']} ({d['kind']})" for d in sd["swap"]))
+    if notes and row < bottom - 1:
+        row += 1
+    for note in notes:
+        if row >= bottom:
+            break
+        line(c, ix, row, iw, (note, C["dim"]))
+        row += 1
+    room = bottom - row
+    if room >= 4:
+        graph(c, x + 1, row, w - 2, room, sampler.hist["mem"], 100, "mem")
+
+
+def storage_panel(c, sampler, x, y, w, h):
+    if tiny(w, h):
+        return
+    sd, ld = sysdata(sampler), livedata(sampler)
+    store = sd.get("storage") or {}
+    systems = store.get("filesystems") or []
+    box(c, x, y, w, h, "storage", C["svc"], f"{len(systems)} filesystem(s)" if systems else "")
+    ix, row, bottom, iw = x + 2, y + 1, y + h - 1, w - 4
+    if not systems:
+        used, total = sampler.now.get("disk", (0, 0))
+        systems = [{"mount": "/", "used": used, "total": total, "avail": total - used, "fstype": "", "inodes": 0, "inodes_used": 0, "readonly": False}]
+    mw = max(min(iw - 58, 20), 6) if iw >= 70 else 6
+    for fs in systems:
+        if row >= bottom:
+            return
+        frac = fs["used"] / fs["total"] if fs.get("total") else 0
+        inodes = per_cent(fs.get("inodes_used", 0), fs.get("inodes", 0))
+        xx = c.put(ix, row, f"{clip(fs['mount'], 10):<10}", C["bright"], bold=True)
+        bar(c, xx, row, mw, frac, level_colour(frac))
+        xx = c.put(xx + mw + 1, row, f"{frac * 100:3.0f}%", C["text"])
+        text = f"  {fmt_bytes(fs['used'])} / {fmt_bytes(fs['total'])}   free {fmt_bytes(fs.get('avail'))}   {fs.get('fstype', '')}"
+        if fs.get("inodes") and iw >= 96:
+            text += f"   inodes {inodes:.0f}%"
+        xx = line(c, xx, row, ix + iw - xx, (text, C["dim"]))
+        if fs.get("readonly"):
+            line(c, xx, row, ix + iw - xx, ("  READ-ONLY", C["bad"], True))
+        row += 1
+    disks = store.get("disks") or []
+    temps = {(t["chip"], t["label"]): t["temp_c"] for t in (sd.get("sensors") or {}).get("temps") or []}
+    for d in disks:
+        if row + 1 >= bottom:
+            break
+        row += 1
+        io = (ld.get("disks") or {}).get(d["name"]) or {}
+        line(c, ix, row, iw, (f"{d['name']}  ", C["bright"], True), (f"{d.get('model') or ''}  {fmt_bytes(d.get('size'))}  ", C["text"]),
+             (("SSD" if d.get("ssd") else "disk") + (f" · {d['state']}" if d.get("state") else "") + (f" · firmware {d['firmware']}" if d.get("firmware") else ""), C["dim"]),
+             ((f" · {temps[('nvme', 'Composite')]:.0f}°C" if ("nvme", "Composite") in temps else ""), C["dim"]))
+        row += 1
+        if io:
+            line(c, ix, row, iw, ("read ", C["dim"]), (f"{fmt_bytes(io['read'], True):>10}", C["bright"]), ("   write ", C["dim"]),
+                 (f"{fmt_bytes(io['write'], True):>10}", C["bright"]), (f"   {io['riops']} + {io['wiops']} operations/s   busy ", C["dim"]),
+                 (f"{io['busy']:.0f}%", C["warn"] if io["busy"] >= 85 else C["bright"]))
+            row += 1
+    dk = store.get("docker") or {}
+    if dk and row + 1 < bottom:
+        row += 1
+        parts = []
+        for key, label in (("images", "images"), ("volumes", "volumes"), ("build_cache", "build cache")):
+            d = dk.get(key)
+            if d:
+                parts.append(f"{label} {fmt_bytes(d['size'])}" + (f" ({fmt_bytes(d['reclaimable'])} reclaimable)" if d.get("reclaimable") else ""))
+        text, lines_ = "", []
+        for part_ in parts:                       # as many parts per line as fit
+            if text and len(text) + len(part_) + 5 > iw - 9:
+                lines_.append(text)
+                text = ""
+            text = f"{text}  ·  {part_}" if text else part_
+        lines_.append(text)
+        for n, text in enumerate(lines_):
+            if row >= bottom:
+                break
+            line(c, ix, row, iw, (f"{'Docker' if n == 0 else '':<9}", C["dim"], True), (text, C["text"]))
+            row += 1
+    room = bottom - row - 1
+    if room >= 5:
+        row += 1
+        half = room // 2
+        top = nice_top(list(sampler.hist["rd"])[-(w - 2) * 2:] + list(sampler.hist["wr"])[-(w - 2) * 2:], 1_000_000)
+        graph(c, x + 1, row, w - 2, half, sampler.hist["rd"], top, "disk")
+        graph(c, x + 1, row + half, w - 2, room - half, sampler.hist["wr"], top, "mem", down=True)
+        c.put(x + 2, row, f"▲ read {fmt_bytes(sampler.now['rd'], True)}", C["accent"])
+        c.put(x + 2, row + room - 1, f"▼ write {fmt_bytes(sampler.now['wr'], True)}", C["mem"])
+
+
+def power_panel(c, sampler, x, y, w, h):
+    if tiny(w, h):
+        return
+    sd = sysdata(sampler)
+    b = sd.get("power")
+    if not b:
+        pct, stat, watts = sampler.now.get("battery") or (None, None, None)
+        b = {"percent": pct, "status": stat, "power_w": watts} if pct is not None else None
+    box(c, x, y, w, h, "power", C["conn"], ("on mains power" if b.get("ac_online") else "on battery") if b and "ac_online" in b else "")
+    ix, row, bottom, iw = x + 2, y + 1, y + h - 1, w - 4
+    if not b:
+        line(c, ix, row, iw, ("no battery in this machine", C["dim"]))
+        return
+    pct = b.get("percent")
+    if pct is not None:
+        xx = c.put(ix, row, f"{pct:3d}% ", C["bright"], bold=True)
+        mw = max(min(iw - 22, 30), 6)
+        bar(c, xx, row, mw, pct / 100, level_colour(1 - pct / 100, 0.8, 0.9))
+        line(c, xx + mw + 1, row, ix + iw - xx - mw - 1, (b.get("status") or "", C["text"]))
+        row += 1
+    rows = []
+    if b.get("health_pct") is not None:
+        rows.append(f"health {b['health_pct']:.1f}% of new · {b.get('capacity_wh')} of {b.get('design_wh')} Wh")
+    if b.get("cycles") is not None:
+        rows.append(f"{b['cycles']} charge cycles" + (f" · {b['technology']}" if b.get("technology") else ""))
+    flow = []
+    if b.get("power_w") is not None:
+        flow.append(f"{b['power_w']:.1f} W")
+    if b.get("voltage_v"):
+        flow.append(f"{b['voltage_v']:.2f} V")
+    if b.get("current_a"):
+        flow.append(f"{b['current_a']:.2f} A")
+    if b.get("temp_c") is not None:
+        flow.append(f"cell temperature {b['temp_c']:.1f}°C")
+    if flow:
+        rows.append(" · ".join(flow))
+    if b.get("seconds_left"):
+        rows.append(("time to full " if b.get("status") == "Charging" else "time left ") + fmt_duration(b["seconds_left"]))
+    if b.get("limit"):
+        rows.append(f"charging stops at {b['limit']}%")
+    for text in rows:
+        if row >= bottom:
+            break
+        line(c, ix, row, iw, (text, C["text"] if row == y + 2 else C["dim"]))
+        row += 1
+
+
+def thermal_detail_panel(c, sampler, x, y, w, h):
+    if tiny(w, h):
+        return
+    sd, now = sysdata(sampler), sampler.now
+    temps = (sd.get("sensors") or {}).get("temps") or [{"chip": r["chip"], "label": r["label"], "temp_c": r["temp"], "crit_c": r["limit"], "max_c": None}
+                                                         for r in getattr(sampler, "thermal", [])]
+    fans = (sd.get("sensors") or {}).get("fans") or []
+    box(c, x, y, w, h, "thermal and fans", C["warn"] if cooling_fault(now.get("temp"), now.get("fans") or [f["rpm"] for f in fans]) else C["accent"],
+        f"{(now.get('mhz') or 0) / 1000:.2f} GHz" if now.get("mhz") else "")
+    ix, row, bottom, iw = x + 2, y + 1, y + h - 1, w - 4
+    mw = max(iw - 46, 6)
+    for t in sorted(temps, key=lambda r: -r["temp_c"]):
+        if row >= bottom - 3:
+            break
+        limit = t.get("crit_c") or t.get("max_c") or 100.0
+        colour = grad("temp", temp_pos(t["temp_c"]))
+        xx = fields(c, ix, row, ix + iw, (t["chip"], C["dim"], 9), (t["label"], C["dim"], 14), (f"{t['temp_c']:4.0f}°C", colour, 7))
+        bar(c, xx, row, mw, t["temp_c"] / limit, colour)
+        line(c, xx + mw + 1, row, ix + iw - xx - mw - 1, (f"of {limit:.0f}°C", C["faint"] if c.rich else C["off"]))
+        row += 1
+    fi = sampler.fans or {}
+    fan_rows = fans or [{"rpm": r, "min": None, "max": fi.get("fans", [{}])[0].get("max_rpm") if fi.get("fans") else None, "target": None} for r in now.get("fans") or []]
+    if row < bottom and fan_rows:
+        row += 1
+    for f in fan_rows:
+        if row >= bottom:
+            break
+        top = f.get("max") or 8000
+        xx = c.put(ix, row, f"FAN  {f['rpm']:5d} rpm ", C["bright"], bold=True)
+        bar(c, xx, row, mw, f["rpm"] / top, C["conn"])
+        line(c, xx + mw + 1, row, ix + iw - xx - mw - 1, (f"of {top} · floor {f.get('min') or '?'}", C["faint"] if c.rich else C["off"]))
+        row += 1
+    if fi and row < bottom:
+        mode = f"fan controller: {fi.get('mode', '?')}" + (f" · target {fi['target_pct']:.0f}%" if fi.get("target_pct") else "")
+        line(c, ix, row, iw, (mode, C["dim"]))
+        row += 1
+    if row < bottom:
+        line(c, ix, row, iw, ("100°C is the chip's own limit. Running there under load is normal for this Mac.", C["dim"]))
+
+
+def network_detail_panel(c, sampler, x, y, w, h):
+    if tiny(w, h):
+        return
+    now, sd, ld = sampler.now, sysdata(sampler), livedata(sampler)
+    net = sd.get("network") or {}
+    box(c, x, y, w, h, "network", C["net"], sampler.iface or "offline")
+    ix, row, bottom, iw = x + 2, y + 1, y + h - 1, w - 4
+    xx = c.put(ix, row, "▼ ", C["net"], bold=True)
+    xx = c.put(xx, row, f"{fmt_bytes(now['rx'], True):>10}", C["bright"], bold=True)
+    xx = c.put(xx + 3, row, "▲ ", C["conn"], bold=True)
+    xx = c.put(xx, row, f"{fmt_bytes(now['tx'], True):>10}", C["bright"], bold=True)
+    line(c, xx + 3, row, ix + iw - xx - 3, (f"since boot  ▼ {fmt_bytes(now.get('rx_total'))}   ▲ {fmt_bytes(now.get('tx_total'))}", C["dim"]))
+    row += 1
+    gh = min(6, max((bottom - row - 8) // 2, 0)) if h >= 24 else 0
+    if gh >= 2:
+        graph(c, x + 1, row, w - 2, gh, sampler.hist["rx"], nice_top(list(sampler.hist["rx"])[-(w - 2) * 2:], 100_000), "down")
+        graph(c, x + 1, row + gh, w - 2, gh, sampler.hist["tx"], nice_top(list(sampler.hist["tx"])[-(w - 2) * 2:], 100_000), "up", down=True)
+        row += 2 * gh
+    rates = (ld.get("net") or {}).get("ifaces") or {}
+    ifaces = [i for i in net.get("interfaces") or [] if i["kind"] != "bridge" or i["state"] == "up"]
+    if ifaces and row + 2 < bottom:
+        row += 1
+        rows = []
+        for i in ifaces:
+            r = rates.get(i["name"])
+            up = i["state"] in ("up", "unknown")
+            rows.append([(i["name"] if i["kind"] != "container" else f"containers x{i.get('count', 0)}", C["bright"] if up else C["dim"], up),
+                         (i["state"] if i["kind"] != "container" else "", C["ok"] if i["state"] == "up" else C["dim"]),
+                         ((i.get("addresses") or [""])[0], C["text"]),
+                         (fmt_bytes(r["rx"], True) if r else "", C["net"]), (fmt_bytes(r["tx"], True) if r else "", C["conn"]),
+                         (fmt_bytes(i["rx_bytes"]), C["dim"]), (fmt_bytes(i["tx_bytes"]), C["dim"]),
+                         (f"{i['rx_errors'] + i['tx_errors']}", C["bad"] if i["rx_errors"] + i["tx_errors"] else C["dim"]),
+                         (f"{i['rx_drops'] + i['tx_drops']}", C["warn"] if i["rx_drops"] + i["tx_drops"] > 100 else C["dim"])])
+        cols = [("INTERFACE", 18, "l"), ("STATE", 7, "l"), ("ADDRESS", None, "l"), ("IN/s", 10, "r"), ("OUT/s", 10, "r"),
+                ("IN TOTAL", 9, "r"), ("OUT TOTAL", 9, "r"), ("ERR", 4, "r"), ("DROP", 5, "r")]
+        if iw < 100:
+            cols = [cols[0], cols[2], cols[3], cols[4]]
+            rows = [[r[0], r[2], r[3], r[4]] for r in rows]
+        row += table(c, ix, row, iw, bottom - row, cols, rows) + 1
+    wifi = net.get("wifi")
+    if wifi and row < bottom:
+        dbm = wifi.get("signal_dbm")
+        line(c, ix, row, iw, ("Wi-Fi  ", C["dim"], True), (f"{wifi['ssid']}  ", C["bright"], True),
+             (f"{wifi.get('band') or ''} channel {wifi.get('channel')} · {wifi.get('rate_mbps')} Mbit/s · {wifi.get('security') or 'open'}", C["text"]),
+             ((f" · {dbm} dBm" if dbm is not None else "") + (f" ({wifi['signal_pct']}%)" if wifi.get("signal_pct") is not None else ""),
+              C["warn"] if dbm is not None and dbm < -75 else C["text"]))
+        row += 1
+    chk = (debug_of(sampler).get("net") or {})
+    if chk and row < bottom:
+        def ms(v):
+            return "no answer" if v is None else f"{v:.0f} ms"
+        line(c, ix, row, iw, ("reach  ", C["dim"], True), (f"router {chk.get('gateway') or '-'} {ms(chk.get('gateway_ms'))}   internet {ms(chk.get('internet_ms'))}   "
+                                                         f"DNS {ms(chk.get('dns_ms'))}", C["text"]))
+        row += 1
+    tcp = net.get("tcp")
+    if tcp and row < bottom:
+        ct = (sd.get("kernel") or {}).get("conntrack") or {}
+        text = (f"{tcp.get('established')} connections open · {tcp.get('time_wait')} closing · {fmt_count(tcp.get('retransmitted') or 0)} segments resent"
+                f" · {fmt_count(tcp.get('failed_attempts') or 0)} failed attempts")
+        if ct.get("count") is not None and ct.get("max"):
+            text += f" · tracked {ct['count']}/{fmt_count(ct['max'])}"
+        line(c, ix, row, iw, ("tcp    ", C["dim"], True), (text, C["text"]))
+        row += 1
+
+
+def tailnet_panel(c, sampler, x, y, w, h):
+    if tiny(w, h):
+        return
+    ts = sysdata(sampler).get("tailscale") or {}
+    peers = ts.get("peers") or []
+    online = sum(1 for p in peers if p["online"])
+    box(c, x, y, w, h, "tailnet", C["conn"], (f"v{ts['version']} · " if ts.get("version") else "") + f"{online}/{len(peers)} devices online" if peers else "")
+    ix, row, bottom, iw = x + 2, y + 1, y + h - 1, w - 4
+    if not peers:
+        line(c, ix, row, iw, ("no device list yet (collector not updated)", C["dim"]))
+        return
+    rows = [[(p["name"], C["bright"] if p["online"] else C["dim"], p["online"]), (p.get("os") or "", C["dim"]),
+             (p["route"], C["ok"] if p["route"] == "direct" else C["warn"] if p["route"].startswith("relay") else C["dim"]),
+             (fmt_bytes(p.get("rx_bytes", 0)), C["net"]), (fmt_bytes(p.get("tx_bytes", 0)), C["conn"]),
+             ("now" if p["online"] else fmt_since(p.get("last_seen")) + " ago", C["text"] if p["online"] else C["dim"])] for p in peers]
+    cols = [("DEVICE", None, "l"), ("OS", 8, "l"), ("ROUTE", 11, "l"), ("RECEIVED", 9, "r"), ("SENT", 9, "r"), ("SEEN", 9, "r")]
+    if iw < 70:
+        cols, rows = [cols[0], cols[2], cols[5]], [[r[0], r[2], r[5]] for r in rows]
+    row += table(c, ix, row, iw, bottom - row, cols, rows) + 1
+    notes = [(h_, C["warn"]) for h_ in ts.get("health") or []]
+    if ts.get("key_expiry") and row < bottom:
+        left = ts["key_expiry"] - time.time()
+        notes.append((f"this Mac's Tailscale key expires in {fmt_duration(int(left))}" if left > 0 else "this Mac's Tailscale key has expired", C["dim"] if left > 14 * 86400 else C["warn"]))
+    if ts.get("funnel_relays") and row < bottom:
+        notes.append((f"{ts['funnel_relays']} Tailscale Funnel relays are connected (not counted as devices)", C["faint"] if c.rich else C["off"]))
+    if ts.get("update_available"):
+        notes.append(("a newer Tailscale is available", C["warn"]))
+    for text, colour in notes:
+        if row >= bottom:
+            break
+        line(c, ix, row, iw, (text, colour))
+        row += 1
+
+
+def uptime_text(seconds):
+    return fmt_duration(int(seconds)) if seconds else "?"
+
+
+def service_rows(sampler, detailed):
+    """(project rows and service rows) for the services table, grouped by compose project."""
+    s = sampler.status or {}
+    items = list(s.get("containers", []) or [])
+    groups = {}
+    for item in items:
+        short = item["name"].split(".")[-1]
+        for prefix in ("supabase-", f"{item.get('project') or '-'}-"):
+            short = short[len(prefix):] if short.startswith(prefix) else short
+        item["short"] = re.sub(r"-\d+$", "", short)
+        groups.setdefault(item.get("project") or "-", []).append(item)
+    out = []
+    for project, members in sorted(groups.items(), key=lambda kv: (-sum(m.get("mem") or 0 for m in kv[1]), kv[0])):
+        members.sort(key=lambda i: (i.get("state") == "running", -(i.get("mem") or 0), i["short"]))
+        up = sum(1 for m in members if m.get("state") == "running")
+        cpu = sum(m.get("cpu") or 0 for m in members)
+        mem = sum(m.get("mem") or 0 for m in members)
+        out.append(("project", project, f"{up}/{len(members)} running · {cpu:.1f}% cpu · {fmt_bytes(mem)}", up < len(members)))
+        out.extend(("service", m, None, None) for m in members)
+    return out
+
+
+def services_table(c, sampler, x, y, w, h, detailed=False):
+    if tiny(w, h):
+        return
+    s = sampler.status or {}
+    items = list(s.get("containers", []) or [])
+    up = sum(1 for i in items if i.get("state") == "running")
+    box(c, x, y, w, h, "services", C["svc"], f"{up}/{len(items)} running" if items else "")
+    ix, bottom, iw = x + 2, y + h - 1, w - 4
+    if not items:
+        c.put(ix, y + 1, "Supabase is installed by setup. Nothing to show yet.", C["dim"])
+        return
+    rows_all = service_rows(sampler, detailed)
+    cols = [("SERVICE", None, "l"), ("STATE", 8, "l"), ("HEALTH", 9, "l"), ("CPU (bar = 1 core)", 24, "l"), ("MEMORY", 9, "r")]
+    if iw >= 120:
+        cols += [("IN/s", 9, "r"), ("OUT/s", 9, "r"), ("WRITE/s", 9, "r")]
+    if iw >= 150 and not detailed:
+        cols.insert(4, ("TREND (15 min)", 16, "l"))
+    if iw >= 140 or detailed:
+        cols += [("PIDS", 5, "r"), ("UP", 6, "r"), ("RESTARTS", 8, "r")]
+    if detailed and iw >= 170:
+        cols += [("IMAGE", 30, "l")]
+    if iw < 80:
+        cols = [cols[0], cols[1], cols[3], cols[4]] if iw >= 56 else [cols[0], cols[1], cols[4]]
+    fixed = sum(cw for _, cw, _ in cols if cw) + 2 * (len(cols) - 1)
+    widths = [cw if cw else max(iw - fixed, 0) for _, cw, _ in cols]
+    xx = ix
+    for (title, _, align), cw in zip(cols, widths):
+        text = clip(title, cw)
+        c.put(xx, y + 1, text.rjust(cw) if align == "r" else text, C["dim"], bold=True)
+        xx += cw + 2
+    room = h - 3
+    shown = rows_all if len(rows_all) <= room else [r for r in rows_all if r[0] == "service"]       # tight: drop the group lines first
+    hidden = 0
+    if len(shown) > room:
+        hidden = len(shown) - max(room - 1, 0)
+        shown = shown[: max(room - 1, 0)]
+    for n, (kind, a, b, c_flag) in enumerate(shown):
+        row = y + 2 + n
+        if kind == "project":
+            xx = c.put(ix, row, clip(a, 28), C["accent"], bold=True)
+            line(c, xx + 2, row, ix + iw - xx - 2, (b, C["bad"] if c_flag else C["dim"]))
+            continue
+        item = a
+        running = item.get("state") == "running"
+        state = "ok" if running else "bad"
+        health = item.get("health") or ("unhealthy" if "unhealthy" in item.get("status", "") else "healthy" if "healthy" in item.get("status", "") else "")
+        if running and health == "unhealthy":
+            state = "warn"
+        cpu = item.get("cpu")
+        cells_ = {"SERVICE": (item["short"], C["bright"] if running else C["bad"], not running),
+                  "STATE": (item.get("state", "?"), STATE_COLOUR[state]),
+                  "HEALTH": (health or "-", C["warn"] if health == "unhealthy" else C["dim"]),
+                  "MEMORY": (fmt_bytes(item.get("mem")) if item.get("mem") is not None else "-", C["text"]),
+                  "IN/s": (fmt_bytes(item.get("net_rx", 0), True) if running else "-", C["net"]),
+                  "OUT/s": (fmt_bytes(item.get("net_tx", 0), True) if running else "-", C["conn"]),
+                  "WRITE/s": (fmt_bytes(item.get("blk_write", 0), True) if running else "-", C["text"]),
+                  "PIDS": (str(item.get("pids", "-")), C["dim"]),
+                  "UP": (fmt_since(item.get("started")) if running else "-", C["dim"]),
+                  "RESTARTS": (str(item.get("restarts") if item.get("restarts") is not None else "-"), C["warn"] if item.get("restarts") else C["dim"]),
+                  "IMAGE": (item.get("image", ""), C["faint"] if c.rich else C["off"])}
+        xx = ix
+        for (title, _, align), cw in zip(cols, widths):
+            if title.startswith("TREND"):
+                hist = sampler.svc_hist.get(item["name"])
+                if hist and running:
+                    graph(c, xx, row, 14, 1, hist, 100.0, "cpu")
+                else:
+                    c.put(xx, row, "·" * 14, C["faint"] if c.rich else C["off"])
+            elif title.startswith("CPU"):
+                if cpu is None:
+                    c.put(xx, row, "-", C["dim"])
+                else:
+                    bar(c, xx, row, 14, min(cpu / 100, 1), C["cpu"])
+                    c.put(xx + 15, row, f"{cpu:5.1f}%", C["text"])
+            else:
+                text, colour = cells_[title][0], cells_[title][1]
+                text = clip(text, cw)
+                if title == "SERVICE":
+                    dot(c, xx, row, state)
+                    c.put(xx + 2, row, clip(item["short"], cw - 2), colour, bold=len(cells_[title]) > 2 and cells_[title][2])
+                else:
+                    c.put(xx, row, text.rjust(cw) if align == "r" else text, colour)
+            xx += cw + 2
+    if hidden:
+        c.put(ix, y + 2 + len(shown), f"… {hidden} more", C["dim"])
+
+
+def db_panel(c, sampler, x, y, w, h):
+    if tiny(w, h):
+        return
+    db = sysdata(sampler).get("db")
+    box(c, x, y, w, h, "database", C["net"], (f"PostgreSQL {db['version']} · up {fmt_duration(db['uptime_s'])}" if db and db.get("version") else ""))
+    ix, row, bottom, iw = x + 2, y + 1, y + h - 1, w - 4
+    if not db:
+        line(c, ix, row, iw, ("no database container found", C["dim"]))
+        return
+    if db.get("error"):
+        line(c, ix, row, iw, (db["error"], C["warn"]))
+        return
+    conn, limit = db.get("connections", 0), db.get("max_connections") or 100
+    mw = max(min(iw - 40, 24), 6)
+    xx = c.put(ix, row, f"{'Connections':<13}", C["dim"])
+    xx = c.put(xx, row, f"{conn:>4}/{limit} ", C["bright"])
+    bar(c, xx, row, mw, conn / limit, level_colour(conn / limit, 0.7, 0.9))
+    row += 1
+    hit = db.get("cache_hit_pct")
+    two = iw >= 70
+    pairs = [("Size", fmt_bytes(db.get("size"))), ("Active now", f"{db.get('active', 0)} ({db.get('idle_in_transaction', 0)} idle in transaction)"),
+             ("Transactions", f"{db.get('tps', 0):.1f}/s"), ("Cache hit", f"{hit:.2f}%" if hit is not None else "-"),
+             ("Committed", fmt_count(db.get("commits", 0))), ("Rolled back", fmt_count(db.get("rollbacks", 0))),
+             ("Deadlocks", str(db.get("deadlocks", 0))), ("Temp files", fmt_bytes(db.get("temp_bytes"))),
+             ("Rows read", fmt_count(db.get("rows_returned", 0))), ("Rows written", fmt_count(db.get("rows_inserted", 0) + db.get("rows_updated", 0))),
+             ("Rows deleted", fmt_count(db.get("rows_deleted", 0))), ("App users", str(db["users"]) if db.get("users") is not None else "-"),
+             ("Stored files", str(db["storage_objects"]) if db.get("storage_objects") is not None else "-")]
+    step = 2 if two else 1
+    colw = iw // step
+    for i in range(0, len(pairs), step):
+        if row >= bottom:
+            break
+        for j in range(step):
+            if i + j >= len(pairs):
+                break
+            label, value = pairs[i + j]
+            bad = (label == "Deadlocks" and value != "0") or (label == "Cache hit" and hit is not None and hit < 95)
+            xx = c.put(ix + j * colw, row, f"{label:<13}", C["dim"])
+            line(c, xx, row, colw - 14, (value, C["warn"] if bad else C["bright"]))
+        row += 1
+
+
+def processes_panel(c, sampler, x, y, w, h):
+    if tiny(w, h):
+        return
+    ld = livedata(sampler)
+    procs = ld.get("procs") or []
+    if not procs:                                   # an older collector: the screen's own list, by program name
+        return procs_panel(c, sampler, x, y, w, h)
+    tasks = ld.get("tasks") or {}
+    box(c, x, y, w, h, "processes", C["cpu"], f"{tasks.get('total', len(procs))} tasks · {tasks.get('threads', '?')} threads" if tasks else "")
+    ix, row, bottom, iw = x + 2, y + 1, y + h - 1, w - 4
+    rows = [[(str(p["pid"]), C["dim"]), (p["name"], C["bright"]), (p["user"], C["dim"]), (f"{p['cpu']:.1f}%", C["text"]),
+             (fmt_bytes(p["rss"]), C["text"]), (f"{p.get('mem', 0):.1f}%", C["dim"]), (str(p.get("threads", "")), C["dim"])] for p in procs]
+    cols = [("PID", 8, "r"), ("PROGRAM", None, "l"), ("USER", 12, "l"), ("CPU", 7, "r"), ("MEMORY", 9, "r"), ("MEM%", 6, "r"), ("THR", 4, "r")]
+    if iw < 64:
+        cols, rows = [cols[1], cols[3], cols[4]], [[r[1], r[3], r[4]] for r in rows]
+    table(c, ix, row, iw, bottom - row, cols, rows)
+
+
+def system_facts_panel(c, sampler, x, y, w, h):
+    if tiny(w, h):
+        return
+    s, sd, now = sampler.status or {}, sysdata(sampler), sampler.now
+    host, hs = sd.get("host") or {}, s.get("host") or {}
+    box(c, x, y, w, h, "this machine", C["accent"], hs.get("model") or "")
+    ix, row, bottom, iw = x + 2, y + 1, y + h - 1, w - 4
+    boot = host.get("boot_time")
+    ts = sd.get("tailscale") or {}
+    mu = s.get("macserver_update") or {}
+    facts = [("Operating system", host.get("os") or "?"),
+             ("Kernel", f"{hs.get('kernel', '?')}" + ("" if hs.get("t2_kernel", True) else "  (NOT the T2 kernel)")),
+             ("Firmware", host.get("firmware") or "?"), ("Architecture", host.get("arch") or "?"),
+             ("Running since", time.strftime("%a %d %b %H:%M", time.localtime(boot)) + f"  ({uptime_text(now.get('uptime'))})" if boot else uptime_text(now.get("uptime"))),
+             ("Time zone", host.get("timezone") or "?"), ("Clock", "synced" if s.get("clock_synced") else "NOT synced" if s.get("clock_synced") is False else "?"),
+             ("Docker", host.get("docker") or "?"), ("Tailscale", ts.get("version") or "?"),
+             ("Debian updates", f"{hs.get('updates_pending', 0)} waiting" if hs.get("updates_pending") else "up to date"),
+             ("Restart needed", "yes, to finish updates" if hs.get("reboot_required") else "no"),
+             ("MacServer", (mu.get("message") or mu.get("state") or "?") + (f"  ({mu['current'][:7]})" if mu.get("current") else "")),
+             ("Logins", ", ".join(f"{x_['user']} on {x_['tty']}" for x_ in host.get("sessions") or []) or "none")]
+    for label, value in facts:
+        if row >= bottom:
+            break
+        warn = value.startswith("NOT") or value.endswith("waiting") or value.startswith("yes")
+        xx = c.put(ix, row, f"{label:<17}", C["dim"])
+        line(c, xx, row, ix + iw - xx, (value, C["warn"] if warn else C["bright"]))
+        row += 1
+
+
+# --- the pages ------------------------------------------------------------------------------------------------------
+
+def tiny(w, h):
+    """Too small for a panel's content: the panel draws its frame (or nothing) only."""
+    return w < 14 or h < 3
+
+
+def home_tabs(c, sampler, y):
+    """The page strip under the top bar; returns the first free row."""
+    now_page = sampler.home % len(HOME_PAGES)
+    x = 1
+    for i, name in enumerate(HOME_PAGES):
+        active = i == now_page
+        if c.w < 62 and not active:
+            continue
+        label = f" {name.upper()} "
+        x = c.put(x, y, label, (C["pill_fg"] if c.rich else C["bright"]) if active else C["dim"], C["accent"] if active else None, bold=active) + 1
+    left = max(int(HOME_DWELL_S[HOME_PAGES[now_page]] - (time.monotonic() - sampler.home_t)), 0)
+    note = "page held (p)" if sampler.paused else "" if sampler.force_overview else f"next page in {left}s (n/b p)"
+    if note and x + len(note) + 3 < c.w:
+        c.put(c.w - len(note) - 1, y, note, C["dim"])
+    return y + 1
+
+
+def page_overview(c, sampler, x, y, w, h):
+    setup = not (sampler.status or {}).get("setup_done")
+    kpi_h = 6 if h >= 44 else 4 if h >= 22 else 0
+    if kpi_h:
+        kpi_strip(c, sampler, x, y, w, kpi_h)
+    y, h = y + kpi_h, h - kpi_h
+    lower = setup_panel if setup else services_table
+    if w >= 170:
+        top_h = min(max(round(h * 0.46), 14), 30)
+        if h - top_h < 12:
+            top_h = max(h - 12, 8)
+        a, b, d = columns(x, w, [31, 36, 33])
+        cpu_detail_panel(c, sampler, a[0], y, a[1], top_h)
+        m, st = fit(y, top_h, [12, 13], grow=1)
+        memory_detail_panel(c, sampler, b[0], m[0], b[1], m[1])
+        storage_panel(c, sampler, b[0], st[0], b[1], st[1])
+        network_detail_panel(c, sampler, d[0], y, d[1], top_h)
+        ew = w * 32 // 100
+        lower(c, sampler, x, y + top_h, w - ew, h - top_h)
+        cn, ev = fit(y + top_h, h - top_h, [len(connections(sampler)) + 4, 8], grow=1)
+        conn_panel(c, sampler, x + w - ew, cn[0], ew, cn[1])
+        events_panel(c, sampler, x + w - ew, ev[0], ew, ev[1])
+    elif w >= 110:
+        r1, r2, r3 = stack(y, h, [34, 26, 40])
+        a, b = columns(x, w, [50, 50])
+        cpu_detail_panel(c, sampler, a[0], r1[0], a[1], r1[1])
+        memory_detail_panel(c, sampler, b[0], r1[0], b[1], r1[1])
+        network_detail_panel(c, sampler, a[0], r2[0], a[1], r2[1])
+        storage_panel(c, sampler, b[0], r2[0], b[1], r2[1])
+        lower(c, sampler, x, r3[0], w, r3[1])
+    else:
+        r1, r2 = stack(y, h, [2, 3])
+        cpu_detail_panel(c, sampler, x, r1[0], w, r1[1])
+        lower(c, sampler, x, r2[0], w, r2[1])
+
+
+def page_hardware(c, sampler, x, y, w, h):
+    if w >= 170:
+        r1, r2 = stack(y, h, [52, 48])
+        a, b, d = columns(x, w, [36, 32, 32])
+        cpu_detail_panel(c, sampler, a[0], r1[0], a[1], r1[1])
+        th, pw = fit(r1[0], r1[1], [16, 10], grow=0)
+        thermal_detail_panel(c, sampler, b[0], th[0], b[1], th[1])
+        power_panel(c, sampler, b[0], pw[0], b[1], pw[1])
+        processes_panel(c, sampler, d[0], r1[0], d[1], r1[1])
+        memory_detail_panel(c, sampler, a[0], r2[0], a[1], r2[1])
+        storage_panel(c, sampler, b[0], r2[0], b[1], r2[1])
+        system_facts_panel(c, sampler, d[0], r2[0], d[1], r2[1])
+    elif w >= 110:
+        r1, r2 = stack(y, h, [50, 50])
+        a, b = columns(x, w, [50, 50])
+        cpu_detail_panel(c, sampler, a[0], r1[0], a[1], r1[1])
+        th, pw = fit(r1[0], r1[1], [14, 9], grow=0)
+        thermal_detail_panel(c, sampler, b[0], th[0], b[1], th[1])
+        power_panel(c, sampler, b[0], pw[0], b[1], pw[1])
+        memory_detail_panel(c, sampler, a[0], r2[0], a[1], r2[1])
+        storage_panel(c, sampler, b[0], r2[0], b[1], r2[1])
+    else:
+        r1, r2 = stack(y, h, [3, 2])
+        cpu_detail_panel(c, sampler, x, r1[0], w, r1[1])
+        thermal_detail_panel(c, sampler, x, r2[0], w, r2[1])
+
+
+def page_network_home(c, sampler, x, y, w, h):
+    if w >= 170:
+        r1, r2 = stack(y, h, [52, 48])
+        a, b = columns(x, w, [56, 44])
+        network_detail_panel(c, sampler, a[0], r1[0], a[1], r1[1])
+        tailnet_panel(c, sampler, b[0], r1[0], b[1], r1[1])
+        p, i, o, t = columns(x, w, [24, 24, 26, 26])
+        listeners_panel(c, sampler, p[0], r2[0], p[1], r2[1])
+        flows_panel(c, sampler, i[0], r2[0], i[1], r2[1], "in")
+        flows_panel(c, sampler, o[0], r2[0], o[1], r2[1], "out")
+        requests_stats_panel(c, sampler, t[0], r2[0], t[1], r2[1])
+    elif w >= 110:
+        r1, r2 = stack(y, h, [52, 48])
+        a, b = columns(x, w, [55, 45])
+        network_detail_panel(c, sampler, a[0], r1[0], a[1], r1[1])
+        tailnet_panel(c, sampler, b[0], r1[0], b[1], r1[1])
+        listeners_panel(c, sampler, a[0], r2[0], a[1], r2[1])
+        fi, fo = stack(r2[0], r2[1], [1, 1])
+        flows_panel(c, sampler, b[0], fi[0], b[1], fi[1], "in")
+        flows_panel(c, sampler, b[0], fo[0], b[1], fo[1], "out")
+    else:
+        r1, r2 = stack(y, h, [3, 2])
+        network_detail_panel(c, sampler, x, r1[0], w, r1[1])
+        tailnet_panel(c, sampler, x, r2[0], w, r2[1])
+
+
+def page_services_home(c, sampler, x, y, w, h):
+    r1, r2 = stack(y, h, [58, 42]) if h >= 30 else stack(y, h, [2, 1])
+    services_table(c, sampler, x, r1[0], w, r1[1], detailed=True)
+    if w >= 150:
+        a, b, d = columns(x, w, [36, 34, 30])
+        db_panel(c, sampler, a[0], r2[0], a[1], r2[1])
+        requests_stats_panel(c, sampler, b[0], r2[0], b[1], r2[1])
+        events_panel(c, sampler, d[0], r2[0], d[1], r2[1])
+    elif w >= 100:
+        a, b = columns(x, w, [50, 50])
+        db_panel(c, sampler, a[0], r2[0], a[1], r2[1])
+        events_panel(c, sampler, b[0], r2[0], b[1], r2[1])
+    else:
+        db_panel(c, sampler, x, r2[0], w, r2[1])
+
+
+def page_system_home(c, sampler, x, y, w, h):
+    if w >= 170:
+        r1, r2 = stack(y, h, [44, 56])
+        a, b, d = columns(x, w, [28, 22, 50])
+        system_facts_panel(c, sampler, a[0], r1[0], a[1], r1[1])
+        status_panel(c, sampler, b[0], r1[0], b[1], r1[1])
+        events_panel(c, sampler, d[0], r1[0], d[1], r1[1])
+        p, q, s = columns(x, w, [34, 33, 33])
+        logs_panel(c, sampler, p[0], r2[0], p[1], r2[1])
+        service_errors_panel(c, sampler, q[0], r2[0], q[1], r2[1])
+        files_panel(c, sampler, s[0], r2[0], s[1], r2[1])
+    elif w >= 110:
+        r1, r2 = stack(y, h, [45, 55])
+        a, b = columns(x, w, [50, 50])
+        system_facts_panel(c, sampler, a[0], r1[0], a[1], r1[1])
+        events_panel(c, sampler, b[0], r1[0], b[1], r1[1])
+        logs_panel(c, sampler, a[0], r2[0], a[1], r2[1])
+        service_errors_panel(c, sampler, b[0], r2[0], b[1], r2[1])
+    else:
+        r1, r2 = stack(y, h, [1, 1])
+        system_facts_panel(c, sampler, x, r1[0], w, r1[1])
+        logs_panel(c, sampler, x, r2[0], w, r2[1])
+
+
+HOME_DRAW = {"overview": page_overview, "hardware": page_hardware, "network": page_network_home,
+             "services": page_services_home, "system": page_system_home}
+
+
+def draw_home(c, sampler):
+    """The normal screen: the page strip, then the current page."""
+    sampler.advance_home(time.monotonic())
+    page = HOME_PAGES[sampler.home % len(HOME_PAGES)]
+    y = home_tabs(c, sampler, 1) if c.h >= 14 else 1
+    HOME_DRAW[page](c, sampler, 0, y, c.w, c.h - 1 - y)
+    return c
+
+
+def draw_overview(c, sampler):
+    """Kept for callers of the old name: the home page currently showing."""
+    return draw_home(c, sampler)
 
 
 def draw(c, sampler, kiosk=True):
@@ -2429,43 +3311,6 @@ def draw(c, sampler, kiosk=True):
         return c
     draw_overview(c, sampler)
     c.ring(ring_colour(level, time.time()))
-    return c
-
-
-def draw_overview(c, sampler):
-    w, h = c.w, c.h
-    avail = h - 2
-    y = 1
-    s = sampler.status or {}
-    setup = not s.get("setup_done")
-    cpu_h = min(max(round(avail * 0.38), 7), 26)
-    mid_h = min(max(round(avail * 0.28), 8), 20)
-    if avail - cpu_h - mid_h < 6:           # small screens: shrink the graphs first
-        cpu_h = max(avail - mid_h - 6, 5)
-    cpu_panel(c, sampler, 0, y, w, cpu_h)
-    y += cpu_h
-    wide = w >= 140
-    if wide:
-        mw, nw = w * 30 // 100, w * 36 // 100
-        mem_panel(c, sampler, 0, y, mw, mid_h)
-        net_panel(c, sampler, mw, y, nw, mid_h)
-        conn_panel(c, sampler, mw + nw, y, w - mw - nw, mid_h)
-        y += mid_h
-        bottom_h = avail + 1 - y
-        ew = w * 34 // 100 if w >= 170 else 0          # events beside the services on big screens
-        (setup_panel if setup else services_panel)(c, sampler, 0, y, w - ew, bottom_h)
-        if ew:
-            events_panel(c, sampler, w - ew, y, ew, bottom_h)
-    else:
-        mw = w // 2
-        mem_panel(c, sampler, 0, y, mw, mid_h)
-        net_panel(c, sampler, mw, y, w - mw, mid_h)
-        y += mid_h
-        bottom_h = avail + 1 - y
-        cw = min(max(w * 42 // 100, 36), w // 2) if w >= 90 else 0
-        if cw:
-            conn_panel(c, sampler, 0, y, cw, bottom_h)
-        (setup_panel if setup else services_panel)(c, sampler, cw, y, w - cw, bottom_h)
     return c
 
 
@@ -2524,16 +3369,17 @@ def run(kiosk):
         out.write("\x1b[?1049h\x1b[?25l\x1b[?7l\x1b[2J")
         out.flush()
         sampler = Sampler()
-        next_tick = next_pulse = 0.0
+        next_tick = next_pulse = next_draw = 0.0
         canvas = None
         redraw = False
         sync_on, sync_off = ("\x1b[?2026h", "\x1b[?2026l") if rich else ("", "")
         while True:
             t = time.monotonic()
-            if t >= next_tick or resized[0] or redraw:
+            if t >= next_tick or t >= next_draw or resized[0] or redraw:
                 if t >= next_tick:
                     sampler.sample()
                     next_tick = t + SAMPLE_S
+                next_draw = t + DRAW_S
                 if resized[0]:
                     out.write("\x1b[2J")
                     resized[0] = False
@@ -2553,7 +3399,7 @@ def run(kiosk):
                 out.write(sync_on + canvas.ring_ansi(ring_colour(canvas.alert, time.time())) + sync_off)
                 out.flush()
                 next_pulse = t + 0.12
-            wait = next_tick - time.monotonic()
+            wait = min(next_tick, next_draw) - time.monotonic()
             if canvas is not None and canvas.alert != "ok":
                 wait = min(wait, next_pulse - time.monotonic())
             wait = max(wait, 0.02)
@@ -2569,15 +3415,17 @@ def run(kiosk):
                 if b" " in keys:           # during an incident: incident view <-> normal dashboard
                     sampler.force_overview = not sampler.force_overview
                     redraw = True
-                if b"n" in keys or b"\t" in keys:        # incident pages: next / back / hold
-                    sampler.turn_page(1)
+                incident = canvas is not None and canvas.alert == "critical" and not sampler.force_overview
+                turn = sampler.turn_page if incident else sampler.turn_home      # the red pages or the normal ones
+                if b"n" in keys or b"\t" in keys:        # next / back / hold
+                    turn(1)
                     redraw = True
                 if b"b" in keys:
-                    sampler.turn_page(-1)
+                    turn(-1)
                     redraw = True
                 if b"p" in keys:
                     sampler.paused = not sampler.paused
-                    sampler.page_t = time.monotonic()
+                    sampler.page_t = sampler.home_t = time.monotonic()
                     redraw = True
                 if kiosk:
                     screen = wanted_screen(keys)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Render the MacServer dashboard to a PNG as the Mac's screen shows it.
 
-    python3 tests/tui_preview.py OUT.png [scenario] [--console] [--px N] [COLSxROWS] [--page NAME]
+    python3 tests/tui_preview.py OUT.png [scenario] [--console] [--px N] [COLSxROWS] [--page NAME] [--home NAME]
 
   rich (default)  the kiosk terminal: JetBrains Mono at N pixels (default 18) on the
                   2560x1600 panel, 24-bit colour; braille and box lines are drawn
@@ -69,10 +69,20 @@ def render_console(canvas, path, font=None):
     write_png(path, width, height, pixels)
 
 
+def font_files():
+    """JetBrains Mono as the Mac uses it; on a Windows PC, Consolas stands in (only for previews)."""
+    for regular, bold in ((TTF_DIR / "JetBrainsMono-Regular.ttf", TTF_DIR / "JetBrainsMono-Bold.ttf"),
+                          (Path("C:/Windows/Fonts/consola.ttf"), Path("C:/Windows/Fonts/consolab.ttf"))):
+        if regular.exists() and bold.exists():
+            return regular, bold
+    raise SystemExit("no monospace font found (apt install fonts-jetbrains-mono)")
+
+
 def rich_fonts(px):
     from PIL import ImageFont
-    regular = ImageFont.truetype(str(TTF_DIR / "JetBrainsMono-Regular.ttf"), px)
-    bold = ImageFont.truetype(str(TTF_DIR / "JetBrainsMono-Bold.ttf"), px)
+    regular_path, bold_path = font_files()
+    regular = ImageFont.truetype(str(regular_path), px)
+    bold = ImageFont.truetype(str(bold_path), px)
     ascent, descent = regular.getmetrics()
     return regular, bold, round(regular.getlength("M")), ascent + descent
 
@@ -111,6 +121,9 @@ def render_rich(canvas, path, px=18):
                         px_ = x0 + cw * (0.28 + 0.44 * col)
                         py_ = y0 + chh * (0.125 + 0.25 * row)
                         d.ellipse([px_ - r, py_ - r, px_ + r, py_ + r], fill=fg)
+            elif ch == "◆":                                # the panel marker: a small diamond, whatever the font lacks
+                r = max(3, cw * 0.38)
+                d.polygon([(mx, my - r), (mx + r, my), (mx, my + r), (mx - r, my)], fill=fg)
             elif ch in "─│╭╮╰╯├┤┬┴":                       # box lines, joined across cells
                 rad = min(cw, chh) // 2
                 if ch in "─├┤┬┴":
@@ -156,7 +169,8 @@ def main():
     else:
         cols, rows = map(int, size.split("x")) if size else grid_for(px)
         page = args[args.index("--page") + 1] if "--page" in args else None
-        render_rich(tui_fixture.screen(scenario, cols, rows, rich=True, overview="--overview" in args, page=page), out, px)
+        home = args[args.index("--home") + 1] if "--home" in args else None
+        render_rich(tui_fixture.screen(scenario, cols, rows, rich=True, overview="--overview" in args, page=page, home=home), out, px)
     print(f"wrote {out}: {cols}x{rows} characters, {scenario}, {'console' if console else f'rich {px}px'}")
 
 

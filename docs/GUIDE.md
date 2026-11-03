@@ -122,20 +122,36 @@ Macs with a T2 chip only start macOS unless you allow otherwise.
 
 ![The MacServer dashboard](images/dashboard.png)
 
-The dashboard stays on screen all the time and never goes dark. It looks and works
-like [btop](https://github.com/aristocratos/btop), with the things a server needs:
+The dashboard stays on screen all the time and never goes dark. It has five pages that
+turn by themselves (the overview stays 30 seconds, the others 15): press **n** for the
+next page, **b** for the previous one and **p** to hold the page you are on. The top bar
+shows the server's name, an overall status (green = all good), the battery, the time and
+uptime; the bar under it shows which page you are on and when the next one comes.
 
-- **Top bar**: the server's name, an overall status (green = all good), battery,
-  the time and uptime.
-- **CPU**: a live graph of the last few minutes, and each core's load and temperature.
-- **Memory**: used, available, cached, swap and disk, with a graph; disk activity.
-- **Network**: download above, upload below, with speeds and totals.
-- **Connections**: Internet (and Wi-Fi signal), Tailscale, the public API, Claude,
-  clock and updates, each with an **OK / WARN / DOWN / OFF** tag, and your addresses.
-- **Services**: every Supabase container with its CPU (and its trend), memory and status. A stopped
-  one turns red and moves to the top.
-- **Events**: a running log of what happened: services stopping or starting, updates,
-  devices joining Tailscale, CPU or temperature spikes, network bursts.
+- **Overview**: a row of headline numbers (CPU, memory, network, disk, temperature and
+  fan, services, power, load) each with its last few minutes, then the CPU (every core,
+  where its time goes, load, how long work waited for it), memory (used, available, cached,
+  kernel, swap, swap traffic), storage (every filesystem, the SSD, its reads and writes,
+  Docker's disk use) and network (every interface, Wi-Fi, router / Internet / DNS checks,
+  open connections), the **Connections** (Internet, Tailscale, the public API, Claude,
+  clock, updates, each with an **OK / WARN / DOWN / OFF** tag), every service grouped by
+  project with its CPU, memory, traffic, restarts and uptime, and the **Events** log.
+- **Hardware**: CPU with a live graph, every temperature sensor with its own limit, the
+  fan, the battery (health, cycles, charge or time left), the biggest programs, memory,
+  the SSD and the machine's facts (model, firmware, kernel, Debian version).
+- **Network**: interfaces with speeds, totals, errors and drops, the Wi-Fi network, every
+  Tailscale device with how it connects and when it was last seen, listening ports,
+  inbound and outbound connections, and what your apps ask the API for.
+- **Services**: every container in full (health, CPU, memory, traffic, disk writes,
+  processes, restarts, uptime, image), the **database** (connections, transactions per
+  second, cache hit ratio, size, app users, stored files), API traffic and events.
+- **System**: the machine's facts, the status tags, events, system and kernel logs,
+  the last error lines of each service, and the files that matter.
+
+**Heat is not a warning.** A MacBook Air under load runs in the 90s and touches the CPU's
+own 100 °C limit many times a minute with the fans at full speed; that is how it works.
+So no temperature turns the screen amber or adds a notice. The one cooling alarm is a
+fault: a CPU at 85 °C or more whose fan is not turning.
 
 **Text size.** The default fits about 230 x 64 characters on the Mac's screen. To
 change it, add `DASHBOARD_FONT_PX=16` (smaller, more detail) or `22` (bigger) to
@@ -164,14 +180,9 @@ switches to the normal dashboard and back):
 The screen returns to normal by itself once everything works again.
 
 **Fans.** The fans never run below 60% of full speed, and speed up as CPU load or
-temperature rises (full speed above 95 °C). The CPU panel shows the fan speed and
+temperature rises (full speed above 95 °C). The Hardware page shows the fan speed and
 target. Change the floor with `FAN_MIN_PCT=70` in `/etc/macserver/macserver.conf`, or
 give the fans back to the Mac with `FAN_MODE=auto`; it applies within seconds.
-
-**Heat is not a warning.** A MacBook Air under load runs in the 90s and touches the CPU's
-own 100 °C limit many times a minute with the fans at full speed; that is how it works.
-So no temperature turns the screen amber or adds a notice. The one cooling alarm is a
-fault: a CPU at 85 °C or more whose fan is not turning.
 
 If the Mac's graphics ever fail, the screen falls back to a simpler text version of
 the same dashboard by itself.

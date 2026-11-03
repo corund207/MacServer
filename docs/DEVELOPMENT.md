@@ -57,6 +57,8 @@ The Mac's screen dashboard (`admin/tui.py`) can be drawn without the Mac:
 ```sh
 python3 tests/tui_preview.py dashboard.png healthy            # or: setup, trouble
 python3 tests/tui_preview.py dashboard.png healthy --px 16    # another font size
+python3 tests/tui_preview.py hw.png healthy --home hardware   # another page: overview, hardware,
+                                                              # network, services, system
 python3 tests/tui_preview.py console.png healthy --console    # the text-console fallback
 ```
 
@@ -65,7 +67,11 @@ The default renders what the kiosk shows on the 2560x1600 panel: JetBrains Mono
 box lines drawn the way foot draws them. `--console` renders the fallback with the
 Lat15-Terminus console font (`console-setup-linux`) and 16 colours; only
 `tui.GLYPHS` may appear there, which `tests/test_dashboard.py` checks against the
-font. `docs/images/dashboard.png` comes from the default render.
+font. `docs/images/dashboard.png` comes from the default render (the committed one was drawn on a
+Windows PC with Consolas at `--px 20`, which the script falls back to when JetBrains Mono is missing).
+
+The screen samples every `SAMPLE_S` (2 s, as often as the collector writes `status.json`) and redraws
+every `DRAW_S` (1 s). A 1 ms loop used about 86% of a core on the Mac for no benefit.
 
 On the Mac, tty1 runs `host/macserver-console`: `cage -s` (a one-window Wayland
 kiosk, software rendering) with `foot` (`host/foot.ini`, font size from

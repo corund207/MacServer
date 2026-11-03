@@ -199,7 +199,7 @@ class DashboardTests(unittest.TestCase):
     def test_healthy(self):
         text = tui_fixture.screen("healthy", 232, 64).text()
         for expected in ("ALL SYSTEMS NORMAL", "15/15 running", "https://macserver.tail4f2a.ts.net/",
-                         "i5-8210Y", "27%", "41%", "62°C", "up to date · 6bc4f51", "2400 rpm", "target 64% · min 60%", "5.2 GB", "41.2 GB",
+                         "i5-8210Y", "27%", "41%", "62°C", "up to date · 6bc4f51", "2400 rpm", "fan target 64%", "5.2 GB", "41.2 GB",
                          "1.2 MB/s", "86.0 KB/s", "BAT ▲  80%", "3.2W", "realtime", "cloudflared",
                          "press 2 to log in"):
             self.assertIn(expected, text)
@@ -293,6 +293,131 @@ class DashboardTests(unittest.TestCase):
         red = tui.GRADIENTS["temp"][-1]
         self.assertNotEqual(tui.grad("temp", tui.temp_pos(100)), red)
 
+    # --- the home pages --------------------------------------------------------------------------------------
+
+    def test_every_home_page_size_and_mode_draws_only_allowed_characters(self):
+        for rich, allowed in ((True, RICH_CHARS), (False, CONSOLE_CHARS)):
+            for home in tui.HOME_PAGES:
+                for scenario in ("healthy", "trouble", "setup"):
+                    for cols, rows in SIZES:
+                        with self.subTest(rich=rich, home=home, scenario=scenario, size=(cols, rows)):
+                            c = tui_fixture.screen(scenario, cols, rows, rich=rich, overview=True, home=home)
+                            self.assertLessEqual(set(c.text()) - {"\n"}, allowed)
+                            self.assertEqual(len(c.cells), rows)
+                            self.assertTrue(all(len(r) == cols for r in c.cells))
+
+    def test_each_home_page_shows_its_stats(self):
+        wanted = {
+            "overview": ("OVERVIEW", "CPU", "MEMORY", "DISK /", "TEMPERATURE", "POWER", "LOAD", "stall 24%", "db 24/100 conn · 2.7 tps",
+                         "user 20%", "system 5%", "iowait 1%", "STALL", "committed 8.7 GB of a 8.2 GB limit", "Kernel slab", "nvme0n1",
+                         "APPLE SSD AP0256N", "build cache 18.2 GB (12.8 GB reclaimable)", "HomeNet", "5 GHz channel 161", "SERVICES",
+                         "supabase  13/13 running", "analytics", "CONNECTIONS", "EVENTS"),
+            "hardware": ("THERMAL AND FANS", "Package id 0", "Composite", "FAN", "of 8000", "POWER", "health 90.6% of new", "45.6 of 50.3 Wh",
+                         "287 charge cycles", "time to full 25m", "PROCESSES", "postgres", "THIS MACHINE", "Debian GNU/Linux 13 (trixie)",
+                         "MacBookAir8,2", "▲ read", "▼ write", "100°C is the chip's own limit", "powersave governor", "heat slow-downs since boot"),
+            "network": ("INTERFACE", "tailscale0", "192.168.18.33/24", "br-0e5b61fc7fe6", "containers x25", "HomeNet", "TAILNET", "jonahs-iphone",
+                        "relay nyc", "30d ago", "key expires in", "23 Tailscale Funnel relays", "v1.104.5", "LISTENING PORTS",
+                        "INBOUND CONNECTIONS", "OUTBOUND CONNECTIONS", "TRAFFIC", "router 192.168.18.1 2 ms", "4 connections open"),
+            "services": ("IMAGE", "supabase/postgres:17.6.1.136", "RESTARTS", "PIDS", "DATABASE", "PostgreSQL 17.6", "24/100", "99.82%",
+                         "App users", "42", "Stored files", "318", "TRAFFIC", "EVENTS"),
+            "system": ("THIS MACHINE", "SYSTEM STATE", "EVENTS", "SYSTEM LOGS", "SERVICE ERRORS", "WHERE TO LOOK", "Tailscale", "1.104.5",
+                       "America/New_York", "admin on pts/0", "Restart needed"),
+        }
+        for home, expected in wanted.items():
+            text = tui_fixture.screen("healthy", 232, 64, home=home).text()
+            for word in expected:
+                with self.subTest(home=home, word=word):
+                    self.assertIn(word, text)
+            self.assertNotIn("public-anon-key", text)
+
+    def test_home_pages_turn_by_themselves_hold_and_page(self):
+        s = tui_fixture.make_sampler("healthy")
+        s.paused, s.force_overview, s.home, s.home_t = False, False, 0, 100.0
+        s.advance_home(100.0 + tui.HOME_DWELL_S["overview"] - 0.1)
+        self.assertEqual(s.home, 0)                                   # the overview stays longest
+        s.advance_home(100.0 + tui.HOME_DWELL_S["overview"] + 0.1)
+        self.assertEqual(s.home, 1)
+        s.advance_home(s.home_t + tui.HOME_DWELL_S["hardware"] - 0.1)
+        self.assertEqual(s.home, 1)
+        t = s.home_t
+        for _ in range(len(tui.HOME_PAGES) - 1):                      # all the way round, back to the overview
+            t += 100
+            s.advance_home(t)
+        self.assertEqual(s.home, 0)
+        s.paused, t = True, t + 1000
+        s.advance_home(t)
+        self.assertEqual(s.home, 0)                                   # held with p
+        s.paused, s.force_overview = False, True
+        s.advance_home(t + 1000)
+        self.assertEqual(s.home, 0)                                   # Space during an incident shows one steady page
+        s.turn_home(-1)
+        self.assertEqual(s.home, len(tui.HOME_PAGES) - 1)
+        s.turn_home(1)
+        self.assertEqual(s.home, 0)
+        c = tui_fixture.screen("healthy", 232, 64, home="network")    # fixture pages are held
+        self.assertIn("page held (p)", c.text())
+        free = tui_fixture.make_sampler("healthy", home="overview")
+        free.paused = False
+        self.assertIn("next page in", tui_fixture.screen("healthy", 232, 64, sampler=free).text())
+        self.assertIn("n/b page · p hold", c.text())                  # the bottom bar says how
+
+    def test_an_older_collector_without_the_detail_sections_still_draws_every_page(self):
+        for home in tui.HOME_PAGES:
+            for missing in (("system",), ("live",), ("system", "live", "debug")):
+                s = tui_fixture.make_sampler("healthy", home=home)
+                for key in missing:
+                    s.status.pop(key, None)
+                for cols, rows in SIZES:
+                    with self.subTest(home=home, missing=missing, size=(cols, rows)):
+                        c = tui_fixture.screen("healthy", cols, rows, sampler=s)
+                        self.assertEqual(len(c.cells), rows)
+        s = tui_fixture.make_sampler("healthy", home="overview")
+        s.status.pop("system")
+        text = tui_fixture.screen("healthy", 232, 64, sampler=s).text()
+        for expected in ("MEMORY", "5.2 GB", "analytics", "CONNECTIONS", "41.2 GB"):    # what it can still show
+            self.assertIn(expected, text)
+
+    def test_kpi_strip_keeps_the_headline_cards_on_narrow_screens(self):
+        wide = tui_fixture.screen("healthy", 232, 64, home="overview").text().splitlines()[2]
+        for title in ("CPU", "MEMORY", "NETWORK", "DISK /", "TEMPERATURE", "SERVICES", "POWER", "LOAD"):
+            self.assertIn(title, wide)                                # eight cards across 232 columns
+        narrow = tui_fixture.screen("healthy", 100, 30, home="overview").text().splitlines()[2]
+        for title in ("CPU", "MEMORY", "NETWORK"):
+            self.assertIn(title, narrow)
+        self.assertNotIn("LOAD", narrow)                              # the least important go first
+        self.assertEqual(len(tui.kpi_cards(tui_fixture.make_sampler("healthy"))), 8)
+        # the temperature card is a reading, red only for a stopped fan
+        hot = tui_fixture.make_sampler("healthy")
+        hot.now.update(temp=100, fans=[8000])
+        self.assertNotEqual(next(k for k in tui.kpi_cards(hot) if k["title"] == "temperature")["vcolour"], tui.C["bad"])
+        hot.now.update(fans=[0])
+        self.assertEqual(next(k for k in tui.kpi_cards(hot) if k["title"] == "temperature")["vcolour"], tui.C["bad"])
+
+    def test_table_and_stacked_bar(self):
+        c = tui.Canvas(30, 5)
+        rows = [[("alpha", tui.C["text"]), ("1", tui.C["text"])], [("beta-is-a-long-name-here", tui.C["text"]), ("22", tui.C["text"])],
+                [("gamma", tui.C["text"]), ("333", tui.C["text"])], [("delta", tui.C["text"]), ("4", tui.C["text"])]]
+        drawn = tui.table(c, 0, 0, 30, 4, [("NAME", None, "l"), ("N", 5, "r")], rows)
+        self.assertEqual(drawn, 3)                                    # the header and three rows fit in four
+        lines = c.text().splitlines()
+        self.assertEqual(lines[0], "NAME" + " " * 25 + "N")
+        self.assertEqual(lines[1], "alpha" + " " * 24 + "1")          # numbers right-aligned
+        self.assertTrue(lines[2].startswith("beta-is-a-long-name-") and lines[2].rstrip().endswith("22"))
+        self.assertEqual(tui.table(c, 0, 0, 3, 4, [("A", None, "l")], rows), 0)     # too narrow: nothing, no crash
+        bar = tui.Canvas(10, 1)
+        a, b = (1, 2, 3), (4, 5, 6)
+        tui.stacked(bar, 0, 0, 10, [(0.3, a), (0.2, b)])
+        self.assertEqual([cell[1] for cell in bar.cells[0][:5]], [a, a, a, b, b])
+        self.assertEqual(bar.cells[0][5][1], tui.C["faint"])           # the rest of the bar is the empty track
+        self.assertEqual(tui.fmt_since(None), "never")
+        self.assertEqual([tui.fmt_since(1000 - s, 1000) for s in (5, 600, 7200, 200000)], ["5s", "10m", "2h", "2d"])
+
+    def test_normal_screen_rotation_does_not_touch_the_incident_pages(self):
+        s = tui_fixture.make_sampler("trouble")
+        before = (s.page, s.home)
+        s.turn_home(1)
+        self.assertEqual((s.page, s.home), (before[0], (before[1] + 1) % len(tui.HOME_PAGES)))
+
     def test_critical_shows_the_red_incident_view(self):
         c = tui_fixture.screen("trouble", 232, 64)
         text = c.text()
@@ -317,8 +442,10 @@ class DashboardTests(unittest.TestCase):
         text = c.text()
         for expected in ("SERVICES", "edge-functions", "exited", "14/15 running", "4 pending"):
             self.assertIn(expected, text)
-        services = [line for line in text.splitlines() if "supabase " in line and ("running" in line or "exited" in line)]
-        self.assertIn("edge-functions", services[0])                # the stopped service first
+        lines = text.splitlines()
+        header = next(i for i, line in enumerate(lines) if "supabase " in line and "12/13 running" in line)
+        self.assertIn("edge-functions", lines[header + 1])          # under its project, the stopped service comes first
+        self.assertIn("exited", lines[header + 1])
         self.assertEqual(c.alert, "critical")                       # still red, still flashing
         tui.set_theme(False)
 
@@ -411,12 +538,12 @@ class DashboardTests(unittest.TestCase):
     def test_busy_panels(self):
         text = tui_fixture.screen("trouble", 232, 64, overview=True).text()
         for expected in ("EVENTS", "service edge-functions: running → exited", "TREND", "tailnet",
-                         "ctx 12.3k/s", "irq 4.1k/s", "tasks 2/412", "▲ read", "▼ write 307 KB/s"):
+                         "switches 12.3k/s", "interrupts 4.1k/s", "2 running / 412 tasks"):
             self.assertIn(expected, text)
         lines = [line for line in text.splitlines() if "EVENTS" in line or ":" in line[-60:]]
         self.assertTrue(lines)
         self.assertEqual(tui.fmt_count(12_300), "12.3k")
-        self.assertEqual(tui.SAMPLE_S, 0.001)
+        self.assertEqual(tui.SAMPLE_S, 2.0)     # the screen samples as often as the collector writes, not in a 1 ms loop
 
     def test_readings_are_smoothed(self):
         tui_fixture.machine()

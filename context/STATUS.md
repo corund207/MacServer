@@ -786,3 +786,38 @@ on the Mac as the unprivileged `admin` user with output in /tmp (removed after):
 Not verified: a run as root from the real timer (the Mac's root-only sources: `dmesg`, conntrack
 flows), the installer change in the VM test (CI), and the six Windows-only test failures
 (`getloadavg`, `statvfs`, `pty`, POSIX file modes) which are the same with or without these changes.
+
+## 2026-11-03: the Mac's screen dashboard is five pages, sampled every 2 seconds
+
+**Why sampling changed.** `main` had `SAMPLE_S = 0.001`: the kiosk dashboard redrew the whole screen in a
+loop with no pause. Measured on the Mac over SSH (read-only): the `dashboard --kiosk` process had used
+564,105 CPU-seconds in 669,503 s (84% of one core since boot) and held 637 MB; a second `dashboard` left
+open in an SSH session used another 64%. On a 4-thread CPU that is a large part of why the Mac runs hot.
+The owner had already fixed this on 2026-10-04 (branch `sampling-2s`: 2 s sampling, 600-sample history),
+but it was never merged, and the auto-update on 2026-10-26 reinstalled `main`'s 1 ms loop over the hot-patch.
+Now `SAMPLE_S = 2.0` and `HISTORY = 600` are on `main` (branch `sampling-2s` is superseded and can be
+deleted), and the screen redraws every `DRAW_S = 1.0` so the clock still ticks. One frame costs about
+11 ms on the Windows dev PC.
+
+**What the screen shows.** `HOME_PAGES`: Overview (30 s), Hardware, Network, Services, System (15 s each),
+turned by `n`/`b`, held by `p`, with a page strip and countdown under the top bar. Overview: a KPI strip
+(CPU, memory, network, disk, temperature, services, power, load; fewer cards on narrow screens), CPU (every
+thread, time by kind, load, pressure-stall averages, kernel rates, governor), memory breakdown, storage
+(filesystems, SSD, I/O, Docker disk use), network (interfaces, Wi-Fi, reachability, TCP), the Connections
+pills, services grouped by compose project (CPU bar and trend, memory, in/out/write rates, restarts) and
+events. Hardware: CPU graph, every sensor with its limit, fan, battery health/cycles/time left, processes,
+memory, storage, machine facts. Network: interface table, Tailscale devices (route, last seen, key expiry),
+ports, connections, API traffic. Services: full container table with image, database panel (connections,
+tps, cache hit, size, users, stored files), traffic, events. System: facts, status pills, events, logs,
+service errors, files. The red incident view and its five pages are unchanged.
+
+Panels read the collector's new `system` section (see the entry above) and draw what they can read: an older
+collector, or a source that is missing, leaves a gap, never an error (tested for every page and size).
+Console mode (TERM=linux) uses only `tui.GLYPHS`; tests draw every page, scenario and size in both modes.
+
+Verified: 77 dashboard/repo/collector tests on the Windows PC (the only failure there is
+`test_once_prints_a_summary`: `os.statvfs` does not exist on Windows, same before and after); previews of
+all five pages rendered and read; the README screenshot was redrawn. Not verified: the new pages on the Mac's
+own screen and in the Lat15 console font (CI's `test_console_glyphs_exist_in_the_mac_console_font` needs
+`console-setup-linux`), the 1 s redraw under the real `foot` terminal, and the real CPU use of the new loop
+(expect a few percent of one core; check with `ps` after the update lands).
