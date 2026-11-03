@@ -116,6 +116,10 @@ class DashboardTests(unittest.TestCase):
         tailnet_only = titles(lambda d, s: d["listeners"].append(
             {"port": 22, "addr": "100.89.16.53", "scope": "tailnet", "proc": "tailscaled", "svc": "ssh"}))
         self.assertEqual(tailnet_only, [])
+        # a port the firewall admits on purpose, or drops, is not "reachable from the local network"
+        self.assertEqual(titles(lambda d, s: d["listeners"].extend([
+            {"port": 21115, "addr": "0.0.0.0", "scope": "open", "proc": "hbbs", "svc": "rustdesk"},
+            {"port": 21118, "addr": "0.0.0.0", "scope": "blocked", "proc": "hbbs", "svc": "rustdesk web"}])), [])
         self.assertEqual(titles(lambda d, s: d["system"].update(failed_units=["macserver-fans.service"])),
                          [("warn", "1 systemd unit(s) failed")])
         self.assertEqual(titles(lambda d, s: d["requests"]["classes"].update({"5xx": 3}) or d["requests"]["errors"].insert(
@@ -133,6 +137,23 @@ class DashboardTests(unittest.TestCase):
         self.assertIn(("warn", "the kernel killed a process: out of memory"), [(i["level"], i["title"]) for i in tui.incidents(oom)])
         oom.counter_changed["oom_kills"] = time.time() - 700          # ...and the warning fades after ten minutes
         self.assertEqual(tui.incidents(oom), [])
+
+    def test_listeners_panel_tells_firewall_decisions_from_exposure(self):
+        s = tui_fixture.make_sampler("healthy")
+        s.status["debug"]["listeners"] = [
+            {"port": 21115, "addr": "0.0.0.0", "scope": "open", "proc": "hbbs", "svc": "rustdesk"},
+            {"port": 21118, "addr": "0.0.0.0", "scope": "blocked", "proc": "hbbs", "svc": "rd web"}]
+        c = tui.Canvas(70, 10, True)
+        tui.listeners_panel(c, s, 0, 0, 70, 10)
+        text = c.text()
+        self.assertIn("FW OPEN", text)
+        self.assertIn("FW DROP", text)
+        self.assertIn("1 open by firewall rule", text)
+        self.assertNotIn("ALL NETS", text)
+        s.status["debug"]["listeners"].append({"port": 9999, "addr": "0.0.0.0", "scope": "all", "proc": "thing", "svc": ""})
+        c = tui.Canvas(70, 10, True)
+        tui.listeners_panel(c, s, 0, 0, 70, 10)
+        self.assertIn("1 exposed", c.text())                              # a port nothing accounts for still alarms
 
     def test_service_incidents_carry_facts_files_and_steps(self):
         s = tui_fixture.make_sampler("trouble")

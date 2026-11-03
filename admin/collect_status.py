@@ -559,7 +559,9 @@ ACCESS = re.compile(r'^(\S+) \S+ \S+ \[(\d+)/(\w{3})/(\d+):(\d+):(\d+):(\d+) ([+
 ID_SEGMENT = re.compile(r"/(?:[0-9a-fA-F]{8}-[0-9a-fA-F-]{27}|\d{2,})(?=/|$)")
 PORT_NAMES = {22: "ssh", 53: "dns", 80: "http", 123: "ntp", 443: "https", 465: "smtp", 587: "smtp",
               993: "imap", 3478: "stun", 5432: "postgres", 6543: "pooler", 8000: "api", 8090: "admin",
-              8443: "studio", 41641: "tailscale"}
+              8443: "studio", 20241: "metrics", 21115: "rustdesk", 21116: "rustdesk", 21117: "relay",
+              21118: "rd web", 21119: "rd web", 41641: "tailscale"}
+TAILSCALE_PORT = 41641
 TAILNET = ipaddress.ip_network("100.64.0.0/10")
 TAILNET6 = ipaddress.ip_network("fd7a:115c:a1e0::/48")
 WATCHED_FILES = (
@@ -695,8 +697,12 @@ def parse_conntrack(text):
     return flows
 
 
-def flow_summary(flows, host_ips, names, peers, procs):
-    """Live connections in and out of this Mac and its containers, grouped."""
+def flow_summary(flows, host_ips, names, peers, procs, direct=None):
+    """Live connections in and out of this Mac and its containers, grouped.
+
+    `direct` maps a tailnet device's LAN address to its name: Tailscale's own direct connection
+    (port 41641) to such a device is tailnet traffic, not an unknown LAN host."""
+    direct = direct or {}
     out, inbound, counts = {}, {}, collections.Counter()
     for f in flows:
         counts[f["state"] or f["proto"]] += 1
@@ -711,12 +717,17 @@ def flow_summary(flows, host_ips, names, peers, procs):
         svc = PORT_NAMES.get(port, f["proto"])
         if src_local and not dst_local and ip_kind(dst) != "loopback" and dst != "100.100.100.100":
             who = names.get(src, "").replace("supabase-", "") or procs.get((dst, port)) or "this Mac"
-            entry = out.setdefault((who, dst, port), {"who": who, "dst": client_label(dst, names, peers),
-                                                       "kind": ip_kind(dst), "port": port, "svc": svc, "n": 0})
+            kind, label = ip_kind(dst), client_label(dst, names, peers)
+            if port == TAILSCALE_PORT and dst in direct:
+                kind, label = "tailnet", f"tailnet {direct[dst]} (direct)"
+            entry = out.setdefault((who, dst, port), {"who": who, "dst": label, "kind": kind,
+                                                       "port": port, "svc": svc, "n": 0})
             entry["n"] += 1
         elif dst_local and not src_local and ip_kind(src) != "loopback":
-            entry = inbound.setdefault((src, port), {"src": client_label(src, names, peers), "kind": ip_kind(src),
-                                                      "port": port, "svc": svc, "n": 0})
+            kind, label = ip_kind(src), client_label(src, names, peers)
+            if port == TAILSCALE_PORT and src in direct:
+                kind, label = "tailnet", f"tailnet {direct[src]} (direct)"
+            entry = inbound.setdefault((src, port), {"src": label, "kind": kind, "port": port, "svc": svc, "n": 0})
             entry["n"] += 1
 
     def rank(entry):
@@ -726,8 +737,31 @@ def flow_summary(flows, host_ips, names, peers, procs):
             "tracked": len(flows), "states": dict(counts.most_common(6))}
 
 
-def parse_ss_listeners(text, published):
-    """`ss -tlnpH` -> listening ports with who owns them and how far they reach."""
+def firewall_ports(conf_text, active=True):
+    """TCP ports the host firewall lets in from outside (host/nftables.conf), or None when it is
+    not enforcing (no default-drop input chain, or the nftables service is not running)."""
+    if not active or not conf_text:
+        return None
+    chain = re.search(r"chain\s+input\s*\{(.*?)\n  \}", conf_text, re.S)
+    if not chain or not re.search(r"policy\s+drop", chain.group(1)):
+        return None
+    ports = set()
+    for line in chain.group(1).splitlines():
+        m = re.match(r"\s*tcp\s+dport\s+(\{[^}]*\}|\d+(?:-\d+)?)\s+accept\b", line)
+        if not m:
+            continue                      # rules limited to one interface or protocol are not "from outside"
+        for item in m.group(1).strip("{} ").split(","):
+            lo, _, hi = item.strip().partition("-")
+            if lo.isdigit() and (not hi or hi.isdigit()):
+                ports.update(range(int(lo), int(hi or lo) + 1))
+    return ports
+
+
+def parse_ss_listeners(text, published, firewall=None):
+    """`ss -tlnpH` -> listening ports with who owns them and how far they reach.
+
+    A port bound to every address is "all" (reachable from the Wi-Fi/LAN) unless the firewall decides:
+    "open" when it deliberately admits the port, "blocked" when it drops it."""
     rows, seen = [], set()
     for line in (text or "").splitlines():
         parts = line.split(None, 5)
@@ -745,11 +779,13 @@ def parse_ss_listeners(text, published):
         if proc == "docker-proxy":
             proc = published.get(port, proc)
         scope = "all" if addr in ("0.0.0.0", "::") else ip_kind(addr) or "lan"
+        if scope == "all" and firewall is not None:
+            scope = "open" if port in firewall else "blocked"
         if (port, proc, scope) in seen:
             continue
         seen.add((port, proc, scope))
         rows.append({"port": port, "addr": addr, "scope": scope, "proc": proc, "svc": PORT_NAMES.get(port, "")})
-    order = {"all": 0, "public": 0, "lan": 1, "tailnet": 2, "loopback": 3}
+    order = {"all": 0, "public": 0, "lan": 1, "open": 1, "tailnet": 2, "blocked": 3, "loopback": 3}
     return sorted(rows, key=lambda r: (order.get(r["scope"], 1), r["port"]))[:20]
 
 
@@ -788,6 +824,20 @@ def tailscale_peers(status_text):
         return {}
     return {ip: (p.get("HostName") or p.get("DNSName", "").split(".")[0])
             for p in (data.get("Peer") or {}).values() for ip in p.get("TailscaleIPs") or []}
+
+
+def tailscale_direct(status_text):
+    """LAN/Internet address of a device Tailscale reaches directly -> its name (`CurAddr` host)."""
+    try:
+        data = json.loads(status_text or "")
+    except ValueError:
+        return {}
+    direct = {}
+    for p in (data.get("Peer") or {}).values():
+        host, _, port = (p.get("CurAddr") or "").rpartition(":")
+        if host and port.isdigit():
+            direct[host.strip("[]")] = p.get("HostName") or p.get("DNSName", "").split(".")[0]
+    return direct
 
 
 def container_ips(names):
@@ -896,6 +946,10 @@ ERROR_WORDS = re.compile(r"\b(error|fatal|panic|exception|failed|failure|denied|
                          re.IGNORECASE)
 
 
+# Routine log lines that merely contain an error word: a client hanging up on a cloudflared stream.
+BENIGN_ERRORS = re.compile(r"canceled by remote with error code 0\b")
+
+
 def service_errors(names, per_service=3):
     """The last error-looking log lines of each service (15 min), cleaned of secrets."""
     found = {}
@@ -906,7 +960,7 @@ def service_errors(names, per_service=3):
         except (OSError, subprocess.TimeoutExpired):
             continue
         lines = [line for line in (done.stdout + done.stderr).splitlines()
-                 if line.strip() and ERROR_WORDS.search(line) and not ACCESS.match(line)]
+                 if line.strip() and ERROR_WORDS.search(line) and not ACCESS.match(line) and not BENIGN_ERRORS.search(line)]
         if lines:
             found[name.split(".")[-1].replace("supabase-", "")] = [redact(line)[:200] for line in lines[-per_service:]]
     return found
@@ -959,15 +1013,16 @@ def kernel_counters():
     return {"oom_kills": int(vm.get("oom_kill", 0)), "thermal_throttle": throttle}
 
 
-def debug_info(state, now, ps, ids, containers_now, peers):
+def debug_info(state, now, ps, ids, containers_now, peers, direct=None):
     """Everything the incident pages show beyond the basic health snapshot."""
     names = cached(state, "container_ips:" + ",".join(sorted(ids)), 20, now, lambda: container_ips(sorted(ids)))
     host_ips = cached(state, "host_ips", 30, now, host_addresses)
     established = cached(state, "ss_established", 3, now, lambda: [
         [list(k), v] for k, v in parse_ss_established(run("ss", "-tnpH", "state", "established")).items()])
     procs = {(k[0], k[1]): v for k, v in established}
-    flows = flow_summary(parse_conntrack(read("/proc/net/nf_conntrack", "")), set(host_ips), names, peers, procs)
-    listeners = cached(state, "listeners", 5, now, lambda: parse_ss_listeners(run("ss", "-tlnpH"), published_ports(ps)))
+    flows = flow_summary(parse_conntrack(read("/proc/net/nf_conntrack", "")), set(host_ips), names, peers, procs, direct)
+    listeners = cached(state, "listeners", 5, now, lambda: parse_ss_listeners(
+        run("ss", "-tlnpH"), published_ports(ps), firewall_ports(read("/etc/nftables.conf", ""), unit_state("nftables") == "active")))
     envoy = next((n for n in sorted(ids) if re.search(r"envoy|kong|api-gw", n)), None)
     requests = None
     if envoy:
@@ -1741,7 +1796,7 @@ def collect(state=None):
     except Exception as err:   # noqa: BLE001
         data["system"] = {"error": repr(err)[:200]}
     try:   # the incident pages' extras must never cost the basic health data
-        data["debug"] = debug_info(state, now, ps, ids, data["containers"], tailscale_peers(ts_text))
+        data["debug"] = debug_info(state, now, ps, ids, data["containers"], tailscale_peers(ts_text), tailscale_direct(ts_text))
     except Exception as err:   # noqa: BLE001
         data["debug"] = {"error": repr(err)[:200]}
     active, reasons = idle_activity(data)

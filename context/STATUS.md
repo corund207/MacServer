@@ -849,3 +849,35 @@ Verified: 38 page/repo/admin tests; every page rendered in headless Chrome with 
 (the one failure found, the tab-number hints at 80% opacity, was fixed). Not verified: on the real Mac behind
 `tailscale serve` with a real login (the headless run used sample data), in Safari and Firefox, the
 terminal tab's iframe (unchanged code), and the Tools buttons against the real `/api/dev`.
+
+## 2026-11-03: the dashboards stop colouring normal network facts red and yellow
+
+Investigated over Tailscale SSH (`admin@macserver-1`) after the Network page showed six red "ALL NETS"
+ports and yellow LAN addresses. Nothing was exposed beyond the documented RustDesk exception. Port
+21115-21117 answer from the LAN by design (TCP, `host/nftables.conf`); 21118, 21119 (RustDesk web-client
+sockets, reached only through the tunnel on 127.0.0.1) and 20241 (cloudflared metrics of the host-network
+`rustdesk-ws` tunnel) bind every address but the input chain drops them. Probed from the Windows PC on the
+same LAN (192.168.18.41 to 192.168.18.33): 21115-21117 open, 21118, 21119, 20241, 8000, 5432 not reachable.
+The yellow inbound line was this PC's own direct Tailscale link (`tailscale status`: direct
+192.168.18.41:41641). The yellow/red outbound lines were the router (DNS, NAT-PMP, UPnP) and ordinary
+Internet services.
+
+Changed: the collector reads the firewall's allow-list (`firewall_ports`, from `/etc/nftables.conf`, only
+while the `nftables` unit is active) and tags a wildcard-bound port `open` (admitted on purpose, "FW OPEN")
+or `blocked` ("FW DROP"); neither counts as exposed. A port nothing accounts for is still `all` and red.
+Tailscale's direct connection to a tailnet device is `tailnet`, not an unknown LAN host (`tailscale_direct`,
+only on port 41641). Outbound destinations are plain text; only inbound strangers are coloured. The System
+page no longer flags `/run/macserver/status.json` as "changed in the last 10 minutes" (it is rewritten every
+2 s), and cloudflared's "stream N canceled by remote with error code 0" (a client hanging up) is no longer a
+service error. Web page: the listening-ports table has the same two new labels.
+
+Verified: tests for the real `host/nftables.conf` against the parser, the listener ordering, the direct-peer
+rule (the same PC on another port stays LAN) and the rendered panel; same six Windows-only failures as before.
+Not verified: the collector on the real Mac (it runs as root; the change reaches the Mac with the next
+self-update, then check `/run/macserver/status.json` `debug.listeners` for `open`/`blocked`).
+
+Open, not changed: a newer kernel (6.18.60) is installed but 6.18.54 is running, so "restart needed" is
+true and a reboot is the owner's call. `macserver-apps-calmlist-1` logs `Status check failed (503):
+{"error":"Supabase is not configured"}` every few minutes: that is the app's own check, not MacServer.
+`~/rustdesk-ws` could also set `TUNNEL_METRICS=127.0.0.1:20241` so cloudflared's metrics stop binding every
+address (the firewall already drops them); that restarts the web-client tunnel, so it was left for the owner.

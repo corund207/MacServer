@@ -274,6 +274,43 @@ class DebugParserTests(unittest.TestCase):
         procs = collector.parse_ss_established('0 0 192.168.18.33:46206 199.165.136.100:443 users:(("tailscaled",pid=763,fd=26))\n')
         self.assertEqual(procs, {("199.165.136.100", 443): "tailscaled"})
 
+    def test_firewall_decides_what_a_wildcard_port_means(self):
+        conf = (ROOT / "host/nftables.conf").read_text()           # the real file, so the two cannot drift apart
+        allowed = collector.firewall_ports(conf)
+        self.assertEqual(allowed, {21115, 21116, 21117})            # the RustDesk exception, nothing else
+        self.assertIsNone(collector.firewall_ports(conf, active=False))      # not enforcing: say nothing
+        self.assertIsNone(collector.firewall_ports(""))
+        self.assertIsNone(collector.firewall_ports(conf.replace("policy drop", "policy accept")))
+        self.assertEqual(collector.firewall_ports("chain input {\n    policy drop;\n    tcp dport 80-82 accept\n  }\n"),
+                         {80, 81, 82})                              # `nft list` prints ranges
+        ss = "\n".join([
+            'LISTEN 0 128 *:21115 *:* users:(("hbbs",pid=1,fd=3))',
+            'LISTEN 0 128 *:21118 *:* users:(("hbbs",pid=1,fd=4))',
+            'LISTEN 0 4096 *:20241 *:* users:(("cloudflared",pid=2,fd=3))',
+            'LISTEN 0 4096 127.0.0.1:8000 0.0.0.0:* users:(("docker-proxy",pid=3,fd=8))',
+            'LISTEN 0 4096 192.168.18.33:9999 0.0.0.0:* users:(("thing",pid=4,fd=3))'])
+        rows = collector.parse_ss_listeners(ss, {}, allowed)
+        self.assertEqual([(r["port"], r["scope"]) for r in rows],
+                         [(9999, "lan"), (21115, "open"), (8000, "loopback"), (20241, "blocked"), (21118, "blocked")])
+        # without a firewall verdict an every-address port is still reported as reachable
+        self.assertEqual({r["port"]: r["scope"] for r in collector.parse_ss_listeners(ss, {})}[20241], "all")
+
+    def test_tailscale_direct_peer_is_not_an_unknown_lan_host(self):
+        status = json.dumps({"Peer": {"a": {"HostName": "DESKTOP-JQVC05U", "CurAddr": "192.168.18.41:41641"},
+                                      "b": {"HostName": "relayed", "CurAddr": "", "Relay": "nyc"}}})
+        direct = collector.tailscale_direct(status)
+        self.assertEqual(direct, {"192.168.18.41": "DESKTOP-JQVC05U"})
+        self.assertEqual(collector.tailscale_direct("nope"), {})
+        table = "\n".join([
+            "ipv4     2 udp      17 29 src=192.168.18.41 dst=192.168.18.33 sport=41641 dport=41641 src=192.168.18.33 dst=192.168.18.41 sport=41641 dport=41641 mark=0 zone=0 use=2",
+            "ipv4     2 tcp      6 431999 ESTABLISHED src=192.168.18.41 dst=192.168.18.33 sport=51000 dport=5432 src=192.168.18.33 dst=192.168.18.41 sport=5432 dport=51000 [ASSURED] mark=0 zone=0 use=2"])
+        host = {"192.168.18.33"}
+        inbound = {i["port"]: i for i in collector.flow_summary(collector.parse_conntrack(table), host, {}, {}, {}, direct)["in"]}
+        self.assertEqual((inbound[41641]["kind"], inbound[41641]["src"]), ("tailnet", "tailnet DESKTOP-JQVC05U (direct)"))
+        self.assertEqual(inbound[5432]["kind"], "lan")               # the same PC on any other port stays a LAN host
+        plain = {i["port"]: i for i in collector.flow_summary(collector.parse_conntrack(table), host, {}, {}, {})["in"]}
+        self.assertEqual(plain[41641]["kind"], "lan")
+
     def test_labels_and_small_helpers(self):
         self.assertEqual(collector.client_label("172.18.0.1", NAMES, PEERS), "this Mac")
         self.assertEqual(collector.client_label("172.18.0.12", NAMES, PEERS), "edge-functions")

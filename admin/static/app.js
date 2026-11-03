@@ -737,11 +737,13 @@ function renderNetworkPage(s) {
   if (ts.update_available) notes.append(el('li', 'A newer Tailscale is available.', 'warn'));
   put($('tailnet-notes'), notes.children.length ? notes : null);
 
-  const scopeLvl = { public: 'bad', all: 'bad', lan: 'warn', tailnet: 'ok', loopback: '' };
+  const scopeLvl = { public: 'bad', all: 'bad', lan: 'warn', tailnet: 'ok', loopback: '', open: '', blocked: '' };
   const listeners = d ? d.listeners || [] : [];
-  $('listen-meta').textContent = listeners.length ? `${listeners.filter((p) => ['all', 'public', 'lan'].includes(p.scope)).length} reach the local network` : '';
+  const exposedPorts = listeners.filter((p) => ['all', 'public', 'lan'].includes(p.scope)).length;
+  const openPorts = listeners.filter((p) => p.scope === 'open').length;
+  $('listen-meta').textContent = listeners.length ? `${exposedPorts} reach the local network${openPorts ? ` · ${openPorts} open by firewall rule` : ''}` : '';
   renderTable($('listen-table'), [{ label: 'Port' }, { label: 'Reaches' }, { label: 'Address' }, { label: 'Program' }],
-    listeners.map((p) => ({ cells: [span(p.port, 'mono'), tag({ all: 'all networks', public: 'public', lan: 'local network', tailnet: 'tailnet', loopback: 'this Mac only' }[p.scope] || p.scope, scopeLvl[p.scope]), p.addr, `${p.proc || '?'}${p.svc ? ` (${p.svc})` : ''}`] })), {});
+    listeners.map((p) => ({ cells: [span(p.port, 'mono'), tag({ all: 'all networks', public: 'public', lan: 'local network', open: 'firewall lets it in', blocked: 'blocked by firewall', tailnet: 'tailnet', loopback: 'this Mac only' }[p.scope] || p.scope, scopeLvl[p.scope]), p.addr, `${p.proc || '?'}${p.svc ? ` (${p.svc})` : ''}`] })), {});
 
   const flows = d ? d.flows || {} : {};
   $('flows-meta').textContent = flows.tracked ? `${flows.tracked} tracked${flows.states ? ` · ${Object.entries(flows.states).map(([k, v]) => `${k.toLowerCase()} ${v}`).join(' · ')}` : ''}` : '';

@@ -1646,6 +1646,7 @@ def procs_panel(c, sampler, x, y, w, h):
 
 def scope_tag(c, x, y, scope):
     text, colour = {"all": ("ALL NETS", C["bad"]), "public": ("PUBLIC", C["bad"]), "lan": ("LAN", C["warn"]),
+                    "open": ("FW OPEN", C["accent"]), "blocked": ("FW DROP", C["off"]),
                     "tailnet": ("TAILNET", C["ok"]), "loopback": ("LOCAL", C["off"])}.get(scope, (scope.upper()[:8], C["off"]))
     return c.put(x, y, text.center(8), C["pill_fg"] if c.rich else C["bright"], colour, bold=True)
 
@@ -1653,7 +1654,9 @@ def scope_tag(c, x, y, scope):
 def listeners_panel(c, sampler, x, y, w, h):
     rows = debug_of(sampler).get("listeners")
     exposed = [r for r in rows or [] if r["scope"] in ("all", "public", "lan")]
-    box(c, x, y, w, h, "listening ports", C["bad"] if exposed else C["conn"], f"{len(exposed)} exposed" if exposed else "all private")
+    opened = sum(r["scope"] == "open" for r in rows or [])
+    box(c, x, y, w, h, "listening ports", C["bad"] if exposed else C["conn"],
+        f"{len(exposed)} exposed" if exposed else f"{opened} open by firewall rule" if opened else "all private")
     inner, row, bottom = w - 4, y + 1, y + h - 1
     if rows is None:
         line(c, x + 2, row, inner, ("no port data (collector not updated yet)", C["dim"]))
@@ -1684,7 +1687,10 @@ def flows_panel(c, sampler, x, y, w, h, direction):
     for r in rows:
         if row >= bottom:
             break
-        colour = {"public": C["bad"], "lan": C["warn"], "tailnet": C["accent"]}.get(r["kind"], C["text"])
+        # Only a stranger reaching in is a colour. Where this Mac connects to is routine: a LAN router
+        # or an Internet service is plain text.
+        colour = {"public": C["bad"], "lan": C["warn"], "tailnet": C["accent"]}.get(r["kind"], C["text"]) \
+            if direction == "in" else C["accent"] if r["kind"] == "tailnet" else C["text"]
         right = x + w - 2
         if direction == "in":
             fields(c, x + 2, row, right, (f"{r['n']}x", C["bright"], 5),
@@ -1865,7 +1871,7 @@ def files_panel(c, sampler, x, y, w, h):
     for f in files:
         if row >= bottom - 2:
             break
-        fresh = f["age_s"] < 600
+        fresh = f["age_s"] < 600 and not f["path"].startswith("/run/")    # /run/... is rewritten every 2 s
         path_w = min(max(inner * 48 // 100, 18), 58)
         shown = f["path"] if len(f["path"]) < path_w else "…" + f["path"][-(path_w - 2):]    # keep the file name, and a gap
         fields(c, x + 2, row, x + w - 2, ("● " if fresh else "  ", C["warn"], 2),
