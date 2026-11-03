@@ -209,9 +209,25 @@ https://macserver.<your-tailnet>.ts.net/
 ```
 
 Replace `macserver` with your server name. `<your-tailnet>` is shown at the bottom
-of the dashboard and in the Tailscale app. The admin page shows the same health
-information as the dashboard, the **API URL** and **app key** (with Copy buttons),
-and the **Start Claude session** button.
+of the dashboard and in the Tailscale app. It has the same pages as the dashboard on the
+Mac's screen, plus a terminal and tools; press **1** to **6** to switch:
+
+- **Overview**: a strip of the key numbers (CPU, memory, network, disk, temperature,
+  services, power, load) each with its last five minutes, **Needs attention** (what is
+  wrong, and the command to look at it), CPU, memory, storage, network, status, every
+  service grouped by project, the **API URL** and **app key** (with Copy buttons), and the
+  **Start Claude session** button.
+- **Hardware**: CPU in full, every temperature with its limit, the fan, the battery
+  (health, cycles, time left), processes you can sort, memory, storage and the machine's facts.
+- **Network**: every interface, reachability, the Wi-Fi network, every Tailscale device and
+  how it connects, listening ports, connections, and API traffic.
+- **Services**: every container (click one for its status and last log lines), the
+  database (connections, transactions per second, cache hit, size, app users) and Docker's
+  disk use.
+- **Terminal** and **Tools**: a shell in the browser, and buttons for the `macserver` commands.
+
+The page follows your device's light or dark setting. Like the screen, it never turns heat
+into a warning: only a fan that has stopped.
 
 **Supabase Studio** (tables, users, files, SQL editor) is at the same address with
 `:8443` at the end. It asks for a username and password: get them from the server

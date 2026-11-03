@@ -288,7 +288,9 @@ def status(scenario):
     data = {
         "generated_at": time.time(), "setup_done": True,
         "host": {"updates_pending": 4 if trouble or warning else 0, "reboot_required": warning, "model": "MacBookAir8,2",
-                 "kernel": "6.18.7-t2-trixie", "t2_kernel": True, "uptime_s": 273600, "cpus": 4,
+                 "kernel": "6.18.7-t2-trixie", "t2_kernel": True, "uptime_s": 273600, "cpus": 4, "load": [0.62, 0.48, 0.41],
+                 "memory": {"total": 7_990_000_000, "used": 5_100_000_000}, "disk": {"total": 233 * GB, "used": 41_200_000_000},
+                 "t2_modules": {"keyboard": True, "brcmfmac": True, "applesmc": True},
                  "battery": {"percent": 80, "status": "Charging", "limit": None}, "sensors": {"cpu_temp_c": 62, "fans_rpm": [2400]}},
         "tailscale": {"state": "Running", "name": "macserver.tail4f2a.ts.net", "peers_online": 3},
         "idle": {"mode": "auto", "idle": False, "since": None, "after_s": 900, "reasons": []},

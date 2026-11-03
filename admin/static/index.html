@@ -3,205 +3,180 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
 <title>MacServer</title>
+<link rel="icon" href="data:,">
 <link rel="stylesheet" href="/style.css">
 <script src="/app.js" defer></script>
 </head>
 <body>
-<header id="top">
-  <div class="brand"><span class="logo">▟█▙</span> <b id="host-name">macserver</b></div>
-  <nav id="tabs" aria-label="Views">
-    <button type="button" data-tab="overview" class="on">1 overview</button>
-    <button type="button" data-tab="network">2 network</button>
-    <button type="button" data-tab="terminal">3 terminal</button>
-    <button type="button" data-tab="dev">4 dev</button>
+<header class="top">
+  <div class="brand"><span class="brand-name">MacServer</span><span id="host-name" class="host mono"></span></div>
+  <nav id="tabs" role="tablist" aria-label="Pages">
+    <button type="button" role="tab" id="tab-overview" data-tab="overview" aria-controls="view-overview" aria-selected="true"><span class="key">1</span>Overview</button>
+    <button type="button" role="tab" id="tab-hardware" data-tab="hardware" aria-controls="view-hardware" aria-selected="false"><span class="key">2</span>Hardware</button>
+    <button type="button" role="tab" id="tab-network" data-tab="network" aria-controls="view-network" aria-selected="false"><span class="key">3</span>Network</button>
+    <button type="button" role="tab" id="tab-services" data-tab="services" aria-controls="view-services" aria-selected="false"><span class="key">4</span>Services</button>
+    <button type="button" role="tab" id="tab-terminal" data-tab="terminal" aria-controls="view-terminal" aria-selected="false"><span class="key">5</span>Terminal</button>
+    <button type="button" role="tab" id="tab-dev" data-tab="dev" aria-controls="view-dev" aria-selected="false"><span class="key">6</span>Tools</button>
   </nav>
-  <div class="tophead">
-    <span id="summary" role="status">Loading…</span>
-    <span id="clock" class="dim"></span>
+  <div class="top-right">
+    <span id="summary" class="chip" role="status">Loading…</span>
+    <time id="clock"></time>
   </div>
 </header>
 
 <main>
-  <div id="view-overview" class="view">
+  <!-- OVERVIEW -->
+  <div id="view-overview" class="view" role="tabpanel" aria-labelledby="tab-overview">
+    <div id="kpis" class="kpis" aria-label="Key numbers"></div>
     <div class="grid">
-      <section class="box b-cpu" data-title="cpu">
-        <div class="cpu-body">
-          <div class="cpu-graph"><canvas id="g-cpu" aria-label="CPU history"></canvas></div>
-          <div id="cores" class="cores"></div>
-        </div>
-        <div id="cpu-foot" class="foot"></div>
-      </section>
-
-      <section class="box b-mem" data-title="mem">
-        <div id="mem-rows"></div>
-      </section>
-
-      <section class="box b-net" data-title="net">
-        <div class="two"><div><div class="lbl">▼ download <b id="rx-now"></b></div><canvas id="g-rx"></canvas></div>
-        <div><div class="lbl">▲ upload <b id="tx-now"></b></div><canvas id="g-tx"></canvas></div></div>
-        <div id="net-foot" class="foot"></div>
-      </section>
-
-      <section class="box b-proc" data-title="proc">
-        <div class="scroll"><table id="proc-table">
-          <thead><tr>
-            <th data-sort="pid" scope="col">pid</th><th data-sort="name" scope="col">program</th>
-            <th data-sort="user" scope="col">user</th><th data-sort="rss" scope="col" class="r">mem</th>
-            <th data-sort="cpu" scope="col" class="r on">cpu%</th></tr></thead>
-          <tbody id="procs"></tbody></table></div>
-        <div id="proc-foot" class="foot"></div>
-      </section>
-
-      <section class="box b-svc" data-title="services">
-        <div class="scroll"><table>
-          <thead><tr><th scope="col">container</th><th scope="col">state</th><th scope="col" class="r">cpu%</th><th scope="col" class="r">mem</th></tr></thead>
-          <tbody id="services"></tbody></table></div>
-        <pre id="svc-detail" class="detail" hidden></pre>
-      </section>
-
-      <section class="box b-sys" data-title="system">
-        <dl id="host"></dl>
-      </section>
-
-      <section class="box b-connect" data-title="connect">
-        <dl id="connect"></dl>
-      </section>
-
-      <section class="box b-claude" data-title="claude">
-        <p id="claude-state">Loading…</p>
-        <p class="actions"><button type="button" id="claude-start" class="primary" hidden>Start Claude session</button>
-          <a id="claude-open" class="primary" hidden target="_blank" rel="noopener noreferrer">Open session</a>
-          <button type="button" id="claude-stop" hidden>Stop session</button></p>
-      </section>
+      <div class="col s4">
+        <section class="panel"><header><h2>Needs attention</h2><span class="meta" id="attention-meta"></span></header><div class="body" id="attention"></div></section>
+        <section class="panel"><header><h2>CPU</h2><span class="meta" id="cpu-meta"></span></header><div class="body" id="cpu-body"></div></section>
+      </div>
+      <div class="col s4">
+        <section class="panel"><header><h2>Memory</h2><span class="meta" id="mem-meta"></span></header><div class="body" id="mem-body"></div></section>
+        <section class="panel"><header><h2>Storage</h2><span class="meta" id="storage-meta"></span></header><div class="body" id="storage-body"></div></section>
+      </div>
+      <div class="col s4">
+        <section class="panel"><header><h2>Network</h2><span class="meta" id="net-meta"></span></header><div class="body" id="net-body"></div></section>
+        <section class="panel"><header><h2>Status</h2></header><div class="body"><ul class="list" id="status-rows"></ul></div></section>
+        <section class="panel"><header><h2>Claude</h2></header><div class="body">
+          <p id="claude-state" class="empty">Loading…</p>
+          <div class="actions">
+            <button type="button" id="claude-start" class="primary" hidden>Start Claude session</button>
+            <a id="claude-open" class="btn primary" hidden target="_blank" rel="noopener noreferrer">Open session</a>
+            <button type="button" id="claude-stop" hidden>Stop session</button>
+          </div></div></section>
+        <section class="panel"><header><h2>Connect your apps</h2></header><div class="body"><dl class="kv" id="connect"></dl></div></section>
+      </div>
+      <section class="panel s12"><header><h2>Services</h2><span class="meta" id="services-meta"></span></header>
+        <div class="body flush"><div class="scroll"><table id="overview-services"><thead></thead><tbody></tbody></table></div></div></section>
     </div>
   </div>
 
-  <div id="view-network" class="view" hidden>
+  <!-- HARDWARE -->
+  <div id="view-hardware" class="view" role="tabpanel" aria-labelledby="tab-hardware" hidden>
     <div class="grid">
-      <section class="box b-lat" data-title="latency">
-        <div id="lat-rows"></div>
-      </section>
-      <section class="box b-req" data-title="requests / 2 s">
-        <canvas id="g-req" aria-label="API requests"></canvas>
-        <div id="req-foot" class="foot"></div>
-      </section>
-      <section class="box b-listen" data-title="listening">
-        <div class="scroll"><table><thead><tr><th scope="col">port</th><th scope="col">address</th><th scope="col">scope</th><th scope="col">program</th></tr></thead>
-          <tbody id="listeners"></tbody></table></div>
-      </section>
-      <section class="box b-flows" data-title="connections">
-        <div class="scroll"><table><thead><tr><th scope="col">dir</th><th scope="col">peer</th><th scope="col">service</th><th scope="col" class="r">n</th></tr></thead>
-          <tbody id="flows"></tbody></table></div>
-        <div id="flow-foot" class="foot"></div>
-      </section>
-      <section class="box b-paths" data-title="top paths / clients">
-        <div class="two"><ul id="top-paths" class="list"></ul><ul id="top-clients" class="list"></ul></div>
-      </section>
-      <section class="box b-logs" data-title="problems">
-        <ul id="problems" class="list"></ul>
-      </section>
+      <section class="panel s8"><header><h2>CPU</h2><span class="meta" id="hw-cpu-meta"></span></header><div class="body" id="hw-cpu"></div></section>
+      <div class="col s4">
+        <section class="panel"><header><h2>Temperatures and fan</h2><span class="meta" id="hw-thermal-meta"></span></header><div class="body" id="hw-thermal"></div></section>
+        <section class="panel"><header><h2>Power</h2><span class="meta" id="hw-power-meta"></span></header><div class="body" id="hw-power"></div></section>
+      </div>
+      <section class="panel s12"><header><h2>Processes</h2><span class="meta" id="procs-meta"></span></header>
+        <div class="body flush"><div class="scroll"><table id="proc-table"><thead></thead><tbody></tbody></table></div></div></section>
+      <section class="panel s6"><header><h2>Memory</h2><span class="meta" id="hw-mem-meta"></span></header><div class="body" id="hw-mem"></div></section>
+      <section class="panel s6"><header><h2>Storage</h2><span class="meta" id="hw-storage-meta"></span></header><div class="body" id="hw-storage"></div></section>
+      <section class="panel s12"><header><h2>This machine</h2><span class="meta" id="hw-machine-meta"></span></header><div class="body"><div class="cols2" id="hw-machine"></div></div></section>
     </div>
   </div>
 
-  <div id="view-terminal" class="view" hidden>
-    <section class="box b-term" data-title="terminal">
-      <iframe id="term-frame" title="Terminal" allow="clipboard-read; clipboard-write"></iframe>
-    </section>
+  <!-- NETWORK -->
+  <div id="view-network" class="view" role="tabpanel" aria-labelledby="tab-network" hidden>
+    <div class="grid">
+      <section class="panel s12"><header><h2>Interfaces</h2><span class="meta" id="ifaces-meta"></span></header>
+        <div class="body flush"><div class="scroll"><table id="iface-table"><thead></thead><tbody></tbody></table></div></div></section>
+      <div class="col s4">
+        <section class="panel"><header><h2>Reachability</h2></header><div class="body" id="net-reach"></div></section>
+        <section class="panel"><header><h2>API requests</h2><span class="meta" id="req-meta"></span></header><div class="body" id="req-body"></div></section>
+        <section class="panel"><header><h2>Busiest</h2></header><div class="body" id="req-tops"></div></section>
+      </div>
+      <div class="col s8">
+        <section class="panel"><header><h2>Tailscale devices</h2><span class="meta" id="tailnet-meta"></span></header>
+          <div class="body flush"><div class="scroll"><table id="tailnet-table"><thead></thead><tbody></tbody></table></div><div class="body" id="tailnet-notes"></div></div></section>
+        <section class="panel"><header><h2>Listening ports</h2><span class="meta" id="listen-meta"></span></header>
+          <div class="body flush"><div class="scroll"><table id="listen-table"><thead></thead><tbody></tbody></table></div></div></section>
+        <section class="panel"><header><h2>Connections</h2><span class="meta" id="flows-meta"></span></header>
+          <div class="body flush"><div class="scroll"><table id="flow-table"><thead></thead><tbody></tbody></table></div></div></section>
+      </div>
+      <section class="panel s12"><header><h2>Problems found in the logs</h2><span class="meta" id="problems-meta"></span></header><div class="body"><ul class="list" id="problems"></ul></div></section>
+    </div>
   </div>
 
-  <div id="view-dev" class="view" hidden>
+  <!-- SERVICES -->
+  <div id="view-services" class="view" role="tabpanel" aria-labelledby="tab-services" hidden>
     <div class="grid">
-      <section class="box b-dev-commands" data-title="macserver commands">
-        <div class="scroll">
-          <table>
-            <thead>
-              <tr><th scope="col">command</th><th scope="col">description</th><th scope="col">needs root</th><th scope="col"></th></tr>
-            </thead>
-            <tbody id="dev-commands"></tbody>
-          </table>
-        </div>
-        <div id="dev-output" class="detail" hidden></div>
-      </section>
+      <section class="panel s12"><header><h2>Containers</h2><span class="meta" id="svc-meta"></span></header>
+        <div class="body flush"><div class="scroll"><table id="svc-table"><thead></thead><tbody></tbody></table></div></div></section>
+      <section class="panel s6"><header><h2>Database</h2><span class="meta" id="db-meta"></span></header><div class="body" id="db-body"></div></section>
+      <div class="col s6">
+        <section class="panel"><header><h2>Projects</h2></header><div class="body flush"><div class="scroll"><table id="project-table"><thead></thead><tbody></tbody></table></div></div></section>
+        <section class="panel"><header><h2>Docker disk use</h2></header><div class="body" id="docker-body"></div></section>
+      </div>
+    </div>
+  </div>
 
-      <section class="box b-dev-status" data-title="quick status">
-        <pre id="dev-status-output" class="detail"></pre>
-        <p class="actions"><button type="button" id="dev-status-btn" class="primary">Run status</button></p>
-      </section>
+  <!-- TERMINAL -->
+  <div id="view-terminal" class="view" role="tabpanel" aria-labelledby="tab-terminal" hidden>
+    <section class="panel b-term"><iframe id="term-frame" title="Terminal" allow="clipboard-read; clipboard-write"></iframe></section>
+  </div>
 
-      <section class="box b-dev-logs" data-title="supabase logs">
-        <div class="two">
-          <div>
-            <label class="lbl">Service</label>
+  <!-- TOOLS -->
+  <div id="view-dev" class="view" role="tabpanel" aria-labelledby="tab-dev" hidden>
+    <div class="grid">
+      <section class="panel s12"><header><h2>macserver commands</h2><span class="meta">run on the Mac, output below</span></header>
+        <div class="body flush"><div class="scroll full"><table><thead><tr><th scope="col">Command</th><th scope="col">What it does</th><th scope="col">Needs root</th><th scope="col"><span class="sr">Run</span></th></tr></thead>
+          <tbody id="dev-commands"></tbody></table></div>
+          <div class="body"><pre id="dev-output" class="detail" hidden></pre></div></div></section>
+
+      <section class="panel s4"><header><h2>Quick status</h2></header><div class="body">
+        <pre id="dev-status-output" class="detail" hidden></pre>
+        <div class="actions"><button type="button" id="dev-status-btn" class="primary">Run status</button></div></div></section>
+
+      <section class="panel s8"><header><h2>Supabase logs</h2></header><div class="body">
+        <div class="pair">
+          <div><label class="field" for="dev-log-service">Service</label>
             <select id="dev-log-service">
-              <option value="">all</option>
-              <option value="auth">auth</option>
-              <option value="rest">rest (PostgREST)</option>
-              <option value="db">db (PostgreSQL)</option>
-              <option value="storage">storage</option>
-              <option value="realtime">realtime</option>
-              <option value="functions">functions (Edge Functions)</option>
-              <option value="studio">studio</option>
-              <option value="kong">kong (API gateway)</option>
-              <option value="meta">postgres-meta</option>
-              <option value="imgproxy">imgproxy</option>
-            </select>
-          </div>
-          <div>
-            <label class="lbl">Lines</label>
-            <input type="number" id="dev-log-lines" value="100" min="10" max="1000" step="10">
-          </div>
+              <option value="">all</option><option value="auth">auth</option><option value="rest">rest (PostgREST)</option><option value="db">db (PostgreSQL)</option>
+              <option value="storage">storage</option><option value="realtime">realtime</option><option value="functions">functions (Edge Functions)</option>
+              <option value="studio">studio</option><option value="kong">kong (API gateway)</option><option value="meta">postgres-meta</option><option value="imgproxy">imgproxy</option>
+            </select></div>
+          <div><label class="field" for="dev-log-lines">Lines</label>
+            <input type="number" id="dev-log-lines" value="100" min="10" max="1000" step="10"></div>
         </div>
-        <pre id="dev-logs-output" class="detail"></pre>
-        <p class="actions"><button type="button" id="dev-logs-btn" class="primary">Fetch logs</button></p>
-      </section>
+        <pre id="dev-logs-output" class="detail" hidden></pre>
+        <div class="actions"><button type="button" id="dev-logs-btn" class="primary">Fetch logs</button></div></div></section>
 
-      <section class="box b-dev-keys" data-title="api keys (secret)">
-        <pre id="dev-keys-output" class="detail"></pre>
-        <p class="actions"><button type="button" id="dev-keys-btn" class="primary">Show keys</button></p>
-      </section>
+      <section class="panel s4"><header><h2>API keys</h2><span class="meta">secret</span></header><div class="body">
+        <pre id="dev-keys-output" class="detail" hidden></pre>
+        <div class="actions"><button type="button" id="dev-keys-btn" class="primary">Show keys</button></div></div></section>
 
-      <section class="box b-dev-doctor" data-title="system doctor">
-        <pre id="dev-doctor-output" class="detail"></pre>
-        <p class="actions"><button type="button" id="dev-doctor-btn" class="primary">Run doctor</button></p>
-      </section>
+      <section class="panel s4"><header><h2>System doctor</h2></header><div class="body">
+        <pre id="dev-doctor-output" class="detail" hidden></pre>
+        <div class="actions"><button type="button" id="dev-doctor-btn" class="primary">Run doctor</button></div></div></section>
 
-      <section class="box b-dev-backup" data-title="database backup">
-        <pre id="dev-backup-output" class="detail"></pre>
-        <p class="actions"><button type="button" id="dev-backup-btn" class="primary">Create backup</button></p>
-      </section>
+      <section class="panel s4"><header><h2>Database backup</h2></header><div class="body">
+        <pre id="dev-backup-output" class="detail" hidden></pre>
+        <div class="actions"><button type="button" id="dev-backup-btn" class="primary">Create backup</button></div></div></section>
 
-      <section class="box b-dev-idle" data-title="idle mode">
-        <div id="dev-idle-status" class="detail"></pre>
+      <section class="panel s4"><header><h2>Idle mode</h2></header><div class="body">
+        <pre id="dev-idle-status" class="detail" hidden></pre>
         <div class="actions">
           <button type="button" id="dev-idle-status-btn" class="primary">Check status</button>
           <button type="button" id="dev-idle-auto-btn">Auto</button>
           <button type="button" id="dev-idle-on-btn">On</button>
           <button type="button" id="dev-idle-off-btn">Off</button>
-        </div>
-      </section>
+        </div></div></section>
 
-      <section class="box b-dev-public" data-title="public route">
-        <div id="dev-public-status" class="detail"></pre>
+      <section class="panel s4"><header><h2>Public route</h2></header><div class="body">
+        <pre id="dev-public-status" class="detail" hidden></pre>
         <div class="actions">
           <button type="button" id="dev-public-status-btn" class="primary">Check status</button>
           <button type="button" id="dev-public-on-btn">Enable</button>
           <button type="button" id="dev-public-off-btn">Disable</button>
-        </div>
-      </section>
+        </div></div></section>
 
-      <section class="box b-dev-update" data-title="system update">
-        <pre id="dev-update-output" class="detail"></pre>
-        <p class="actions"><button type="button" id="dev-update-btn" class="primary">Run full update (backup + upgrade)</button></p>
-      </section>
+      <section class="panel s4"><header><h2>System update</h2></header><div class="body">
+        <pre id="dev-update-output" class="detail" hidden></pre>
+        <div class="actions"><button type="button" id="dev-update-btn" class="primary">Run full update (backup + upgrade)</button></div></div></section>
 
-      <section class="box b-dev-restart" data-title="restart services">
-        <pre id="dev-restart-output" class="detail"></pre>
-        <p class="actions"><button type="button" id="dev-restart-btn" class="primary">Restart Supabase + public route</button></p>
-      </section>
+      <section class="panel s4"><header><h2>Restart services</h2></header><div class="body">
+        <pre id="dev-restart-output" class="detail" hidden></pre>
+        <div class="actions"><button type="button" id="dev-restart-btn" class="primary">Restart Supabase + public route</button></div></div></section>
     </div>
   </div>
 </main>
-<footer><span id="viewer"></span> · <span class="dim">keys: 1 2 3 4 switch view</span></footer>
+<footer><span id="viewer"></span> <span class="muted">· keys 1 to 6 switch page</span></footer>
 </body>
 </html>

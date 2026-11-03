@@ -80,8 +80,12 @@ to `http://caddy:8080`. Check `sudo docker logs macserver-gateway-cloudflared-1`
 **A Supabase service keeps restarting.** `sudo macserver logs <service>` (for
 example `auth`, `db`, `storage`).
 
-**Fans are loud or the Mac runs hot.** `systemctl status t2fanrd`. The admin page shows
-the CPU temperature and fan speed. Keep the vents clear. Running with the lid open helps cooling.
+**Fans are loud or the Mac runs hot.** A MacBook Air under load sits in the 90s and touches
+the CPU's own 100 °C limit with the fans at full speed: that is normal, and neither the screen
+nor the admin page calls it a problem. Look into it only if the fan has stopped
+(`systemctl status t2fanrd`; the dashboard then says "the fan is not turning") or the Mac is slow
+all the time (the CPU "waiting" figures on the Hardware page show it). Keep the vents clear.
+Running with the lid open helps cooling.
 
 **The dashboard's MacServer line says it was rolled back or skipped.** A new version
 failed its tests or the health check after installing; the Mac stays on the version

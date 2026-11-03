@@ -821,3 +821,31 @@ all five pages rendered and read; the README screenshot was redrawn. Not verifie
 own screen and in the Lat15 console font (CI's `test_console_glyphs_exist_in_the_mac_console_font` needs
 `console-setup-linux`), the 1 s redraw under the real `foot` terminal, and the real CPU use of the new loop
 (expect a few percent of one core; check with `ps` after the update lands).
+
+## 2026-11-03: the web admin page is redesigned (same pages as the screen)
+
+`admin/static/{index.html,style.css,app.js}` rebuilt; `admin/server.py` and the three-file whitelist are
+unchanged, so nothing new needs installing. Pages: Overview, Hardware, Network, Services, Terminal, Tools
+(keys 1 to 6, a real ARIA tab list with arrow keys). A flat, restrained console: system fonts, tabular
+numbers, one accent colour, green / amber / red only for state, dark by default and light when the device
+asks (`prefers-color-scheme`). It shows what the new collector writes: the stat strip with sparklines, a
+"Needs attention" list that gives the command to run, CPU time by kind and pressure-stall averages, memory
+breakdown, filesystems and the SSD, Docker disk use, interfaces, Wi-Fi, TCP, every Tailscale device (route,
+last seen), listening ports, API traffic, sortable process and container tables (click a container for its
+last log lines), the database panel, battery health and time left, and every sensor with its limit. Charts
+are canvas lines with five minutes of history kept in the browser (150 samples).
+
+Same rule as the screen: heat is only a reading. The one cooling alarm is a warm CPU whose fan reads under
+300 rpm. Fixed: the tools tab had two mismatched `</pre>` tags, and its output routing sent most commands to
+one shared box (each tool now writes to its own).
+
+`tests/web_preview.py` serves the page with moving sample data (`python3 tests/web_preview.py`, then open
+http://127.0.0.1:8765/); `tests/test_web_page.py` pins the CSP-relevant rules (no inline script or style, no
+outside URL, no `innerHTML`), unique ids, every id the script uses exists, balanced markup, WCAG AA contrast
+of the colour tokens in both themes, and that the script parses.
+
+Verified: 38 page/repo/admin tests; every page rendered in headless Chrome with 25 to 35 real polling samples
+(no console errors, no horizontal overflow at 1500 px and at a 390 px phone emulation); contrast measured
+(the one failure found, the tab-number hints at 80% opacity, was fixed). Not verified: on the real Mac behind
+`tailscale serve` with a real login (the headless run used sample data), in Safari and Firefox, the
+terminal tab's iframe (unchanged code), and the Tools buttons against the real `/api/dev`.
