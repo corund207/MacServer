@@ -1016,7 +1016,7 @@ PostgREST, Realtime, Storage, postgres-meta, edge-runtime, Supavisor; the databa
 Verified: tests; xterm.js 6 in a real browser (page builds its screen, 57 rows, text and colours and accents drawn, no
 console errors; the shell connection itself was not exercised); the installer-image workflow installs v0.8.3 and the new
 Claude Code end to end in a VM before this reaches `main`. Not changed, on purpose: the running Mac's Supabase (self-update
-never changes it; moving it is `install.sh --redo supabase` after a backup, a decision for the owner) and the Mac's
+never changes it; this entry first said `install.sh --redo supabase` would move it, which is wrong: that step skips an existing install, see the entry "Supabase upgrades" below) and the Mac's
 hand-made gateway/apps/rustdesk-ws tunnels in `~/api-gateway` etc. (not managed by this repo, so still cloudflared 2026.10.3,
 which the Mac's own log already calls outdated).
 
@@ -1064,3 +1064,31 @@ Verified: new tests (multicast, container trust and its off switch, real-Mac pai
 `in_container`); the new detector run against the real Mac's live `status.json` from a temporary folder: score 0 (was 5), all
 nine root processes in the list classified (host services by name, container processes by cgroup). Not verified: the
 collector's own `container` field on the Mac (it appears after this update) and, as before, a real lockdown.
+
+## 2026-11-04: Supabase upgrades (`macserver supabase-upgrade`)
+
+The owner asked for the live Mac's Supabase to move from v0.8.2 to the pinned v0.8.3. There was no way to do that: `step_supabase`
+installs once and skips an existing install, so `install.sh --redo supabase` upgrades nothing (and would have re-asked the
+sign-up question, whose answer rewrites `DISABLE_SIGNUP`); self-update "never changes Supabase's version" by design;
+`macserver update` only pulls the images the installed compose already names.
+
+New: `sudo macserver supabase-upgrade [--check] [--yes]` (`installer/steps/66-supabase-upgrade.sh`). It reads the installed
+tag from `.supabase-version` (installs without it are taken to be v0.8.2, the previous pin, and the checks below catch a wrong
+guess), fetches both tags (blobless, depth 1) and compares only `docker/`:
+
+- stops, changing nothing, if the tags differ under `volumes/` or in `.env.example` (settings or database setup: a person reads
+  that), or if a file it would replace is not byte-for-byte the stock file of the old tag (the owner edited it);
+- checks the new tag against the pinned commit, and needs 6 GB free;
+- backs up first (`cmd_backup`, so to the USB drive) and refuses to go on without one; then asks (`--yes` skips the question);
+- replaces only the changed files (executable bits kept), never `.env`, `docker-compose.macserver.yml` or the data under
+  `volumes/`; pulls, restarts with `docker compose up -d --wait`, probes `/auth/v1/health` through the gateway;
+- on any failure puts the old files back and restarts the old version (the old images stay on disk; the services' own database
+  migrations are forward-only, so the backup is the way back from those); the replaced files stay in `.upgrade-backup-<time>/`.
+
+v0.8.2 -> v0.8.3 changes only `docker-compose.yml` (images: Studio, Auth, PostgREST, Realtime, Storage, postgres-meta,
+edge-runtime, Supavisor, plus one edge-runtime flag) and some docs/tests; the database image and `.env.example` are unchanged.
+
+Verified: `tests/supabase_upgrade_test.sh` (dry run; the upgrade with secrets, data and the MacServer override untouched and
+modes kept; already current; no version file; an edited file; upstream settings changes; a wrong pin; a failed backup; failed
+pull, restart and health probe each rolled back; bad use), shellcheck. Not verified: the run on the real Mac (needs sudo, the
+~2 GB image download and a minute or two of downtime) and that the real v0.8.2 files there are stock (the command checks).

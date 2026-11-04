@@ -27,6 +27,7 @@ Usage: sudo macserver COMMAND
   autoupdate on|off|status   MacServer updates itself from GitHub (on by default)
   backup            back up the database (and Storage files and settings) to the USB backup drive
   backup-drive setup|status|files   set up the USB backup drive (erases it), or see what it holds
+  supabase-upgrade [--check] [--yes]   move Supabase to the version this MacServer pins (backs up first, rolls back on failure)
   public setup      turn on (or change) the public API route
   public off        stop the public API route
   public on         start it again
@@ -93,6 +94,10 @@ cmd_backup_drive() {
     files) backup_drive_files ;;
     *) usage; exit 2 ;;
   esac
+}
+
+cmd_supabase_upgrade() {
+  supabase_upgrade "$@"
 }
 
 cmd_update() {
@@ -169,6 +174,7 @@ main() {
     update) need_root update; cmd_update ;;
     backup) need_root backup; cmd_backup "$@" ;;
     backup-drive) need_root backup-drive; cmd_backup_drive "$@" ;;
+    supabase-upgrade) need_root supabase-upgrade; cmd_supabase_upgrade "$@" ;;
     public)
       need_root public
       case ${1:-} in

@@ -83,6 +83,8 @@ jobs:
         run: |
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q cryptsetup
           sudo bash tests/backup_drive_test.sh
+      - name: Supabase upgrade (what changes, what is refused, roll back on failure)
+        run: bash tests/supabase_upgrade_test.sh
       - name: Supabase pin matches its tag
         run: |
           source installer/lib.sh

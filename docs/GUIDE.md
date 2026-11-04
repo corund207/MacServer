@@ -313,6 +313,7 @@ Logging in shows a summary; `macserver dashboard` opens the full dashboard (q qu
 | `sudo macserver backup` | Backs up the database, uploaded files and settings to the USB backup drive |
 | `sudo macserver backup-drive setup` | Sets up the USB backup drive (erases it first; see below) |
 | `sudo macserver backup-drive status` | Is the drive plugged in, when was the last backup |
+| `sudo macserver supabase-upgrade` | Moves Supabase to the version this MacServer pins (backs up first; `--check` only shows what would change) |
 | `sudo macserver logs auth` | Shows what a service is doing (`auth`, `rest`, `db`, `storage`...) |
 | `sudo macserver restart` | Restarts Supabase |
 | `sudo macserver public off` | Takes the public API off the Internet immediately |
