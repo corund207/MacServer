@@ -206,6 +206,27 @@ class RepoTests(unittest.TestCase):
                                       timeout=20)
                 self.assertEqual(done.stdout.strip(), want, done.stderr)
 
+    def test_usb_backup_drive_is_wired_in(self):
+        """`macserver backup-drive` needs its helper installed, its nightly timer enabled, and doomsday to
+        close the drive; the dashboards must not call a drive-less Mac's backups a problem."""
+        tools = (ROOT / "installer/steps/40-access.sh").read_text(encoding="utf-8")
+        for needle in ("admin/backupdrive.py", "macserver-backup.timer", "macserver-backup.service"):
+            self.assertIn(needle, tools)
+        self.assertTrue((ROOT / "installer/steps/65-backup-drive.sh").exists())   # installed by the steps/*.sh glob
+        timer = (ROOT / "admin/macserver-backup.timer").read_text(encoding="utf-8")
+        self.assertIn("Persistent=true", timer)
+        self.assertIn("backup --scheduled", (ROOT / "admin/macserver-backup.service").read_text(encoding="utf-8"))
+        cli = (ROOT / "macserver").read_text(encoding="utf-8")
+        self.assertIn("backup-drive) need_root", cli)
+        self.assertIn("backup_drive_setup", cli)
+        self.assertIn("macserver-backup", (ROOT / "host/macserver-doomsday.sh").read_text(encoding="utf-8"))
+        # The backup drive may only be erased after ERASE is typed.
+        step = (ROOT / "installer/steps/65-backup-drive.sh").read_text(encoding="utf-8")
+        self.assertRegex(step, r'\[\[ \$typed == ERASE \]\] \|\| die')
+        self.assertLess(step.index("== ERASE ]]"), step.index('bd_format "$disk")'))
+        # The phone number, tokens and the authenticator secret never go into a backup.
+        self.assertNotRegex(step, r"doomsday-(totp|gh-token)")
+
     def test_macserver_command_reachable_over_ssh(self):
         # /usr/local/sbin is not on unprivileged users' PATH, so SSH logins
         # would get "command not found". install_tools links the command into

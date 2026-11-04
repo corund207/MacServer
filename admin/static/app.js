@@ -306,8 +306,12 @@ function notices(s) {
   const bat = y.power;
   if (bat && bat.ac_online === false && bat.percent !== null && bat.percent < 20) add('warn', `Running on battery: ${bat.percent}% left`, null);
   const backups = d.backups;
-  if (backups && backups.count === 0) add('warn', 'There is no database backup yet', 'sudo macserver backup');
-  else if (backups && backups.newest_age_s > 7 * 86400) add('warn', `The newest database backup is ${duration(backups.newest_age_s)} old`, 'sudo macserver backup');
+  const drive = backups && backups.drive;
+  if (drive && (drive.error || !backups.count || backups.newest_age_s > 36 * 3600)) {
+    const why = drive.error ? `the last backup failed: ${drive.error}` : !backups.count ? 'no backup has been made yet' : `the newest backup is ${duration(backups.newest_age_s)} old`;
+    add('warn', `The USB backup drive needs attention: ${why}${drive.present ? '' : ' (the drive is not plugged in)'}`, 'sudo macserver backup-drive status');
+  } else if (!drive && backups && backups.count === 0) add('warn', 'There is no database backup yet', 'sudo macserver backup-drive setup');
+  else if (!drive && backups && backups.newest_age_s > 7 * 86400) add('warn', `The newest database backup is ${duration(backups.newest_age_s)} old`, 'sudo macserver backup');
   const fans = ((y.sensors || {}).fans || []).map((f) => f.rpm);
   const cool = coolingFault(h.sensors.cpu_temp_c, fans.length ? fans : h.sensors.fans_rpm);
   if (cool) add('bad', cool, 'sudo systemctl status macserver-fans');
@@ -902,7 +906,7 @@ const DEV_COMMANDS = [
   { cmd: 'macserver update', desc: 'Back up the database, then update Debian, the T2 kernel and containers', root: true },
   { cmd: 'macserver upgrade', desc: 'Install the newest MacServer version now', root: true },
   { cmd: 'macserver autoupdate on|off|status', desc: 'Auto-update from GitHub (on by default)', root: true },
-  { cmd: 'macserver backup', desc: 'Write a compressed database dump to /var/backups/macserver', root: true },
+  { cmd: 'macserver backup', desc: 'Back up the database, Storage files and settings to the USB backup drive', root: true },
   { cmd: 'macserver public setup', desc: 'Turn on or change the public API route', root: true },
   { cmd: 'macserver public on|off', desc: 'Start or stop the public API route', root: true },
   { cmd: 'macserver idle [status|auto|on|off]', desc: 'Low-power mode when nobody is connected', root: true },

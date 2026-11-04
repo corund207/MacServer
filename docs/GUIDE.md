@@ -310,7 +310,9 @@ Logging in shows a summary; `macserver dashboard` opens the full dashboard (q qu
 | `sudo macserver status` | Health at a glance |
 | `sudo macserver keys` | App keys and the Studio login (keep them private) |
 | `sudo macserver update` | Backs up the database, then installs updates |
-| `sudo macserver backup` | Saves a copy of the database in `/var/backups/macserver` |
+| `sudo macserver backup` | Backs up the database, uploaded files and settings to the USB backup drive |
+| `sudo macserver backup-drive setup` | Sets up the USB backup drive (erases it first; see below) |
+| `sudo macserver backup-drive status` | Is the drive plugged in, when was the last backup |
 | `sudo macserver logs auth` | Shows what a service is doing (`auth`, `rest`, `db`, `storage`...) |
 | `sudo macserver restart` | Restarts Supabase |
 | `sudo macserver public off` | Takes the public API off the Internet immediately |
@@ -318,11 +320,47 @@ Logging in shows a summary; `macserver dashboard` opens the full dashboard (q qu
 | `sudo macserver doctor` | Checks network, DNS and the Mac's drivers |
 | `sudo macserver upgrade` | Installs the newest tested MacServer version now (it also updates itself) |
 
+### Backups on a USB drive
+
+The Mac keeps its live data on its own disk and puts every backup on a USB drive. Plug the
+drive in and run, once:
+
+```
+sudo macserver backup-drive setup
+```
+
+It shows what is on the drive and **erases all of it** only after you type `ERASE`. It
+refuses the Mac's own disk, anything not connected over USB, and a drive that is mounted. The drive
+is encrypted: its key is kept on the Mac (which is itself encrypted), so it opens by itself on this
+Mac and is unreadable anywhere else. The command prints a **recovery passphrase once**. Put it in
+your password manager: it is the only way to read the backups if this Mac's disk dies.
+
+After that a backup runs every night at about 03:30, before each automatic update, and whenever you
+run `sudo macserver backup`. Each one holds the database, the files uploaded to Supabase Storage and
+the Supabase and MacServer settings (not the doomsday authenticator or any token). The newest 30
+database backups, 7 Storage copies and 30 settings copies are kept. The drive is open only for the
+few seconds a backup takes. If the drive is unplugged or a backup fails, the dashboard shows an
+issue (and the text alerts tell you) once a backup is missed.
+
+To bring a backup back, open the drive by hand, then restore. On the same Mac:
+
+```
+sudo cryptsetup open --key-file /etc/macserver/backup-drive.key /dev/disk/by-uuid/<UUID> macserver-backup
+sudo mount /dev/mapper/macserver-backup /mnt/macserver-backup
+sudo macserver backup-drive files               # what is on it
+zcat /mnt/macserver-backup/database/supabase-DATE.sql.gz | sudo docker exec -i supabase-db psql -h 127.0.0.1 -U supabase_admin postgres
+sudo umount /mnt/macserver-backup && sudo cryptsetup close macserver-backup
+```
+
+(`<UUID>` is `BACKUP_DRIVE_UUID` in `/etc/macserver/macserver.conf`.) On another computer, plug the
+drive in and run `sudo cryptsetup open /dev/sdX1 backup`; it asks for the recovery passphrase. Try a
+restore into a scratch database once, before you need one.
+
 Good habits:
 
 - Run `sudo macserver update` about once a month (the dashboard shows **WARN** next
   to Updates when there are some). Security updates install by themselves.
-- Copy backups off the Mac now and then (they're only on the Mac's disk).
+- Use a USB backup drive (below). Without one, backups stay on the Mac's own disk.
 - After a **power cut**, the Mac waits for the disk passphrase. That's what keeps
   your data safe if the laptop is stolen.
 - The battery stops charging at 80% when the Mac supports it, so it lasts longer

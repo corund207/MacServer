@@ -25,7 +25,8 @@ Usage: sudo macserver COMMAND
   upgrade           install the newest MacServer version now (once it passed CI)
   apply-latest      force-check GitHub and apply the latest CI-passed version (detailed output)
   autoupdate on|off|status   MacServer updates itself from GitHub (on by default)
-  backup            write a compressed database dump to /var/backups/macserver
+  backup            back up the database (and Storage files and settings) to the USB backup drive
+  backup-drive setup|status|files   set up the USB backup drive (erases it), or see what it holds
   public setup      turn on (or change) the public API route
   public off        stop the public API route
   public on         start it again
@@ -72,18 +73,30 @@ cmd_keys() {
 }
 
 cmd_backup() {
+  if [[ -n $(backup_drive_uuid) ]]; then backup_to_drive; return; fi
+  [[ ${1:-} == --scheduled ]] && return 0   # the daily timer stays quiet until a drive is set up
   local dir=/var/backups/macserver file
   install -d -m 0700 "$dir"
   file=$dir/supabase-$(date +%Y%m%d-%H%M%S).sql.gz
   say "Dumping the database to $file ..."
   (umask 077; docker exec supabase-db pg_dumpall -h 127.0.0.1 -U supabase_admin | gzip > "$file")
   ok "backup written ($(du -h "$file" | cut -f1)). Copy it off this Mac to keep it safe."
+  say "Better: plug in a USB drive and run  sudo macserver backup-drive setup  (backups then go to it, encrypted)."
   find "$dir" -name 'supabase-*.sql.gz' -printf '%T@ %p
 ' | sort -rn | tail -n +11 | cut -d' ' -f2- | xargs -r rm -f   # keep the newest 10
 }
 
+cmd_backup_drive() {
+  case ${1:-status} in
+    setup) backup_drive_setup "${2:-}" ;;
+    status) backup_drive_status ;;
+    files) backup_drive_files ;;
+    *) usage; exit 2 ;;
+  esac
+}
+
 cmd_update() {
-  cmd_backup
+  cmd_backup || confirm "The backup failed. Update anyway?" n || die "not updated: fix the backup first (sudo macserver backup-drive status)"
   apt_quiet update
   apt_quiet full-upgrade
   (cd "$SUPABASE_DIR" && docker compose pull --quiet && docker compose up -d --wait)
@@ -154,7 +167,8 @@ main() {
     logs) need_root logs; supabase_compose logs -f --tail 100 "$@" ;;
     restart) need_root restart; (cd "$SUPABASE_DIR" && sh run.sh restart); [[ -f $GATEWAY_DIR/compose.yml ]] && gateway_compose restart; ok "restarted" ;;
     update) need_root update; cmd_update ;;
-    backup) need_root backup; cmd_backup ;;
+    backup) need_root backup; cmd_backup "$@" ;;
+    backup-drive) need_root backup-drive; cmd_backup_drive "$@" ;;
     public)
       need_root public
       case ${1:-} in

@@ -1003,7 +1003,31 @@ def watched_files(now):
     return files
 
 
-def backup_info(now, directory="/var/backups/macserver"):
+BACKUP_STATE = Path("/var/lib/macserver/backup.json")   # written by `macserver backup` (installer/steps/65-backup-drive.sh)
+BACKUP_STALE_S = 36 * 3600                               # a nightly backup older than this has been missed
+
+
+def backup_drive(conf, state_path=BACKUP_STATE):
+    """The USB backup drive when one is set up (BACKUP_DRIVE_UUID), else None. The drive is mounted only
+    while a backup runs, so what it holds comes from the file that backup leaves behind."""
+    uuid = (conf or {}).get("BACKUP_DRIVE_UUID", "")
+    if not uuid:
+        return None
+    try:
+        saved = json.loads(read(state_path, "{}") or "{}")
+    except ValueError:
+        saved = {}
+    return {"present": Path(f"/dev/disk/by-uuid/{uuid}").exists(),
+            **{k: saved.get(k) for k in ("ok_at", "tried_at", "count", "newest_size", "free", "error")}}
+
+
+def backup_info(now, directory="/var/backups/macserver", drive=None):
+    if drive is not None:   # backups live on the USB drive
+        ok_at = drive.get("ok_at") or 0
+        if not ok_at:
+            return {"count": 0, "drive": drive}
+        return {"count": drive.get("count") or 0, "newest_age_s": max(int(now - ok_at), 0),
+                "newest_size": drive.get("newest_size") or 0, "drive": drive}
     folder = Path(directory)
     try:
         dumps = sorted(folder.glob("*.sql.gz"), key=lambda p: p.stat().st_mtime)
@@ -1038,7 +1062,7 @@ def kernel_counters():
     return {"oom_kills": int(vm.get("oom_kill", 0)), "thermal_throttle": throttle}
 
 
-def debug_info(state, now, ps, ids, containers_now, peers, direct=None):
+def debug_info(state, now, ps, ids, containers_now, peers, direct=None, conf=None):
     """Everything the incident pages show beyond the basic health snapshot."""
     names = cached(state, "container_ips:" + ",".join(sorted(ids)), 20, now, lambda: container_ips(sorted(ids)))
     host_ips = cached(state, "host_ips", 30, now, host_addresses)
@@ -1067,7 +1091,7 @@ def debug_info(state, now, ps, ids, containers_now, peers, direct=None):
         "system": {**cached(state, "system_errors", 10, now, system_errors), **kernel_counters()},
         "service_errors": cached(state, "service_errors:" + ",".join(sorted(ids)), 10, now, lambda: service_errors(ids)),
         "files": cached(state, "files", 20, now, lambda: watched_files(now)),
-        "backups": cached(state, "backups", 30, now, lambda: backup_info(now)),
+        "backups": cached(state, "backups", 30, now, lambda: backup_info(now, drive=backup_drive(conf))),
     }
 
 
@@ -1822,7 +1846,7 @@ def collect(state=None):
     except Exception as err:   # noqa: BLE001
         data["system"] = {"error": repr(err)[:200]}
     try:   # the incident pages' extras must never cost the basic health data
-        data["debug"] = debug_info(state, now, ps, ids, data["containers"], tailscale_peers(ts_text), tailscale_direct(ts_text))
+        data["debug"] = debug_info(state, now, ps, ids, data["containers"], tailscale_peers(ts_text), tailscale_direct(ts_text), conf)
     except Exception as err:   # noqa: BLE001
         data["debug"] = {"error": repr(err)[:200]}
     active, reasons = idle_activity(data)

@@ -1,0 +1,10 @@
+[Unit]
+Description=MacServer: back up to the USB backup drive every night
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+RandomizedDelaySec=15min
+
+[Install]
+WantedBy=timers.target

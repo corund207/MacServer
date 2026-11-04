@@ -135,6 +135,9 @@ isolate_now() {  # isolate_now auto|manual SCORE REASONS_JSON
   for vol in $(conf_get DOOMSDAY_CRYPT_CLOSE "" | tr ', ' '  '); do
     cryptsetup close "$vol" 2>/dev/null || true
   done
+  # The USB backup drive is open only while a backup runs; if one was running, close it now.
+  umount /mnt/macserver-backup 2>/dev/null || true
+  cryptsetup close macserver-backup 2>/dev/null || true
   sync
   # 6. Custom screen: banner on logins, alert on every terminal, badge for dashboard.
   state_set state '"doomsday"'

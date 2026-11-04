@@ -542,6 +542,21 @@ class DashboardTests(unittest.TestCase):
                          ("bad", "down · tunnel exited, Caddy running"))
         self.assertEqual(public_row(public_domain="api.x", public_ok=True)[1], "api.x · answering")
 
+    def test_usb_backup_drive_problems(self):
+        """A drive that is simply unplugged is fine; a failed or missed backup is an issue."""
+        def drive(**fields):
+            return {"count": 5, "newest_age_s": 3600, "newest_size": 100, "drive": {"present": False, "error": "", **fields}}
+        self.assertEqual(tui.backup_problem(None), "")
+        self.assertEqual(tui.backup_problem({"count": 0}), "")                           # no drive: the old gentle rule
+        self.assertEqual(tui.backup_problem(drive()), "")                                # unplugged since a good backup
+        self.assertIn("failed", tui.backup_problem(drive(error="the backup drive is not plugged in")))
+        self.assertIn("no backup", tui.backup_problem({"count": 0, "drive": {"present": True, "error": ""}}))
+        self.assertIn("40 hours", tui.backup_problem({**drive(), "newest_age_s": 40 * 3600}))
+        sampler = tui_fixture.make_sampler("healthy")
+        sampler.status["debug"]["backups"] = {**drive(error="the database dump failed"), "count": 3}
+        titles = [(i["level"], i["title"]) for i in tui.incidents(sampler)]
+        self.assertIn(("warn", "the USB backup drive needs attention"), titles)
+
     def test_events_from_status_changes(self):
         ev = tui.Events()
         old = {"containers": [{"name": "supabase-db", "state": "running"}, {"name": "supabase-auth", "state": "running"}],

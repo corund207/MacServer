@@ -149,6 +149,22 @@ class ParserTests(unittest.TestCase):
                                         box("gateway-cloudflared-1", project="gateway")])
         self.assertTrue(older["up"])
 
+    def test_backups_on_the_usb_drive_come_from_the_file_the_backup_leaves(self):
+        """The drive is mounted only while a backup runs, so the dashboards read what that run recorded."""
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp) / "backup.json"
+            conf = {"BACKUP_DRIVE_UUID": "11111111-2222-3333-4444-555555555555"}
+            self.assertIsNone(collector.backup_drive({}, state))                       # no drive set up
+            self.assertEqual(collector.backup_drive(conf, state)["ok_at"], None)       # set up, no backup yet
+            self.assertEqual(collector.backup_info(T0, drive=collector.backup_drive(conf, state))["count"], 0)
+            state.write_text(json.dumps({"ok_at": T0 - 7200, "tried_at": T0 - 7200, "count": 12, "newest_size": 5000,
+                                         "free": 9, "error": ""}))
+            info = collector.backup_info(T0, drive=collector.backup_drive(conf, state))
+            self.assertEqual((info["count"], info["newest_age_s"], info["newest_size"]), (12, 7200, 5000))
+            self.assertFalse(info["drive"]["present"])                                  # not plugged in in the test
+            state.write_text("not json")                                                # garbage is not a crash
+            self.assertEqual(collector.backup_info(T0, drive=collector.backup_drive(conf, state))["count"], 0)
+
     def test_hwmon_and_battery(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

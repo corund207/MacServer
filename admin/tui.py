@@ -1459,8 +1459,30 @@ def incidents(sampler):
             ["sudo du -xh /var/lib/docker --max-depth=1 | sort -h | tail -5", "sudo docker system df",
              "ls -lh /var/backups/macserver", "sudo docker image prune   (asks first)"],
             files=["/var/lib/docker/", "/var/backups/macserver/", "/var/log/journal/"])
+    problem = backup_problem(dbg.get("backups"))
+    if problem:
+        drive = dbg["backups"]["drive"]
+        add("warn", "the USB backup drive needs attention", problem,
+            ["sudo macserver backup-drive status", "sudo macserver backup   (plug the drive in first)"],
+            facts=["drive: " + ("plugged in" if drive.get("present") else "NOT plugged in")],
+            files=["/var/lib/macserver/backup.json  (what the last backup did)", "/etc/macserver/backup-drive.key  (opens the drive)"])
     out.sort(key=lambda i: i["level"] != "bad")
     return out
+
+
+def backup_problem(backups):
+    """Why the USB backup drive needs attention, or "" (also "" when no drive is set up: that case keeps
+    its old, gentler weekly rule). A drive that is simply unplugged is fine until a backup is missed."""
+    drive = (backups or {}).get("drive")
+    if drive is None:
+        return ""
+    if drive.get("error"):
+        return f"the last backup failed: {drive['error']}"
+    if not backups.get("count"):
+        return "no backup has been made yet"
+    if backups.get("newest_age_s", 0) > 36 * 3600:
+        return f"the newest backup is {int(backups['newest_age_s'] // 3600)} hours old"
+    return ""
 
 
 def assess(sampler):
@@ -1889,9 +1911,11 @@ def files_panel(c, sampler, x, y, w, h):
                (fmt_bytes(f["size"]) if f.get("size") is not None else "folder", C["dim"], 9), (f["note"], C["text"], None))
         row += 1
     if backups.get("count") is not None and bottom - 2 >= row:
-        text = (f"backups: {backups['count']} kept · newest {fmt_ago(backups['newest_age_s'])} ago ({fmt_bytes(backups['newest_size'])})"
+        where = " on the USB drive" if backups.get("drive") is not None else ""
+        text = (f"backups: {backups['count']} kept{where} · newest {fmt_ago(backups['newest_age_s'])} ago ({fmt_bytes(backups['newest_size'])})"
                 if backups.get("count") else "backups: none yet · sudo macserver backup")
-        line(c, x + 2, bottom - 2, inner, (text, C["warn"] if not backups.get("count") or backups.get("newest_age_s", 0) > 7 * 86400 else C["dim"]))
+        line(c, x + 2, bottom - 2, inner, (text, C["warn"] if backup_problem(backups) or not backups.get("count")
+                                           or backups.get("newest_age_s", 0) > 7 * 86400 else C["dim"]))
     line(c, x + 2, bottom - 1, inner, ("● changed in the last 10 minutes", C["warn"]))
 
 

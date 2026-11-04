@@ -972,3 +972,27 @@ Verified: new tests (`public_route`, the Public API row, tests/test_collector.py
 fed the real Mac's `docker ps` through the new code: `{'caddy': 'running', 'tunnel': 'running', 'up': True}`.
 Not verified: the rows on the Mac's own screen and web page after it updates. The probe from outside still needs
 `PUBLIC_DOMAIN=<hostname>` in `/etc/macserver/macserver.conf` (this Mac has none).
+
+## 2026-11-04: backups go to an encrypted USB drive
+
+The owner plugged in a 233 GB SanDisk and asked for it to be erased and used for backups, with the live data
+staying on the Mac. New: `sudo macserver backup-drive setup|status|files` (`installer/steps/65-backup-drive.sh`,
+`admin/backupdrive.py`). Setup lists the USB disks the Mac may erase (whole disks over USB, big enough, nothing
+mounted; the internal NVMe, zram, partitions and anything in use are refused), shows what is on the chosen one,
+and erases it only after `ERASE` is typed. It then partitions it (GPT), LUKS2-encrypts it with a key kept in
+`/etc/macserver/backup-drive.key` plus a recovery passphrase shown once, formats it ext4 and records
+`BACKUP_DRIVE_UUID`. `macserver backup` then opens the drive, writes the database dump (checked with `gzip -t`),
+the Supabase Storage folder and the settings (`.env`, `macserver.conf`; never the TOTP secret or tokens),
+keeps the newest 30/7/30 and closes the drive again; `macserver-backup.timer` runs it nightly at 03:30. The
+dashboards' backup line says "on the USB drive", and a failed or missed (36 h) backup is a warning (so the text
+alerts mention it). `macserver update` asks before going on when the backup fails; self-update still continues.
+Doomsday closes the drive if a backup was running. Without a drive, `macserver backup` behaves as before.
+
+Verified: `tests/backup_drive_test.sh` runs the real code against a loop device in WSL Debian: old data erased,
+one encrypted partition, recovery passphrase and key both open it, wrong passphrase does not, backup contents,
+private file modes, pruning to 30, a failed dump leaves no partial file and keeps the last good record, drive
+unplugged, wrong key, everything closed afterwards; `tests/test_backupdrive.py` runs the eligibility rules against
+the Mac's real `lsblk` output (only `/dev/sda` is allowed); shellcheck. Not verified: the run on the real Mac
+and the real stick (it needs the owner's sudo password and the typed ERASE; the Mac installs this after the full
+install test), argon2id timing on 4 GB of RAM, and a restore into Supabase (the steps in docs/GUIDE.md are the
+standard Postgres ones; do a trial restore once).

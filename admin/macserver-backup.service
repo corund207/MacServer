@@ -1,0 +1,9 @@
+[Unit]
+Description=MacServer daily backup to the USB backup drive
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/macserver backup --scheduled
+Nice=10
+IOSchedulingClass=idle

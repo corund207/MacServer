@@ -79,6 +79,10 @@ jobs:
         run: bash tests/run.sh
       - name: Self-update (CI gate, fast-forward only, rollback, off switch)
         run: sudo bash tests/self_update_test.sh
+      - name: USB backup drive (erase, encrypt, back up, prune on a loop device)
+        run: |
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q cryptsetup
+          sudo bash tests/backup_drive_test.sh
       - name: Supabase pin matches its tag
         run: |
           source installer/lib.sh

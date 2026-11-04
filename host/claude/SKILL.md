@@ -37,7 +37,7 @@ Find the live names with `tailscale status`, `sudo macserver status` and
 | `sudo macserver keys` | API keys and Studio password (SECRET: do not print them into chat unless the owner asks; never put secret keys in client code) |
 | `sudo macserver logs [auth\|rest\|db\|storage\|...]` | follow Supabase logs |
 | `sudo macserver restart` | restart Supabase and the public route |
-| `sudo macserver backup` | database dump to `/var/backups/macserver` (keeps 10) |
+| `sudo macserver backup` | database, Storage files and settings to the encrypted USB backup drive (`backup-drive setup` once; without a drive: a dump in `/var/backups/macserver`) |
 | `sudo macserver update` | backup, then Debian, T2 kernel and container updates |
 | `sudo macserver public setup\|on\|off` | the Cloudflare public API route |
 | `sudo macserver wifi` / `doctor` | Wi-Fi setup / network, DNS and T2 checks |

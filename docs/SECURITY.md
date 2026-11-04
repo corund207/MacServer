@@ -178,5 +178,11 @@ accidental tokens and keys.
 ## Known limits
 
 - Full-disk encryption means a person must type the passphrase after any reboot.
-- Backups are local dumps only; copy them off the Mac.
+- Backups go to an encrypted USB drive (`sudo macserver backup-drive setup`): LUKS2, with the key in
+  `/etc/macserver/backup-drive.key` (root only, on the encrypted disk) and a recovery passphrase shown
+  once. A backup holds the Supabase `.env` (database and API secrets), so the drive's encryption matters;
+  it never holds the doomsday authenticator or the GitHub token. The drive is opened only during a backup
+  (and closed by doomsday at once), and mounted `nodev,nosuid,noexec`. Which disk may be erased is decided
+  in `admin/backupdrive.py` (whole USB disks that are not mounted; tests/test_backupdrive.py). A second copy
+  in another place is still wise: a drive next to the Mac burns and floods with it.
 - The t2linux kernel is a community project. You trust its maintainers for the kernel.
