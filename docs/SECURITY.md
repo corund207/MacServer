@@ -114,11 +114,14 @@ disables detection only).
   the admin page link, which opens over Tailscale only.
 - **Isolation**: stops the public tunnel, Supabase, the admin page and
   Tailscale; kills remaining containers; applies `host/nftables-doomsday.conf`
-  (drop on input, forward AND output; only loopback, DHCP and SSH from private
-  LAN addresses pass); drops swap, locks extra encrypted volumes
-  (`DOOMSDAY_CRYPT_CLOSE`), and shows the lockdown screen (console banner plus
-  a red dashboard incident). The root disk is already LUKS-encrypted; doomsday
-  locks what can be locked without bricking the running system.
+  (drop on input, forward AND output; only loopback, DHCP and, if an SSH server
+  is installed, SSH from private LAN addresses pass); drops swap, locks extra
+  encrypted volumes (`DOOMSDAY_CRYPT_CLOSE`) and the USB backup drive, and shows the
+  lockdown screen: a console banner and a red dashboard page, both built from the real
+  recorded state (when, trigger, score, reasons, whether the alert email was accepted).
+  The root disk is already LUKS-encrypted; doomsday locks what can be locked without
+  bricking the running system. **This setup installs no SSH server**, so after a
+  lockdown the Mac is reachable only on its own keyboard and screen.
 - **Pre-emptive exclusions** (no config needed): Tailscale direct UDP 41641,
   ephemeral-port hole-punching (≥ 32768), mDNS UDP 5353, kernel threads
   (process names in brackets), container processes (containerd, docker-proxy,
@@ -133,8 +136,8 @@ disables detection only).
   `sudo macserver doomsday setup-totp`): `unlock --code` enters DEBUG mode
   (still isolated, amber banner, diagnose freely), `restore --code` returns to
   normal and auto-restores the firewall, Tailscale, Docker, Supabase, the
-  public route and the admin page from a pre-isolation snapshot. OpenSSH is
-  started only during lockdown (LAN only) and returned to its prior state.
+  public route and the admin page from a pre-isolation snapshot. If an SSH server
+  exists it is started only during lockdown (LAN only) and returned to its prior state.
   The lockdown firewall persists across reboots until restored.
 
 ## Supply chain
