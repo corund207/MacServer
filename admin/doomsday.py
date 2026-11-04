@@ -24,6 +24,8 @@ import json
 import os
 import re
 import struct
+import sys
+import textwrap
 import time
 from pathlib import Path
 
@@ -328,6 +330,58 @@ def check(source=STATUS, state=None):
     return score, reasons, should_isolate(score, threshold, consecutive, state)
 
 
+BANNER_W = 80
+
+
+def banner(state, ssh="missing", header="", now=None):
+    """The text shown on the console, at every login and on every terminal while the Mac is isolated.
+    Everything in it is a fact from `state` (the published doomsday state): when, why, what score, whether the
+    alert went out, and how to get in. Nothing is a sample or a made-up number."""
+    now = time.time() if now is None else now
+    inner = BANNER_W - 4
+
+    def row(text=""):
+        return "║ " + text[:inner].ljust(inner) + " ║"
+
+    def wrapped(text, indent="  "):
+        return [row(line) for line in textwrap.wrap(text, inner, initial_indent=indent, subsequent_indent=indent + "  ")] or [row()]
+
+    since = state.get("since")
+    when = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(since)) if isinstance(since, (int, float)) else "unknown time"
+    trigger = str(state.get("trigger") or "unknown")
+    score = state.get("score") or 0
+    threshold = state.get("threshold")
+    reasons = [str(r) for r in state.get("reasons") or []]
+    notified = str(state.get("notified") or "")
+    if notified == "204":
+        alert = "The alert email was handed to GitHub (HTTP 204) before the network was cut."
+    elif notified:
+        alert = f"The alert email was NOT accepted (HTTP {notified}). Check the GitHub token: sudo macserver doomsday setup-gh"
+    else:
+        alert = "No alert email was sent: there is no GitHub token (sudo macserver doomsday setup-gh)."
+    if ssh in ("missing", "", None):
+        access = "Only this keyboard and screen: no SSH server is installed on this Mac."
+    else:
+        access = "This keyboard and screen, or SSH from the local network only (192.168.x.x, port 22)."
+    lines = [row("SYSTEM ISOLATION PROTOCOL INITIATED"),
+             row(f"Since {when}, trigger: {trigger.upper()}" + (f", score {score} (isolates over {threshold})" if threshold else f", score {score}")),
+             row()]
+    lines += [row("WHAT TRIGGERED IT")] + (sum((wrapped("- " + r) for r in reasons[:6]), []) or wrapped("- " + (
+        "you isolated it by hand" if trigger == "manual" else "no detail was recorded")))
+    lines += [row(), row("WHAT THE MAC DID")] + wrapped(
+        "It stopped Tailscale, the admin page, the containers and the public tunnel, applied the lockdown firewall "
+        "(nothing in or out except loopback and DHCP) and turned swap off.")
+    lines += [row()] + wrapped(alert, "") + [row(), row("HOW TO GET IN")] + wrapped(access)
+    lines += [row(), row("RECOVERY (needs the Google Authenticator code)"),
+              row("  1. STATUS    sudo macserver doomsday status"),
+              row("  2. DEBUG     sudo macserver doomsday unlock --code NNNNNN"),
+              row("  3. RESTORE   sudo macserver doomsday restore --code NNNNNN"),
+              row("  DEBUG stays isolated; RESTORE puts everything back.")]
+    top, bottom = "╔" + "═" * (BANNER_W - 2) + "╗", "╚" + "═" * (BANNER_W - 2) + "╝"
+    logo = [header.rstrip("\n")] if header.strip() else []
+    return "\n".join(logo + [top] + lines + [bottom]) + "\n"
+
+
 def main(argv=None):
     import argparse
     parser = argparse.ArgumentParser(description="doomsday detection, TOTP and alert payload")
@@ -335,6 +389,10 @@ def main(argv=None):
     sub.add_parser("check")
     p = sub.add_parser("totp-setup")
     p.add_argument("--account", default="macserver")
+    p = sub.add_parser("banner")
+    p.add_argument("--state", default=str(KEEP_STATE), help="the doomsday state file")
+    p.add_argument("--ssh", default="missing", help="missing | inactive | active (from the pre-isolation snapshot)")
+    p.add_argument("--header", default="", help="a text file printed above the box (the logo)")
     p = sub.add_parser("totp-verify")
     p.add_argument("code")
     p.add_argument("--secret", help="check against this secret instead of the enrolled one")
@@ -348,6 +406,14 @@ def main(argv=None):
         except OSError:
             pass
         return 0 if not fire else 10
+    if args.cmd == "banner":
+        try:
+            state = json.loads(Path(args.state).read_text())
+            header = Path(args.header).read_text() if args.header else ""
+        except (OSError, ValueError):
+            state, header = {}, ""
+        sys.stdout.buffer.write(banner(state if isinstance(state, dict) else {}, args.ssh, header).encode("utf-8"))
+        return 0
     if args.cmd == "totp-setup":
         secret = generate_secret()
         print(f"secret: {secret}")

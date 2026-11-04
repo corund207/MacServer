@@ -1,9 +1,7 @@
 import copy
 import importlib.util
 import json
-import re
 import shutil
-import sys
 import tempfile
 import unittest
 import urllib.error

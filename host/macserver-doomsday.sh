@@ -50,7 +50,13 @@ state_set() {  # state_set KEY VALUE (VALUE is raw JSON; quote strings with jq -
 
 publish_run() {  # dashboard + collector read the world-readable copy
   install -d -m 0755 /run/macserver
-  jq '{mode, state, since, trigger, score, reasons}' "$KEEP" 2>/dev/null >"$RUN.tmp" || printf '{"mode":"on","state":"normal"}\n' >"$RUN.tmp"
+  local ssh threshold
+  ssh=$(jq -r '.ssh // "missing"' "$SNAP" 2>/dev/null || echo missing)
+  threshold=$(conf_get DOOMSDAY_SCORE 6)
+  threshold=${threshold//[^0-9]/}
+  jq --arg ssh "$ssh" --argjson threshold "${threshold:-6}" \
+    '{mode, state, since, trigger, score, reasons, notified, threshold: $threshold, ssh: $ssh}' "$KEEP" 2>/dev/null >"$RUN.tmp" ||
+    printf '{"mode":"on","state":"normal"}\n' >"$RUN.tmp"
   chmod 0644 "$RUN.tmp" && mv "$RUN.tmp" "$RUN"
 }
 
@@ -125,7 +131,7 @@ isolate_now() {  # isolate_now auto|manual SCORE REASONS_JSON
   if [[ -f $SHARE/host/nftables-doomsday.conf ]]; then
     nft -c -f "$SHARE/host/nftables-doomsday.conf" && cp -p "$SHARE/host/nftables-doomsday.conf" /etc/nftables.conf && nft -f /etc/nftables.conf
   fi
-  # 4. Emergency SSH from the LAN only (needs the TOTP code to go further).
+  # 4. Emergency SSH from the LAN only, if an SSH server is installed (this Mac normally has none).
   if systemctl list-unit-files ssh.service >/dev/null 2>&1; then
     systemctl start ssh.service >/dev/null 2>&1 || true
   fi
@@ -145,10 +151,14 @@ isolate_now() {  # isolate_now auto|manual SCORE REASONS_JSON
   state_set score "$score"
   state_set reasons "$reasons"
   state_set since "$(date +%s)"
-  if [[ -f $SHARE/host/doomsday-issue ]]; then cp -p "$SHARE/host/doomsday-issue" /etc/issue; fi
-  wall -n "$(cat "$SHARE/host/doomsday-issue" 2>/dev/null || echo 'MACSERVER DOOMSDAY LOCKDOWN: this Mac is isolated. Run: sudo macserver doomsday status')" 2>/dev/null || true
+  local banner
+  banner=$(python3 "$DOOMSDAY_PY" banner --state "$KEEP" --ssh "$(jq -r '.ssh // "missing"' "$SNAP" 2>/dev/null || echo missing)" \
+    --header "$SHARE/host/doomsday-issue" 2>/dev/null) ||
+    banner='MACSERVER DOOMSDAY LOCKDOWN: this Mac is isolated. Run: sudo macserver doomsday status'
+  printf '%s\n' "$banner" > /etc/issue
+  wall -n "$banner" 2>/dev/null || true
   log "isolated"
-  say "Isolated. Alert sent before the cut. Emergency SSH: LAN only. Unlock: sudo macserver doomsday unlock --code XXXXXX"
+  say "Isolated. Unlock: sudo macserver doomsday unlock --code XXXXXX"
 }
 
 do_status() {

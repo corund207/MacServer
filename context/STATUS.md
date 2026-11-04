@@ -1019,3 +1019,28 @@ Claude Code end to end in a VM before this reaches `main`. Not changed, on purpo
 never changes it; moving it is `install.sh --redo supabase` after a backup, a decision for the owner) and the Mac's
 hand-made gateway/apps/rustdesk-ws tunnels in `~/api-gateway` etc. (not managed by this repo, so still cloudflared 2026.10.3,
 which the Mac's own log already calls outdated).
+
+## 2026-11-04: lockdown screens show what happened, not a sample; dead code removed
+
+Cleanup pass (ruff `F,E9,PLE` over `admin tests installer iso host`: 0 findings now). The one finding that mattered
+for production: the doomsday lockdown output was part sample data. Both the console banner (`host/doomsday-issue`, copied
+to `/etc/issue` and `wall`ed) and the dashboard's lockdown page showed a fixed event log ("17:43:31 INTRUSION DETECTED ...
+port 41641 ... 21115-21119"), "12/12 containers terminated", "CONSECUTIVE HITS 2/2", a score out of 100, and "LAN SSH
+only" on a Mac with no SSH server. Now:
+
+- `host/macserver-doomsday.sh` publishes `threshold`, `notified` (the alert's HTTP code) and `ssh` (whether an SSH server
+  exists) with the lockdown state; the collector passes them on.
+- The banner is generated at isolation time by `doomsday.py banner` from that state (time, trigger, score and threshold, the
+  detection reasons, whether the alert email was accepted, how to get in); `host/doomsday-issue` keeps only the logo.
+- The dashboard page shows the same facts, and its containment rows come from the live status (Tailscale state, whether the
+  public tunnel still runs, running containers) instead of fixed words. The SSH line appears only when an SSH server exists.
+- The alert email no longer says the Mac is reachable over SSH from the LAN (it is not, normally); it says to go to the Mac.
+- Dead code: unused imports and six dead assignments in `admin/tui.py`, `fmt_duration` imported and then redefined, unused
+  imports in two tests.
+
+Verified: `tests/test_doomsday.py` (banner facts, box alignment, no invented values anywhere in the banner file, script,
+dashboard page, collector), the whole suite (same six Windows-only failures), shellcheck, ruff. Not verified: a real
+lockdown (it cuts the network; the banner was rendered from sample state only).
+
+Left alone on purpose: ruff's `B905` (zip without `strict=`) and `B023` in the battery code (the lambda runs inside its own
+loop pass, so it is safe).

@@ -69,13 +69,14 @@ jobs:
           1. Sent this alert (this workflow) BEFORE touching the network.
           2. Stopped the public tunnel, Supabase containers, admin page and
              Tailscale; killed every non-essential service.
-          3. Applied the lockdown firewall: loopback + DHCP + SSH from the
-             local network only. Extra encrypted volumes locked, swap off.
+          3. Applied the lockdown firewall: loopback + DHCP (+ SSH from the
+             local network, only if an SSH server is installed on it, which
+             it normally is not). Swap off; extra encrypted volumes locked.
           4. Shows the lockdown screen on its own display.
 
           What to do:
-          - The Mac is reachable ONLY from the local network over SSH, or on
-            its own console. Tailscale and the public API are down by design.
+          - Go to the Mac: it is normally reachable ONLY on its own keyboard
+            and screen. Tailscale and the public API are down by design.
           - Run: sudo macserver doomsday status
           - Unlock to DEBUG (still isolated) with a Google Authenticator code:
             sudo macserver doomsday unlock --code XXXXXX

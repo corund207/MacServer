@@ -1113,7 +1113,8 @@ def doomsday_state():
         if isinstance(data, dict):
             return {"mode": data.get("mode", "on"), "state": data.get("state", "normal"),
                     "since": data.get("since"), "trigger": data.get("trigger", ""),
-                    "score": data.get("score", 0),
+                    "score": data.get("score", 0), "threshold": data.get("threshold"),
+                    "notified": str(data.get("notified") or ""), "ssh": data.get("ssh", "missing"),
                     "reasons": [str(r)[:160] for r in data.get("reasons", [])][:8]}
     return {"mode": "on", "state": "normal"}
 

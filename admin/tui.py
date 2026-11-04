@@ -27,7 +27,7 @@ import subprocess
 import sys
 import time
 
-from units import fmt_bytes, fmt_temp, fmt_freq, fmt_pct, fmt_rpm, fmt_duration, fmt_uptime
+from units import fmt_bytes
 
 STATUS = Path(os.environ.get("MACSERVER_STATUS", "/run/macserver/status.json"))
 FANS = Path(os.environ.get("MACSERVER_FANS_STATUS", "/run/macserver/fans.json"))
@@ -906,7 +906,6 @@ def top_bar(c, sampler, problems):
     worst = "bad" if any(p[0] == "bad" for p in problems) else "warn" if problems else "ok"
     label = {"ok": " ALL SYSTEMS NORMAL ", "warn": f" {len(problems)} NOTICE(S) ",
              "bad": f" ▲ CRITICAL · {len(problems)} ISSUE(S) ▲ "}[worst]
-    right = []
     pct, stat, watts = now.get("battery") or (None, None, None)
     clock = time.strftime("%H:%M:%S")
     up = f"up {fmt_duration(now.get('uptime', 0))}"
@@ -1738,7 +1737,7 @@ def flows_panel(c, sampler, x, y, w, h, direction):
 def netchecks_panel(c, sampler, x, y, w, h):
     net = debug_of(sampler).get("net") or {}
     box(c, x, y, w, h, "connectivity", C["conn"])
-    inner, row, bottom = w - 4, y + 1, y + h - 1
+    row, bottom = y + 1, y + h - 1
 
     def check(label, ms, fails, detail):
         nonlocal row
@@ -1766,7 +1765,6 @@ def netchecks_panel(c, sampler, x, y, w, h):
 
 def requests_feed_panel(c, sampler, x, y, w, h):
     req = debug_of(sampler).get("requests")
-    at = debug_of(sampler).get("at") or time.time()
     box(c, x, y, w, h, "inbound requests", C["svc"], f"{req['total']} in the last {req['window_s']} s" if req else "")
     inner, row, bottom = w - 4, y + 1, y + h - 1
     if req is None:
@@ -2178,18 +2176,14 @@ def page_doomsday(c, sampler, items, x, y, w, h):
     metrics_y += 1
     
     # Score meter
-    score_pct = min(score / 20.0, 1.0)  # 20 is max meaningful score
+    threshold = int(dd.get("threshold") or 6)
+    score_pct = min(score / max(threshold * 2, score, 1), 1.0)   # full bar at twice the isolation threshold
     score_bar_w = min(inner_w - 4, 40)
     filled = round(score_pct * score_bar_w)
     bar_str = "█" * filled + "░" * (score_bar_w - filled)
-    c.put(inner_x + 2, metrics_y, f"ANOMALY SCORE  │{bar_str}│  {score:3d}/100", TRON_BRIGHT)
+    c.put(inner_x + 2, metrics_y, f"ANOMALY SCORE  │{bar_str}│  {score}  (isolates over {threshold})", TRON_BRIGHT)
     metrics_y += 1
-    
-    # Consecutive hits
-    hits = 2  # from detector
-    c.put(inner_x + 2, metrics_y, f"CONSECUTIVE HITS  │{'█' * hits}{'░' * (2 - hits)}│  {hits}/2 THRESHOLD", TRON_BRIGHT)
-    metrics_y += 1
-    
+
     # Trigger
     c.put(inner_x + 2, metrics_y, f"TRIGGER SOURCE  │  {trigger.upper():<12}  │", TRON_DIM)
     metrics_y += 1
@@ -2211,15 +2205,17 @@ def page_doomsday(c, sampler, items, x, y, w, h):
     c.put(inner_x, grid_y, "┌─ CONTAINMENT GRID ─────────────────────────────────────┐", TRON_CYAN)
     grid_y += 1
     
+    # What the Mac reports now, not what lockdown is supposed to have done.
+    status_now = sampler.status or {}
+    ts_state = (status_now.get("tailscale") or {}).get("state", "unknown")
+    running = [i for i in items if i.get("state") == "running"]
+    tunnel_up = bool((status_now.get("public_route") or {}).get("up"))
+    ssh_up = dd.get("ssh", "missing") not in ("missing", "")
     containment = [
-        ("NETWORK", "TAILSCALE", "SEVERED", TRON_BAD),
-        ("NETWORK", "PUBLIC TUNNEL", "SEVERED", TRON_BAD),
-        ("CONTAINERS", "12/12", "TERMINATED", TRON_BAD),
-        ("CONTAINERS", "ORCHESTRATION", "HALTED", TRON_BAD),
-        ("STORAGE", "SWAP", "DISABLED", TRON_WARN),
-        ("STORAGE", "CRYPT VOLUMES", "LOCKED", TRON_WARN),
-        ("FIREWALL", "MODE", "LOCKDOWN", TRON_BAD),
-        ("FIREWALL", "POLICY", "DENY ALL (LAN SSH ONLY)", TRON_WARN),
+        ("NETWORK", "TAILSCALE", ts_state.upper(), TRON_BAD if ts_state == "Running" else TRON_WARN),
+        ("NETWORK", "PUBLIC TUNNEL", "STILL RUNNING" if tunnel_up else "STOPPED", TRON_BAD if tunnel_up else TRON_WARN),
+        ("CONTAINERS", "RUNNING", f"{len(running)} of {len(items)}", TRON_BAD if running else TRON_WARN),
+        ("FIREWALL", "POLICY", "DENY ALL (LAN SSH ALLOWED)" if ssh_up else "DENY ALL (NO SSH SERVER)", TRON_WARN),
     ]
     
     for cat, item, status, colour in containment:
@@ -2269,17 +2265,14 @@ def page_doomsday(c, sampler, items, x, y, w, h):
     c.put(inner_x, log_y, "┌─ EVENT LOG ──────────────────────────────────────────────┐", TRON_CYAN)
     log_y += 1
     
-    # Use sampler events if available
-    events = sampler.events.items if hasattr(sampler.events, 'items') else []
+    # What was recorded when the Mac isolated itself (host/macserver-doomsday.sh), nothing else.
+    when = time.strftime("%H:%M:%S", time.localtime(since)) if isinstance(since, (int, float)) else "--:--:--"
+    notified = str(dd.get("notified") or "")
     log_entries = [
-        ("17:43:31", "INTRUSION DETECTED", "Anomalous LAN inbound (port 41641)"),
-        ("17:43:31", "INTRUSION DETECTED", "Ephemeral outbound hole-punching"),
-        ("17:43:31", "INTRUSION DETECTED", "Host-network listeners (21115-21119)"),
-        ("17:43:31", "ALERT DISPATCHED", "GitHub Action → owner notification"),
-        ("17:43:31", "CONTAINMENT", "Network interfaces disabled"),
-        ("17:43:31", "CONTAINMENT", "Non-essential services terminated"),
-        ("17:43:31", "CONTAINMENT", "Lockdown firewall active"),
-        ("17:43:31", "LOCKDOWN COMPLETE", "System isolated"),
+        (when, "ISOLATED", "by the owner" if trigger == "manual" else "by detection"),
+        (when, "ALERT EMAIL", "handed to GitHub (HTTP 204)" if notified == "204" else
+         f"NOT accepted (HTTP {notified})" if notified else "NOT sent: no GitHub token (macserver doomsday setup-gh)"),
+        (when, "CONTAINMENT", "Tailscale, admin page, containers and public tunnel stopped; lockdown firewall applied"),
     ]
     
     for timestamp, event, detail in log_entries[-8:]:
@@ -2298,7 +2291,10 @@ def page_doomsday(c, sampler, items, x, y, w, h):
         recovery_y = log_y
         c.put(inner_x, recovery_y, "┌─ EMERGENCY ACCESS ───────────────────────────────────────┐", TRON_CYAN)
         recovery_y += 1
-        c.put(inner_x + 2, recovery_y, "  SSH   │  LAN ONLY  │  192.168.x.x:22  │  TOTP REQUIRED", TRON_BRIGHT)
+        if ssh_up:
+            c.put(inner_x + 2, recovery_y, "  SSH   │  LAN ONLY  │  192.168.x.x:22  │  TOTP REQUIRED", TRON_BRIGHT)
+        else:
+            c.put(inner_x + 2, recovery_y, "  SSH   │  NOT INSTALLED on this Mac: use the keyboard and screen", TRON_DIM)
         recovery_y += 1
         c.put(inner_x + 2, recovery_y, "  TTY   │  CONSOLE   │  DIRECT ACCESS   │  TOTP REQUIRED", TRON_BRIGHT)
         recovery_y += 1
@@ -2472,7 +2468,7 @@ def table(c, x, y, w, h, cols, rows, gap=2):
 def kpi_cards(sampler):
     """The headline cards in the order they are kept when the screen is narrow."""
     s, now, hist = sampler.status or {}, sampler.now, sampler.hist
-    sd, ld = sysdata(sampler), livedata(sampler)
+    sd = sysdata(sampler)
     cpu_info_ = sd.get("cpu") or {}
     la = now.get("load") or [0.0, 0.0, 0.0]
     psi = (((cpu_info_.get("pressure") or {}).get("cpu") or {}).get("some") or {}).get("avg10")
@@ -2985,7 +2981,7 @@ def services_table(c, sampler, x, y, w, h, detailed=False):
     items = list(s.get("containers", []) or [])
     up = sum(1 for i in items if i.get("state") == "running")
     box(c, x, y, w, h, "services", C["svc"], f"{up}/{len(items)} running" if items else "")
-    ix, bottom, iw = x + 2, y + h - 1, w - 4
+    ix, iw = x + 2, w - 4
     if not items:
         c.put(ix, y + 1, "Supabase is installed by setup. Nothing to show yet.", C["dim"])
         return

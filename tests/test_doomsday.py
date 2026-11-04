@@ -1,9 +1,9 @@
 """Doomsday protocol: TOTP, detection scoring, state machine and repo wiring."""
 import importlib.util
 import json
+import subprocess
 import sys
 import tempfile
-import time
 from pathlib import Path
 import unittest
 
@@ -349,6 +349,80 @@ class RepoWiringTests(unittest.TestCase):
         for name in ("admin/doomsday.py", "host/macserver-doomsday.sh",
                      "installer/steps/50-doomsday.sh", ".github/workflows/doomsday-alert.yml"):
             self.assertIsNone(pattern.search((ROOT / name).read_text(errors="ignore")), name)
+
+
+class LockdownDisplayTests(unittest.TestCase):
+    """What the Mac shows while isolated must be what happened. The old banner and screen carried an
+    invented event log ("17:43:31 INTRUSION DETECTED ... port 41641"), "12/12 terminated", "SCORE 20/100"
+    and "LAN SSH" on a Mac with no SSH server."""
+    STATE = {"since": 1_700_000_000, "trigger": "auto", "score": 9, "threshold": 6, "notified": "204",
+             "reasons": ["inbound LAN connection from 192.168.1.5 to port 22 (sshd)", "listener on 0.0.0.0:9999 (nc)"]}
+    INVENTED = ("17:43:31", "12/12", "/100", "87%", "21115-21119", "port 41641", "CONSECUTIVE HITS")
+
+    def test_banner_carries_the_real_facts(self):
+        text = doomsday.banner(self.STATE, "missing")
+        for wanted in ("score 9 (isolates over 6)", "trigger: AUTO", "inbound LAN connection from 192.168.1.5",
+                       "listener on 0.0.0.0:9999", "(HTTP 204)", "sudo macserver doomsday restore"):
+            self.assertIn(wanted, text)
+        for invented in self.INVENTED:
+            self.assertNotIn(invented, text)
+
+    def test_banner_is_a_clean_box(self):
+        lines = [l for l in doomsday.banner(self.STATE, "active").splitlines() if l[:1] in "╔║╚"]
+        self.assertTrue(all(len(l) == doomsday.BANNER_W for l in lines), [len(l) for l in lines])
+
+    def test_banner_does_not_promise_ssh_that_is_not_installed(self):
+        self.assertIn("no SSH server is installed", doomsday.banner(self.STATE, "missing"))
+        self.assertNotIn("192.168.x.x", doomsday.banner(self.STATE, "missing"))
+        self.assertIn("SSH from the local network", doomsday.banner(self.STATE, "active"))
+        self.assertIn("SSH from the local network", doomsday.banner(self.STATE, "inactive"))   # started on isolation
+
+    def test_banner_says_when_no_alert_went_out(self):
+        self.assertIn("no GitHub token", doomsday.banner({**self.STATE, "notified": ""}, "missing"))
+        self.assertIn("NOT accepted (HTTP 404)", doomsday.banner({**self.STATE, "notified": "404"}, "missing"))
+
+    def test_banner_survives_missing_data(self):
+        text = doomsday.banner({}, "missing")
+        self.assertIn("unknown time", text)
+        self.assertIn("no detail was recorded", text)
+        self.assertIn("you isolated it by hand", doomsday.banner({"trigger": "manual"}, "missing"))
+
+    def test_cli_writes_the_banner_from_the_state_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp) / "doomsday.json"
+            state.write_text(json.dumps(self.STATE))
+            header = Path(tmp) / "logo"
+            header.write_text("LOGO LINE\n", encoding="utf-8")
+            done = subprocess.run([sys.executable, "-I", str(ROOT / "admin/doomsday.py"), "banner", "--state", str(state),
+                                   "--ssh", "missing", "--header", str(header)], capture_output=True, timeout=30)
+            self.assertEqual(done.returncode, 0, done.stderr)
+            text = done.stdout.decode("utf-8")
+            self.assertTrue(text.startswith("LOGO LINE\n╔"))
+            self.assertIn("score 9", text)
+
+    def test_the_static_logo_file_holds_no_made_up_events(self):
+        logo = (ROOT / "host/doomsday-issue").read_text(encoding="utf-8")
+        for invented in self.INVENTED + ("EVENT LOG", "SSH"):
+            self.assertNotIn(invented, logo)
+        self.assertIn("██", logo)
+
+    def test_the_isolation_script_publishes_and_uses_the_real_state(self):
+        script = (ROOT / "host/macserver-doomsday.sh").read_text(encoding="utf-8")
+        self.assertIn('"$DOOMSDAY_PY" banner', script)
+        self.assertIn("notified, threshold: $threshold, ssh: $ssh", script)
+        self.assertNotIn("Emergency SSH: LAN only", script)
+        collector = (ROOT / "admin/collect_status.py").read_text(encoding="utf-8")
+        for key in ('"threshold"', '"notified"', '"ssh"'):
+            self.assertIn(key, collector)
+        alert = (ROOT / ".github/workflows/doomsday-alert.yml").read_text(encoding="utf-8")
+        self.assertNotIn("reachable ONLY from the local network over SSH", alert)
+
+    def test_the_lockdown_screen_has_no_invented_rows(self):
+        screen = (ROOT / "admin/tui.py").read_text(encoding="utf-8")
+        start = screen.index("def page_doomsday")
+        page = screen[start:screen.index("\ndef page_logs", start)]
+        for invented in self.INVENTED + ("hits = 2",):
+            self.assertNotIn(invented, page)
 
 
 if __name__ == "__main__":
