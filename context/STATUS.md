@@ -1119,3 +1119,23 @@ collector run read-only on the real Mac's live data: score 0 (was 9 with the tun
 `dockerd`/`containerd`/`systemd` not. Not verified: a full isolate -> restore on the Mac with the new script (it cuts the
 network). Detection is OFF on the Mac until this update is installed and `doomsday test` is quiet; then
 `sudo macserver doomsday on`.
+
+## 2026-11-04: notices say what they are, on the screen and with `macserver issues`
+
+The owner saw "1 NOTICE(S)" on the Mac's screen with nothing saying what it was: the normal dashboard only counted
+warnings, and the details existed only on the red incident screen. It was "restart needed for updates": the T2 kernel
+`linux-image-6.18.60-1-t2-trixie` was installed on 2026-11-03 and `/run/reboot-required` asks for a reboot (the fix is
+`sudo reboot`, then the disk passphrase at the keyboard; the owner's call).
+
+- Screen: one line per counted issue under the top bar (level, title, first fix, why; up to 3, then "+N more:
+  macserver issues"; 1 on screens under 30 rows), on the normal pages and on the overview during an incident (Space).
+- Terminal: `macserver issues` (`dashboard --issues`, no root needed) prints the same list the pill counts, each with
+  why, facts, fixes, files and logs; `macserver status` now starts with the one-line-each form (`--issues --brief`).
+  Muted benign notices stay out of both, as they stay out of the pill (`tui.counted_issues`).
+- `macserver status` itself was broken in every state: a stray `}` in its Doomsday line made jq refuse the whole program
+  (found running it on the Mac). Fixed; `tests/test_repo.py` now runs its jq program for a normal and an isolated status.
+
+Verified: new tests (the notice line at three sizes, the overview during an incident, the report full/brief/healthy/
+critical/muted, `--issues` as a process, the status jq program), whole suite in WSL (259 tests), shellcheck; the new
+dashboard run read-only on the real Mac: the line reads "WARN restart needed for updates fix: sudo reboot (then type the
+disk passphrase)" and `--issues` prints why/fix/look. Not verified: the line on the Mac's own screen after it updates.

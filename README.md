@@ -38,6 +38,7 @@ Everyone else ──> nothing
 
 ```sh
 sudo macserver status      # health at a glance
+macserver issues           # what the screen's notices and alerts are, and how to fix each
 sudo macserver keys        # app keys and the Studio login
 sudo macserver update      # backup, then all updates
 sudo macserver public off  # take the API off the Internet now

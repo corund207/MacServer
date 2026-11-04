@@ -206,6 +206,35 @@ class RepoTests(unittest.TestCase):
                                       timeout=20)
                 self.assertEqual(done.stdout.strip(), want, done.stderr)
 
+    @unittest.skipUnless(shutil.which("jq"), "jq is not installed")
+    def test_status_report_compiles_and_shows_doomsday(self):
+        """`macserver status` died with a jq syntax error (a stray `}` in the Doomsday line) in every state.
+        Run its real jq program against a normal and an isolated status."""
+        cli = (ROOT / "macserver").read_text(encoding="utf-8")
+        body = cli[cli.index("\ncmd_status() {"):cli.index("\ncmd_keys() {")]
+        program = body[body.index("jq -r '") + len("jq -r '"):body.rindex("' \"$s\"")]
+        base = {"host": {"model": "MacBookAir8,2", "kernel": "6.18.60-1-t2-trixie", "t2_kernel": True,
+                         "t2_modules": {"keyboard": True, "brcmfmac": True, "applesmc": True},
+                         "sensors": {"cpu_temp_c": 90, "fans_rpm": [8071]}, "battery": None,
+                         "disk": {"used": 40 << 30, "total": 233 << 30}, "updates_pending": 0, "reboot_required": True},
+                "tailscale": {"state": "Running", "name": "macserver-1.example.ts.net"}, "public_domain": "",
+                "idle": {"mode": "off"}, "containers": [{"name": "supabase-db", "state": "running", "status": "Up"}]}
+        for doomsday, want in (({"state": "normal", "mode": "off"}, "Doomsday   normal (off)"),
+                               ({"state": "doomsday", "trigger": "auto"}, "Doomsday   doomsday  ISOLATED (auto)")):
+            with self.subTest(doomsday=doomsday):
+                done = subprocess.run(["jq", "-r", program], input=json.dumps(dict(base, doomsday=doomsday)),
+                                      capture_output=True, text=True, timeout=20)
+                self.assertEqual(done.returncode, 0, done.stderr)
+                self.assertIn(want, done.stdout)
+                self.assertIn("  ok  supabase-db  Up", done.stdout)
+
+    def test_issues_command_prints_what_the_screen_counts(self):
+        cli = (ROOT / "macserver").read_text(encoding="utf-8")
+        self.assertIn('issues) exec "$LIB/dashboard" --issues ;;', cli)
+        self.assertRegex(cli, r"\n  issues\s+what the screen's notices")
+        status = cli[cli.index("\ncmd_status() {"):cli.index("\ncmd_keys() {")]
+        self.assertLess(status.index('"$LIB/dashboard" --issues --brief'), status.index("jq -r '"))
+
     def test_usb_backup_drive_is_wired_in(self):
         """`macserver backup-drive` needs its helper installed, its nightly timer enabled, and doomsday to
         close the drive; the dashboards must not call a drive-less Mac's backups a problem."""

@@ -3,6 +3,8 @@
 
     dashboard            live, full screen; q quits
     dashboard --once     print a summary once (shown at login)
+    dashboard --issues   what the screen's notices and alerts are, and how to fix each
+                         (`macserver issues`; --brief: one line each, for `macserver status`)
     dashboard --kiosk    always-on mode for tty1: ignores every key, never exits
 
 Two looks from one layout:
@@ -1486,6 +1488,29 @@ def backup_problem(backups):
 
 def assess(sampler):
     return [(i["level"], i["title"]) for i in incidents(sampler)]
+
+
+def counted_issues(sampler):
+    """The issues the screen counts, worst first: every incident except the known-benign notices it mutes.
+    The top-bar pill, the notice lines above the pages, `macserver issues` and the texts all use this list."""
+    return [i for i in incidents(sampler) if not muted_notice(sampler, i["level"], i["title"])]
+
+
+def issues_report(sampler, brief=False):
+    """`macserver issues` in words: each issue the screen counts with why, facts, fixes and where to look."""
+    items = counted_issues(sampler)
+    if not items:
+        return "All systems normal: the screen shows no notices or alerts."
+    bad = sum(1 for i in items if i["level"] == "bad")
+    counts = [f"{bad} critical" if bad else "", f"{len(items) - bad} notice(s)" if len(items) > bad else ""]
+    out = [" · ".join(c for c in counts if c)]
+    for n, item in enumerate(items, 1):
+        out.append(f"{n}. {'CRITICAL' if item['level'] == 'bad' else 'NOTICE'}  {item['title']}")
+        if not brief:
+            out += [f"     {label:<5} {text}" for label, text, _ in detail_rows(item)] + [""]
+    if brief:
+        out.append("details and fixes: macserver issues")
+    return "\n".join(out).rstrip()
 
 
 def muted_notice(sampler, level, title):
@@ -3307,11 +3332,40 @@ HOME_DRAW = {"overview": page_overview, "hardware": page_hardware, "network": pa
              "services": page_services_home, "system": page_system_home}
 
 
-def draw_home(c, sampler):
-    """The normal screen: the page strip, then the current page."""
+NOTICE_ROWS = 3    # issues spelled out above the pages; the rest are counted, all are in `macserver issues`
+
+
+def notice_lines(c, sampler, items, y):
+    """One line per issue the top bar counts, above the pages: what it is and the first thing to do, so
+    "1 NOTICE(S)" explains itself without a login. Returns the first free row."""
+    if not items or c.h < 14:
+        return y
+    shown = items[:1 if c.h < 30 else NOTICE_ROWS]
+    more = len(items) - len(shown)
+    for n, item in enumerate(shown):
+        note = (f"+{more} more: macserver issues" if more and n == len(shown) - 1
+                else "details: macserver issues" if n == 0 else "")
+        right = c.w - 1 - len(note)
+        if note and right > 60:
+            c.put(right, y, note, C["dim"])
+        else:
+            right = c.w - 1
+        x = pill(c, 1, y, item["level"])
+        parts = [(item["title"], C["bright"], True)]
+        if item["fix"]:
+            parts.append(("   fix: " + item["fix"][0], C["accent"]))
+        if item["why"]:
+            parts.append(("   " + item["why"], C["dim"]))
+        line(c, x + 2, y, right - x - 4, *parts)
+        y += 1
+    return y
+
+
+def draw_home(c, sampler, top=1):
+    """The normal screen: the page strip, then the current page (below any notice lines)."""
     sampler.advance_home(time.monotonic())
     page = HOME_PAGES[sampler.home % len(HOME_PAGES)]
-    y = home_tabs(c, sampler, 1) if c.h >= 14 else 1
+    y = home_tabs(c, sampler, top) if c.h >= 14 else top
     HOME_DRAW[page](c, sampler, 0, y, c.w, c.h - 1 - y)
     return c
 
@@ -3324,9 +3378,10 @@ def draw_overview(c, sampler):
 def draw(c, sampler, kiosk=True):
     """Lay out every panel for a canvas of any size (80x24 up to 250x80)."""
     w, h = c.w, c.h
-    problems = assess(sampler)
-    label = [(level, title) for (level, title) in problems
-             if not muted_notice(sampler, level, title)]
+    every = incidents(sampler)
+    problems = [(i["level"], i["title"]) for i in every]
+    counted = [i for i in every if not muted_notice(sampler, i["level"], i["title"])]   # = counted_issues()
+    label = [(i["level"], i["title"]) for i in counted]
     level = alert_level(label)
     set_theme(level == "critical")                  # an incident turns the whole screen red
     if level != "critical":
@@ -3344,7 +3399,7 @@ def draw(c, sampler, kiosk=True):
         incident_view(c, sampler, problems, kiosk)
         c.ring(ring_colour(level, time.time()))
         return c
-    draw_overview(c, sampler)
+    draw_home(c, sampler, notice_lines(c, sampler, counted, 1))
     c.ring(ring_colour(level, time.time()))
     return c
 
@@ -3482,6 +3537,11 @@ def main(argv):
         size = os.get_terminal_size() if tty_out else os.terminal_size((120, 34))
         c = render_once(min(max(size.columns, 80), 200), min(max(size.lines - 2, 24), 40), rich_terminal())
         print(c.ansi() if tty_out else c.text())
+    elif arg == "--issues":
+        sampler = Sampler()
+        time.sleep(0.001)
+        sampler.sample()
+        print(issues_report(sampler, brief="--brief" in argv[2:]))
     elif arg == "--kiosk":
         while True:
             try:

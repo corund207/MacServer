@@ -17,6 +17,7 @@ usage() {
 Usage: sudo macserver COMMAND
 
   status            health of the Mac, Tailscale and every container
+  issues            what the screen's notices and alerts are, and how to fix each
   dashboard         full-screen live dashboard (the one on the Mac's screen)
   keys              API keys and the Studio password (secret: do not share)
   logs [SERVICE]    follow Supabase logs (e.g. auth, rest, db, storage)
@@ -47,6 +48,8 @@ cmd_status() {
   systemctl start macserver-status.service 2>/dev/null || true
   local s=/run/macserver/status.json
   [[ -f $s ]] || die "no status yet; is macserver-status.timer running?"
+  "$LIB/dashboard" --issues --brief 2>/dev/null || true   # what the screen's pill counts, first
+  say ""
   jq -r '
     "Model      \(.host.model)",
     "Kernel     \(.host.kernel)\(if .host.t2_kernel then "" else "  (NOT the T2 kernel)" end)",
@@ -58,7 +61,7 @@ cmd_status() {
     "Tailscale  \(.tailscale.state) \(.tailscale.name)",
     "Public     \(if .public_domain == "" then "off" else "https://\(.public_domain)" end)",
     "Idle       \(if ((.idle.mode // "auto") == "off") then "off" elif ((.idle.idle // false)) then "low-power" else "active" end)",
-    "Doomsday   \((.doomsday.state // "normal"))\(if ((.doomsday.state // "normal")) != "normal" then "  ISOLATED (\(.doomsday.trigger // "?"}))" else " (\(.doomsday.mode // "on"))" end)",
+    "Doomsday   \((.doomsday.state // "normal"))\(if ((.doomsday.state // "normal")) != "normal" then "  ISOLATED (\(.doomsday.trigger // "?"))" else " (\(.doomsday.mode // "on"))" end)",
     "",
     (.containers[] | "\(if .state == "running" then "  ok  " else "  !!  " end)\(.name)  \(.status)")
   ' "$s"
@@ -167,6 +170,7 @@ main() {
   local cmd=${1:-}; shift || true
   case $cmd in
     status) cmd_status ;;
+    issues) exec "$LIB/dashboard" --issues ;;
     dashboard) exec "$LIB/dashboard" ;;
     keys) need_root keys; cmd_keys ;;
     logs) need_root logs; supabase_compose logs -f --tail 100 "$@" ;;

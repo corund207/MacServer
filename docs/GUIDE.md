@@ -307,7 +307,8 @@ Logging in shows a summary; `macserver dashboard` opens the full dashboard (q qu
 
 | Command | What it does |
 | --- | --- |
-| `sudo macserver status` | Health at a glance |
+| `sudo macserver status` | Health at a glance (the screen's issues first) |
+| `macserver issues` | What each notice or alert on the screen is: why, the fix, where to look |
 | `sudo macserver keys` | App keys and the Studio login (keep them private) |
 | `sudo macserver update` | Backs up the database, then installs updates |
 | `sudo macserver backup` | Backs up the database, uploaded files and settings to the USB backup drive |

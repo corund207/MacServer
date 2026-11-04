@@ -278,6 +278,39 @@ class DashboardTests(unittest.TestCase):
         s = self.muted_sampler()
         self.assertFalse(tui.muted_notice(s, "bad", "the Internet is unreachable"))
 
+    def test_a_notice_says_what_it_is_on_the_screen_and_in_the_terminal(self):
+        """The owner saw "1 NOTICE(S)" with nothing on the screen saying what it was (a pending reboot):
+        the notice line under the top bar spells it out, and `macserver issues` prints the same list."""
+        for cols, rows in ((232, 64), (100, 30), (80, 24)):
+            with self.subTest(size=(cols, rows)):
+                text = tui_fixture.screen("warning", cols, rows).text()
+                top = text.splitlines()[:3]
+                self.assertIn("1 NOTICE(S)", top[0])
+                self.assertIn("restart needed for updates", top[1])
+                self.assertIn("fix: sudo reboot", top[1])
+                self.assertIn("OVERVIEW", top[2])                       # the pages start below it
+        self.assertIn("details: macserver issues", tui_fixture.screen("warning", 232, 64).text())
+        for scenario in ("healthy", "trouble"):                          # no line without a notice; the red view has its own
+            self.assertNotIn("macserver issues", tui_fixture.screen(scenario, 232, 64).text())
+        overview = tui_fixture.screen("trouble", 232, 64, overview=True).text().splitlines()   # Space during an incident
+        self.assertIn("service edge-functions is exited", overview[1])
+        self.assertIn("+2 more: macserver issues", overview[3])
+
+        s = tui_fixture.make_sampler("warning")
+        report = tui.issues_report(s)
+        for expected in ("1 notice(s)", "1. NOTICE  restart needed for updates", "why   the kernel or a core library",
+                         "fix   sudo reboot", "look  /run/reboot-required"):
+            self.assertIn(expected, report)
+        self.assertEqual(tui.issues_report(s, brief=True).splitlines(),
+                         ["1 notice(s)", "1. NOTICE  restart needed for updates", "details and fixes: macserver issues"])
+        self.assertEqual(tui.issues_report(tui_fixture.make_sampler("healthy")),
+                         "All systems normal: the screen shows no notices or alerts.")
+        trouble = tui.issues_report(tui_fixture.make_sampler("trouble"), brief=True).splitlines()
+        self.assertTrue(trouble[0].startswith("2 critical · "))
+        self.assertTrue(trouble[1].startswith("1. CRITICAL  "))
+        # Muted notices stay out of the terminal list exactly as they stay out of the pill.
+        self.assertIn("All systems normal", tui.issues_report(self.muted_sampler()))
+
     def test_heat_alone_is_never_a_notice_only_a_stopped_fan_is(self):
         """This Mac sits in the 90s and touches the CPU's 100 °C limit many times a minute with
         the fan at full speed. That must never raise a notice, turn the screen amber or read
@@ -628,6 +661,19 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("MACSERVER", out)
         self.assertIn("sudo macserver help", out)
         self.assertNotIn("\x1b[", out)                   # plain text when not on a terminal
+
+    @unittest.skipUnless(hasattr(os, "statvfs"), "samples the real disk like --once (POSIX only)")
+    def test_issues_flag_prints_the_report(self):
+        tui_fixture.machine()
+        tui_fixture.status("warning")
+        run = [sys.executable, str(tui_fixture.ROOT / "admin/tui.py"), "--issues"]
+        out = subprocess.run(run, capture_output=True, text=True, env=os.environ, timeout=30, check=True).stdout
+        self.assertIn("1. NOTICE  restart needed for updates", out)
+        self.assertIn("fix   sudo reboot", out)
+        brief = subprocess.run(run + ["--brief"], capture_output=True, text=True, env=os.environ, timeout=30,
+                               check=True).stdout
+        self.assertIn("details and fixes: macserver issues", brief)
+        self.assertNotIn("fix   sudo reboot", brief)
 
     @unittest.skipUnless(FONT.exists(), "console font not installed (apt install console-setup-linux)")
     def test_console_glyphs_exist_in_the_mac_console_font(self):
