@@ -4,8 +4,12 @@
 # install), and only as a fast-forward of what runs now. It backs up the database
 # first, re-applies MacServer's own settings (UPDATE_STEPS: screen, fans, DNS, kernel
 # network settings, firewall, admin page, Claude Code, this updater), checks health,
-# and rolls back on failure. It never changes Supabase's version or data, or Docker;
-# `sudo macserver update` handles packages and containers.
+# and rolls back on failure. A version that failed its health check is tried again
+# twice (after 30 minutes, then 4 hours) in case it was only a hiccup, and then left
+# alone until a newer version arrives or `macserver upgrade` forces it. An update cut
+# short by a power loss is finished (or rolled back) on the next check. It never changes
+# Supabase's version or data, or Docker; `sudo macserver update` handles packages and
+# containers.
 #
 #   self-update           what the timer runs (every 2 minutes; obeys AUTO_UPDATE)
 #   self-update --now     check and install now, even with AUTO_UPDATE=off
@@ -29,6 +33,13 @@ UPDATE_STEPS=(host firewall admin claude autoupdate doomsday)
 STATUS_RUN=/run/macserver/self-update.json
 STATUS_KEEP=/var/lib/macserver/self-update.json
 LOCK=/run/macserver-self-update.lock
+# The version that failed its health check: {sha, tries, at}. Kept apart from the status
+# file, which every check overwrites.
+FAILED=/var/lib/macserver/self-update-failed.json
+# Exists while an update is being applied; a leftover one means it was cut short.
+INFLIGHT=/var/lib/macserver/self-update.inflight
+# Waits (seconds) before the 2nd and 3rd try of a version that failed its health check.
+RETRY_AFTER=(1800 14400)
 
 # shellcheck source=installer/lib.sh
 source /usr/local/lib/macserver/lib.sh
@@ -62,6 +73,61 @@ report() {  # report STATE "message" [latest]
 
 vlog() { [[ $verbose == true ]] && say "$*"; true; }
 
+apply() {  # apply DIR: re-run the update steps from that source tree
+  local dir=$1 step
+  for step in "${UPDATE_STEPS[@]}"; do
+    if state_has "$step"; then
+      vlog "Re-applying step: $step"
+      MACSERVER_UNATTENDED=1 "$dir/install.sh" --redo "$step" >> /var/log/macserver-self-update.log 2>&1 || return 1
+    else
+      vlog "Skipping step (not previously done): $step"
+    fi
+  done
+}
+
+healthy() {  # only what this Mac has installed
+  vlog "Running health checks..."
+  if state_has admin; then
+    vlog "Checking admin page services..."
+    systemctl start macserver-status.service || return 1
+    systemctl is-active --quiet macserver-admin.service || return 1
+    systemctl is-active --quiet macserver-status.timer || return 1
+  fi
+  if id macserver-console >/dev/null 2>&1; then
+    vlog "Checking console dashboard..."
+    runuser -u macserver-console -- /usr/local/lib/macserver/dashboard --once >/dev/null 2>&1 || return 1
+  fi
+  vlog "Checking macserver CLI..."
+  /usr/local/sbin/macserver help >/dev/null 2>&1
+}
+
+failed_tries() {  # failed_tries SHA: how often SHA has failed its health check here (0 = never)
+  local n
+  n=$(jq -r --arg sha "$1" 'select(.sha == $sha) | .tries // 0' "$FAILED" 2>/dev/null || true)
+  echo "${n:-0}"
+}
+
+rollback() {  # rollback SHA: SHA failed its health check; go back to the version that ran before
+  local sha=$1 tries before how
+  vlog "Health check failed, rolling back..."
+  if [[ -d $SRC_DIR.prev ]]; then
+    rm -rf "$SRC_DIR"
+    mv "$SRC_DIR.prev" "$SRC_DIR"
+    apply "$SRC_DIR" || true
+    before=$(git -C "$SRC_DIR" rev-parse HEAD 2>/dev/null || true)
+    how="back on ${before:0:7}"
+  else
+    before=$sha
+    how="no earlier version was kept to go back to"
+  fi
+  tries=$(( $(failed_tries "$sha") + 1 ))
+  install -d -m 0700 "$(dirname "$FAILED")"
+  jq -n --arg sha "$sha" --argjson tries "$tries" --argjson at "$(date +%s)" '{sha: $sha, tries: $tries, at: $at}' > "$FAILED"
+  rm -f "$INFLIGHT"
+  current=$before
+  report rolled-back "${sha:0:7} failed its health check; $how (log: /var/log/macserver-self-update.log)" "$sha"
+}
+
 if [[ $mode == timer && $(conf_get AUTO_UPDATE on) != on && $force != true ]]; then
   report off "automatic updates are off (turn on: sudo macserver autoupdate on)"
   exit 0
@@ -71,6 +137,23 @@ if [[ ! -f $MACSERVER_STATE_DIR/firstboot.done ]]; then
   exit 0
 fi
 
+# A leftover marker means the last update was cut short (power loss, crash). If the new
+# version is the one in place, finish applying it or go back; do not call it "up to date".
+if [[ -f $INFLIGHT && $mode != --check ]]; then
+  inflight_sha=$(cat "$INFLIGHT" 2>/dev/null || true)
+  if [[ -n $current && $current == "$inflight_sha" ]]; then
+    report updating "finishing the update to ${current:0:7} that was cut short" "$current"
+    if apply "$SRC_DIR" && healthy; then
+      rm -f "$INFLIGHT" "$FAILED"
+      report updated "now running ${current:0:7} (finished an update that was cut short)" "$current"
+      exit 0
+    fi
+    rollback "$current"
+    exit 1
+  fi
+  rm -f "$INFLIGHT"   # it stopped before anything was switched
+fi
+
 latest=$(git ls-remote "$REPO_URL" refs/heads/main 2>/dev/null | cut -f1)
 [[ $latest =~ ^[0-9a-f]{40}$ ]] || { report error "could not reach GitHub"; exit 0; }
 if [[ $latest == "$current" ]]; then
@@ -78,10 +161,19 @@ if [[ $latest == "$current" ]]; then
   exit 0
 fi
 
-bad=$(jq -r 'select(.state == "rolled-back") | .latest' "$STATUS_KEEP" 2>/dev/null || true)
-if [[ $mode == timer && $bad == "$latest" && $force != true ]]; then
-  report skipped "${latest:0:7} failed its health check before; waiting for a newer version (use --force to retry)" "$latest"
-  exit 0
+# A version that failed its health check here: wait, try again twice, then leave it alone
+# until a newer one arrives (`macserver upgrade` and --force still try it at once).
+tries=$(failed_tries "$latest")
+if [[ $mode == timer && $tries -gt 0 && $force != true ]]; then
+  if (( tries > ${#RETRY_AFTER[@]} )); then
+    report skipped "${latest:0:7} failed its health check $tries times; waiting for a newer version (sudo macserver upgrade tries it again)" "$latest"
+    exit 0
+  fi
+  retry_at=$(( $(jq -r '.at // 0' "$FAILED" 2>/dev/null || echo 0) + RETRY_AFTER[tries - 1] ))
+  if (( $(date +%s) < retry_at )); then
+    report skipped "${latest:0:7} failed its health check; trying again at $(date -d "@$retry_at" +%H:%M)" "$latest"
+    exit 0
+  fi
 fi
 
 # A local copy of the repository, refreshed with a cheap fetch on every check.
@@ -150,51 +242,18 @@ if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx supabase-db; then
 fi
 
 vlog "Switching source tree to ${latest:0:7}..."
-apply() {  # apply DIR: re-run the update steps from that source tree
-  local dir=$1 step
-  for step in "${UPDATE_STEPS[@]}"; do
-    if state_has "$step"; then
-      vlog "Re-applying step: $step"
-      MACSERVER_UNATTENDED=1 "$dir/install.sh" --redo "$step" >> /var/log/macserver-self-update.log 2>&1 || return 1
-    else
-      vlog "Skipping step (not previously done): $step"
-    fi
-  done
-}
-
-healthy() {  # only what this Mac has installed
-  vlog "Running health checks..."
-  if state_has admin; then
-    vlog "Checking admin page services..."
-    systemctl start macserver-status.service || return 1
-    systemctl is-active --quiet macserver-admin.service || return 1
-    systemctl is-active --quiet macserver-status.timer || return 1
-  fi
-  if id macserver-console >/dev/null 2>&1; then
-    vlog "Checking console dashboard..."
-    runuser -u macserver-console -- /usr/local/lib/macserver/dashboard --once >/dev/null 2>&1 || return 1
-  fi
-  vlog "Checking macserver CLI..."
-  /usr/local/sbin/macserver help >/dev/null 2>&1
-}
-
 rm -rf "$SRC_DIR.prev"
+echo "$latest" > "$INFLIGHT"
 [[ -d $SRC_DIR ]] && mv "$SRC_DIR" "$SRC_DIR.prev"
 mv "$next" "$SRC_DIR"
 { echo; echo "== $(date -Is) ${current:0:7} -> ${latest:0:7}"; } >> /var/log/macserver-self-update.log
 if apply "$SRC_DIR" && healthy; then
   current=$latest
+  rm -f "$INFLIGHT" "$FAILED"
   vlog "Health checks passed, update successful"
   report updated "now running ${latest:0:7} ($(git -C "$SRC_DIR" log -1 --format=%s | cut -c1-60))" "$latest"
   exit 0
 fi
 
-# Roll back to what ran before.
-failed_sha=$latest
-vlog "Health check failed, rolling back..."
-rm -rf "$SRC_DIR"
-mv "$SRC_DIR.prev" "$SRC_DIR"
-apply "$SRC_DIR" || true
-before=${current:0:7}
-report rolled-back "${failed_sha:0:7} failed its health check; back on ${before:-the previous version} (log: /var/log/macserver-self-update.log)" "$failed_sha"
+rollback "$latest"
 exit 1

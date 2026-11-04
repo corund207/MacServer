@@ -90,4 +90,6 @@ Running with the lid open helps cooling.
 **The dashboard's MacServer line says it was rolled back or skipped.** A new version
 failed its tests or the health check after installing; the Mac stays on the version
 that worked. `sudo macserver autoupdate status` says why; the details are in
-`/var/log/macserver-self-update.log`. It installs the next version that passes.
+`/var/log/macserver-self-update.log`. It tries a version that failed again after 30
+minutes and after 4 hours (a hiccup passes), then waits for the next version that passes;
+`sudo macserver upgrade` tries it at once.

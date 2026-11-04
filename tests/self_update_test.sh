@@ -83,14 +83,54 @@ check "refuses a non-fast-forward" '[[ $(state) == refused ]] && head_is $v2'
 
 echo "== update breaks the Mac"
 set_main "$v3"; ci "$v3" all
+attempts() { grep -c '^== ' /var/log/macserver-self-update.log || true; }   # one line per install attempt
+failed_file=/var/lib/macserver/self-update-failed.json
+long_ago() { jq '.at = 0' "$failed_file" > "$failed_file.t" && mv "$failed_file.t" "$failed_file"; }   # let the wait pass
+# shellcheck disable=SC2034  # read inside check()'s single-quoted conditions
+before=$(attempts)
 mv /usr/local/sbin/macserver /usr/local/sbin/macserver.off     # health check will fail
 $U >/dev/null || true
 check "rolls back" '[[ $(state) == rolled-back ]] && head_is $v2'
-mv /usr/local/sbin/macserver.off /usr/local/sbin/macserver
+check "remembers that it failed once" '[[ $(jq -r .tries "$failed_file") == 1 ]]'
+for _ in 1 2 3; do $U >/dev/null || true; done                  # three more timer ticks, still broken
+check "does not retry the broken version by itself" '[[ $(state) == skipped ]] && head_is $v2 && (( $(attempts) == before + 1 ))'
+long_ago; $U >/dev/null || true
+check "tries again once the wait is over" '[[ $(state) == rolled-back ]] && head_is $v2 && (( $(attempts) == before + 2 ))'
 $U >/dev/null || true
-check "does not retry the broken version by itself" '[[ $(state) == skipped ]] && head_is $v2'
+check "and waits again" '[[ $(state) == skipped ]] && (( $(attempts) == before + 2 ))'
+long_ago; $U >/dev/null || true
+check "gives it a third try" '[[ $(state) == rolled-back ]] && (( $(attempts) == before + 3 ))'
+long_ago; $U >/dev/null || true
+mv /usr/local/sbin/macserver.off /usr/local/sbin/macserver      # the Mac is fine now
+$U >/dev/null || true
+check "then leaves it alone until asked" '[[ $(state) == skipped ]] && head_is $v2 && (( $(attempts) == before + 3 ))'
 $U --now >/dev/null || true
-check "installs it when asked (upgrade)" '[[ $(state) == updated ]] && head_is $v3'
+check "installs it when asked (upgrade)" '[[ $(state) == updated ]] && head_is $v3 && [[ ! -e $failed_file ]]'
+
+echo "== a failure that was only a hiccup is retried and installs"
+git -C /opt/macserver-src checkout -q "$v2"                       # as if it were running v2 again
+mv /usr/local/sbin/macserver /usr/local/sbin/macserver.off
+$U >/dev/null || true
+mv /usr/local/sbin/macserver.off /usr/local/sbin/macserver      # whatever was wrong has passed
+$U >/dev/null || true
+check "waits first" '[[ $(state) == skipped ]] && head_is $v2'
+long_ago; $U >/dev/null || true
+check "installs it on the retry" '[[ $(state) == updated ]] && head_is $v3 && [[ ! -e $failed_file ]]'
+
+echo "== an update cut short by a power loss is finished"
+inflight=/var/lib/macserver/self-update.inflight
+echo "$v3" > "$inflight"                                         # the marker an interrupted update leaves
+$U >/dev/null || true
+check "finishes it" '[[ $(state) == updated ]] && head_is $v3 && [[ ! -e $inflight ]]'
+echo "$v3" > "$inflight"; mv /usr/local/sbin/macserver /usr/local/sbin/macserver.off
+$U >/dev/null || true
+mv /usr/local/sbin/macserver.off /usr/local/sbin/macserver
+check "or goes back when it cannot" '[[ $(state) == rolled-back ]] && [[ ! -e $inflight ]] && ! head_is $v3'
+rm -f "$failed_file"; $U --now >/dev/null || true
+check "and can install it afterwards" '[[ $(state) == updated ]] && head_is $v3'
+echo "$v1" > "$inflight"                                         # a marker for a version that never got in
+$U >/dev/null || true
+check "a stale marker is dropped" '[[ ! -e $inflight && $(state) == up-to-date ]]'
 
 echo "== a dashboard-only change needs only the quick checks"
 echo 4 > "$W/origin/VERSION"; mkdir -p "$W/origin/admin"; echo "# tweak" >> "$W/origin/admin/tui.py"

@@ -148,8 +148,11 @@ disables detection only).
   of the running version (a rewritten history is refused). It backs up the database,
   re-runs the host, firewall, admin, claude and autoupdate steps (screen, DNS, kernel
   network settings, firewall, Supabase's local-only ports, admin page, Claude Code,
-  the updater), checks health and rolls back on failure; a rolled-back commit is not
-  retried automatically. It never changes Supabase's version, Docker or data.
+  the updater), checks health and rolls back on failure. A commit that failed its health
+  check is tried again twice (after 30 minutes, then 4 hours), then left alone until a
+  newer commit arrives or `sudo macserver upgrade` forces it. An update cut short by a
+  power loss leaves a marker (`/var/lib/macserver/self-update.inflight`) and is finished,
+  or rolled back, on the next check. It never changes Supabase's version, Docker or data.
   Trust: whoever can push to `main` and pass CI can run code as root on the server,
   so the GitHub account needs 2FA. Turn it off with `sudo macserver autoupdate off`.
 

@@ -923,3 +923,23 @@ be run directly: `sudo /usr/local/lib/macserver/doomsday setup-gh` and `sudo pyt
 Verified: that test (old script fails five cases, fixed passes), `bash -n macserver`; the rest of the suite shows
 the same six Windows-only failures. Not verified: the commands on the real Mac after the update; shellcheck (not
 installed on the dev PC, CI runs it).
+
+## 2026-11-03: the self-updater retries a failed version and finishes a cut-short update
+
+Asked to make sure the Mac always installs the latest version. The last 7 days on the real Mac were clean
+(4,624 "up to date", 7 installs, 13 "waiting for CI", no skipped, rolled-back, refused or error; CI takes 2-7
+min and the Mac installs within about 2 min of it passing), so the changes close the gaps found by reading
+`installer/self-update.sh`, not a failure seen in practice:
+
+- After a rollback the status file said `rolled-back`, but the next check overwrote it with `skipped`, and the
+  check after that no longer saw the failure, so a broken version was installed and rolled back again every
+  4 minutes (a backup and a service restart each time). The failed version is now kept in its own file
+  (`/var/lib/macserver/self-update-failed.json`), tried again after 30 min and after 4 h (a hiccup then passes),
+  and left alone after the third failure until a newer commit arrives or `macserver upgrade` forces it.
+- A power loss or crash while an update was being applied left the new source tree in place, so the next check
+  said "up to date" with a half-applied install. A marker (`self-update.inflight`) now makes the next check
+  finish applying it, or roll back.
+
+Verified: `tests/self_update_test.sh` in WSL Debian (the old script fails the new retry cases, the new one passes
+all of them), shellcheck clean. Not verified: either path on the real Mac (it needs a failing update or a power
+loss); the installer-image workflow (runs on push).
