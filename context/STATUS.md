@@ -909,3 +909,17 @@ the doomsday email alert has not been working either), then `sudo macserver noti
 exists the service logs one line every 6 h and does nothing. Verizon's gateway is best-effort (filtering, no
 delivery receipt); if the test never arrives, switch the secret to `<number>@vzwpix.com` (MMS) or move to a
 paid SMS API.
+
+## 2026-11-03: `macserver idle|doomsday|notify` lost their first argument
+
+Found when the owner ran `sudo macserver doomsday setup-gh` and `sudo macserver notify test` on the Mac: both only
+printed a status. `main()` already drops the command name, and the `idle`, `doomsday` and `notify` branches each
+shifted once more, so `setup-gh`, `test`, `on`, `off`, `unlock` and `auto` never reached their handler (only the
+no-argument status forms worked). The extra shifts are gone (`macserver`), and
+`tests/test_repo.py::test_subcommands_reach_their_handler_with_every_argument` runs the real `main()` with stub
+handlers; it fails on the old script and passes on the fixed one. Until the Mac has self-updated, the commands can
+be run directly: `sudo /usr/local/lib/macserver/doomsday setup-gh` and `sudo python3 /usr/local/lib/macserver/notify.py test`.
+
+Verified: that test (old script fails five cases, fixed passes), `bash -n macserver`; the rest of the suite shows
+the same six Windows-only failures. Not verified: the commands on the real Mac after the update; shellcheck (not
+installed on the dev PC, CI runs it).

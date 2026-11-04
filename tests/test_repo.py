@@ -2,6 +2,8 @@
 import json
 from pathlib import Path
 import re
+import shutil
+import subprocess
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -176,6 +178,33 @@ class RepoTests(unittest.TestCase):
         collector = (ROOT / "admin/collect_status.py").read_text()
         self.assertIn("def idle_activity", collector)
         self.assertIn("def idle_track", collector)
+
+    @unittest.skipUnless(shutil.which("bash"), "needs bash")
+    def test_subcommands_reach_their_handler_with_every_argument(self):
+        """main() already drops the command name, so a second shift in a branch ate the first
+        argument: `macserver doomsday setup-gh` ran `doomsday` with nothing (it printed the status
+        and never asked for the token) and `macserver notify test` only printed the status. Run
+        the real main() with stub handlers and check each command gets all of its arguments."""
+        cli = (ROOT / "macserver").read_text(encoding="utf-8")
+        main = cli[cli.index("\nmain() {"):cli.rindex('\nmain "$@"')]
+        stubs = "\n".join(
+            f'{fn}() {{ echo "{fn}:$*"; }}'
+            for fn in ("cmd_idle", "cmd_doomsday", "cmd_notify", "cmd_doctor", "cmd_reboot",
+                       "need_root", "usage", "warn"))
+        cases = {
+            "doomsday setup-gh": "cmd_doomsday:setup-gh",
+            "doomsday unlock --code 123456": "cmd_doomsday:unlock --code 123456",
+            "notify test": "cmd_notify:test",
+            "notify off": "cmd_notify:off",
+            "idle auto": "cmd_idle:auto",
+            "doctor": "cmd_doctor:",
+        }
+        for args, want in cases.items():
+            with self.subTest(args=args):
+                script = "set -u\n" + stubs + main + "\nmain " + args + "\n"
+                done = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
+                                      timeout=20)
+                self.assertEqual(done.stdout.strip(), want, done.stderr)
 
     def test_macserver_command_reachable_over_ssh(self):
         # /usr/local/sbin is not on unprivileged users' PATH, so SSH logins

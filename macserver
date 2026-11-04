@@ -183,9 +183,9 @@ main() {
         *) usage; exit 2 ;;
       esac ;;
     wifi) need_root wifi; wifi_setup ;;
-    idle) shift || true; cmd_idle "$@" ;;
-    doomsday) shift || true; cmd_doomsday "$@" ;;
-    notify) shift || true; cmd_notify "$@" ;;
+    idle) cmd_idle "$@" ;;
+    doomsday) cmd_doomsday "$@" ;;
+    notify) cmd_notify "$@" ;;
     doctor) cmd_doctor ;;
     reboot) cmd_reboot ;;
     ''|-h|--help|help) usage ;;
