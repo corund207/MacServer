@@ -161,7 +161,7 @@ disables detection only).
   scoped to its own repository with `Signed-By`.
 - The t2linux repository is pinned (`host/t2.pref`) so it can only supply packages
   whose names contain `t2` or start with `apple-`; it cannot replace Debian packages.
-- Supabase is cloned at tag `self-hosted/v0.8.2`, and the installer refuses it unless
+- Supabase is cloned at tag `self-hosted/v0.8.3`, and the installer refuses it unless
   the tag resolves to the pinned commit.
 - Gateway images are pinned by version and digest.
 - Claude Code is the native linux-x64 binary from the npm registry

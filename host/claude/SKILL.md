@@ -13,7 +13,7 @@ the backend for their own apps. Project and guides: https://github.com/corund207
 
 - Debian 13 (trixie) with the t2linux kernel (`linux-t2-lts`). The T2 drivers
   (`t2bce_*` keyboard/trackpad, `brcmfmac` Wi-Fi, `applesmc`) come from it.
-- Self-hosted **Supabase** (`self-hosted/v0.8.2`) in Docker, in `/opt/macserver/supabase`.
+- Self-hosted **Supabase** (`self-hosted/v0.8.3`) in Docker, in `/opt/macserver/supabase`.
   Its API gateway (Envoy, container `supabase-api-gw` or similar) listens on
   `127.0.0.1:8000` only. The database container is `supabase-db`.
 - **Tailscale** is the only way in. `tailscale serve` publishes, on the tailnet only:

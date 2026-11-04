@@ -134,9 +134,9 @@ class LiveServerTests(unittest.TestCase):
 class VendoredTerminalTests(unittest.TestCase):
     """xterm.js is copied from npm, not built here. A changed byte must be a decision."""
     PINNED = {
-        "xterm.js": "1f991ac3b4b283ebf96e60ae23a00a52765dd3a2e46fa6fdda9f1aab032f7495",   # @xterm/xterm 5.5.0
-        "xterm.css": "ba8e6985669488981ccf40c0cefe3aba80722cb6c92de7ad628b0bd717faf2b6",  # @xterm/xterm 5.5.0
-        "xterm-addon-fit.js": "bdaefa370b1bfc42ee88d46fe6072400902a4d4b2d45cd93438dda9b23c97089",  # @xterm/addon-fit 0.10.0
+        "xterm.js": "14903579ff54664cd72f8e8699e6961a6272c21863ec1c3b118cdc8af5d4a972",   # @xterm/xterm 6.0.0
+        "xterm.css": "854a7c0fb70e8b1a083c16797ab827299fb18744f5ad34f227b48337e33293c6",  # @xterm/xterm 6.0.0
+        "xterm-addon-fit.js": "ba3ea256ce0620a0992a197d6c9baea64823fc93d8da07a9e366ca9943c18527",  # @xterm/addon-fit 0.11.0
     }
 
     def test_files_match_their_pinned_hashes(self):

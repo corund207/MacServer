@@ -996,3 +996,26 @@ the Mac's real `lsblk` output (only `/dev/sda` is allowed); shellcheck. Not veri
 and the real stick (it needs the owner's sudo password and the typed ERASE; the Mac installs this after the full
 install test), argon2id timing on 4 GB of RAM, and a restore into Supabase (the steps in docs/GUIDE.md are the
 standard Postgres ones; do a trial restore once).
+
+## 2026-11-04: pinned software refreshed (on a branch, merged after the full install test)
+
+Looked up what upstream ships today and moved every pin that had a newer release, checking each new pin the same
+way the old one was made (the lookup reproduced all four old pins first):
+
+| Pin | Was | Now | Where |
+|---|---|---|---|
+| cloudflared image | 2026.10.3 | 2026.10.7 `@sha256:4955524a…` | `gateway/compose.yml` |
+| Caddy image | 2.11.4-alpine | 2.11.7-alpine `@sha256:e70b164d…` | `gateway/compose.yml` |
+| Claude Code | 2.1.284 | 2.1.318, npm SHA-512 `197fbb09…` | `installer/lib.sh` |
+| Supabase self-hosted | v0.8.2 | v0.8.3 (commit `bc27d266…`) | `installer/lib.sh`, docs |
+| xterm.js (web terminal) | 5.5.0 | 6.0.0, `addon-fit` 0.10.0 → 0.11.0 | `admin/static/`, hashes in `tests/test_admin.py` |
+
+RustDesk server 1.1.16 is already the newest. Supabase v0.8.3 changes only image versions in its compose (Studio, Auth,
+PostgREST, Realtime, Storage, postgres-meta, edge-runtime, Supavisor; the database image and `.env.example` are unchanged).
+
+Verified: tests; xterm.js 6 in a real browser (page builds its screen, 57 rows, text and colours and accents drawn, no
+console errors; the shell connection itself was not exercised); the installer-image workflow installs v0.8.3 and the new
+Claude Code end to end in a VM before this reaches `main`. Not changed, on purpose: the running Mac's Supabase (self-update
+never changes it; moving it is `install.sh --redo supabase` after a backup, a decision for the owner) and the Mac's
+hand-made gateway/apps/rustdesk-ws tunnels in `~/api-gateway` etc. (not managed by this repo, so still cloudflared 2026.10.3,
+which the Mac's own log already calls outdated).

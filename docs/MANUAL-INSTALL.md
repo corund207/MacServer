@@ -46,7 +46,7 @@ The installer walks through these steps (`sudo ./install.sh --status` shows prog
 | tailscale | Joins your tailnet with Tailscale SSH; you choose the admin logins |
 | firewall | Drops everything not arriving over Tailscale |
 | docker | Docker Engine, publishing container ports on 127.0.0.1 only |
-| supabase | Supabase `self-hosted/v0.8.2` with generated secrets |
+| supabase | Supabase `self-hosted/v0.8.3` with generated secrets |
 | admin | Private admin page and Studio on your tailnet over HTTPS |
 | public | Optional: Cloudflare Tunnel for your apps' API |
 

@@ -17,17 +17,17 @@ TERMINAL_PORT=8091
 RESOLVED_CONF=/etc/systemd/resolved.conf.d/60-macserver.conf
 
 # Pinned upstream sources. Update deliberately, with a review of the diff.
-SUPABASE_REF=self-hosted/v0.8.2
+SUPABASE_REF=self-hosted/v0.8.3
 # The commit the tag points to (git ls-remote ... "refs/tags/$SUPABASE_REF^{}"), not the
 # annotated tag object itself: the installer compares it with the clone's HEAD.
-SUPABASE_COMMIT=564eab8ad7840b13324f68b1bfac074ef8d51c21
+SUPABASE_COMMIT=bc27d2661edd09a5d0b8d76ce33da6d4071a756e
 T2_KEY_FPR=9F9873A566A73E27CFF0294FE2E496114ACDBFD4
 DOCKER_KEY_FPR=9DC858229FC7DD38854AE2D88D81803C0EBFCD88
 TAILSCALE_KEY_FPR=2596A99EAAB33821893C0A79458CA832957F5868
 # Claude Code native binary for linux-x64 from the npm registry, pinned by version
 # and the SHA-512 of the package tarball (its npm "integrity").
-CLAUDE_CODE_VERSION=2.1.284
-CLAUDE_CODE_SHA512=8638cf80de2ef03be7cd9a960d89d4e71c5093292e52b914a1579ebad54b5e3ae1c78a9e44f9b0819ebd045007995e3614145d891c1b2db88313d9e441d004f2
+CLAUDE_CODE_VERSION=2.1.318
+CLAUDE_CODE_SHA512=197fbb0949e0d91e5fed2b00db0d0b697947d9feb67d10850ff6764947b1a1e1f707429fba5290b790ed63d35e0f6629dd5101cfafe4ff15926c63d48ba355d8
 FALLBACK_DNS=(9.9.9.9 149.112.112.112)
 
 if [[ -t 1 ]]; then
