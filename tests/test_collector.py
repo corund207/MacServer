@@ -129,6 +129,26 @@ class ParserTests(unittest.TestCase):
         self.assertIsNone(collector.public_ok(""))
         self.assertEqual(collector.tailscale(None), {"state": "unknown"})
 
+    def test_public_route_is_judged_by_its_containers(self):
+        """A hand-made gateway works without PUBLIC_DOMAIN in the config (its hostname is set in
+        Cloudflare), so the dashboards must not call it off. Tunnels of other projects do not count."""
+        def box(name, state="running", status="Up 2 weeks (healthy)", project="macserver-gateway"):
+            return {"name": name, "state": state, "status": status, "project": project}
+        caddy, tunnel = box("macserver-gateway-caddy-1"), box("macserver-gateway-cloudflared-1", status="Up 8 days")
+        apps_tunnel = box("macserver-apps-cloudflared-1", "exited", "Exited (1)", "macserver-apps")
+        self.assertIsNone(collector.public_route([]))
+        self.assertIsNone(collector.public_route([apps_tunnel, box("supabase-db", project="supabase")]))
+        self.assertEqual(collector.public_route([caddy, tunnel, apps_tunnel]),
+                         {"caddy": "running", "tunnel": "running", "up": True})
+        down = collector.public_route([caddy, box("macserver-gateway-cloudflared-1", "exited", "Exited (1)")])
+        self.assertEqual((down["up"], down["tunnel"]), (False, "exited"))
+        self.assertEqual(collector.public_route([caddy])["tunnel"], "missing")
+        sick = collector.public_route([box("macserver-gateway-caddy-1", status="Up (unhealthy)"), tunnel])
+        self.assertEqual((sick["up"], sick["caddy"]), (False, "unhealthy"))
+        older = collector.public_route([box("gateway-caddy-1", project="gateway"),
+                                        box("gateway-cloudflared-1", project="gateway")])
+        self.assertTrue(older["up"])
+
     def test_hwmon_and_battery(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

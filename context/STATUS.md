@@ -956,3 +956,19 @@ one and delete the old entry from the phone.
 Verified: `tests/test_lib.sh` in WSL against the old and new `lib.sh`; the prompt typed on a pseudo-terminal
 (`script`) with and without a default; shellcheck. Not verified: the full `setup-totp` run on the Mac (it needs
 the phone and a sudo password; the Mac installs this after the full install test).
+
+## 2026-11-04: the dashboards call a running gateway "on" even without PUBLIC_DOMAIN
+
+Both dashboards said "Public API: off, tailnet only" while Cloudflare served traffic. The real Mac runs the
+gateway (the same `gateway/compose.yml`: Caddy plus cloudflared, project `macserver-gateway`) from
+`/home/admin/api-gateway`, not from `/opt/macserver/gateway` where `macserver public setup` puts it, and its
+hostname is set in Cloudflare, so `PUBLIC_DOMAIN` was never written to the config and that was the only thing
+the row looked at. The collector now reports `public_route` from the gateway project's containers (Caddy and
+cloudflared running and healthy; other projects' tunnels such as `macserver-apps` do not count). With a
+`PUBLIC_DOMAIN` the row still probes `https://DOMAIN/auth/v1/health`. Also fixed: the "public API not answering"
+incident looked for project `gateway` and `gateway-cloudflared-1`, but the project is `macserver-gateway`.
+
+Verified: new tests (`public_route`, the Public API row, tests/test_collector.py and tests/test_dashboard.py);
+fed the real Mac's `docker ps` through the new code: `{'caddy': 'running', 'tunnel': 'running', 'up': True}`.
+Not verified: the rows on the Mac's own screen and web page after it updates. The probe from outside still needs
+`PUBLIC_DOMAIN=<hostname>` in `/etc/macserver/macserver.conf` (this Mac has none).

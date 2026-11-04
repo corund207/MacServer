@@ -598,7 +598,10 @@ function statusRows(s) {
   const iface = l ? Object.keys(l.net.ifaces).find((n) => /^(wl|en|eth)/.test(n)) : null;
   row(iface ? 'ok' : 'bad', 'Internet', iface ? `${wifi ? `Wi-Fi ${wifi.ssid}` : iface}${wifi && wifi.signal_dbm !== undefined ? ` · ${wifi.signal_dbm} dBm` : ''}` : 'not connected');
   row(s.tailscale.state === 'Running' ? 'ok' : 'bad', 'Tailscale', `${s.tailscale.state}${s.tailscale.peers_online !== undefined ? ` · ${s.tailscale.peers_online} device(s) online` : ''}`);
-  row(!s.public_domain ? '' : s.public_ok ? 'ok' : 'bad', 'Public API', s.public_domain ? `${s.public_domain} · ${s.public_ok ? 'answering' : 'not answering'}` : 'off, tailnet only');
+  const route = s.public_route;
+  if (s.public_domain) row(s.public_ok ? 'ok' : 'bad', 'Public API', `${s.public_domain} · ${s.public_ok ? 'answering' : 'not answering'}`);
+  else if (route) row(route.up ? 'ok' : 'bad', 'Public API', route.up ? 'on · Caddy and Cloudflare tunnel running' : `down · tunnel ${route.tunnel}, Caddy ${route.caddy}`);
+  else row('', 'Public API', 'off, tailnet only');
   row(s.clock_synced ? 'ok' : 'warn', 'Clock', s.clock_synced ? 'synchronised' : 'not synchronised');
   row(s.host.updates_pending ? 'warn' : 'ok', 'Updates', s.host.updates_pending ? `${s.host.updates_pending} Debian update(s) waiting` : 'up to date');
   if (s.macserver_update) row(['skipped', 'refused', 'rolled-back', 'error'].includes(s.macserver_update.state) ? 'warn' : 'ok', 'MacServer', `${s.macserver_update.message}${s.macserver_update.auto === 'off' ? ' (auto-update off)' : ''}`);
@@ -623,7 +626,7 @@ function renderStatus(s) {
 
 function renderConnect(s) {
   const keys = s.public_keys || {};
-  const pairs = [['API URL', s.api_url || 'unknown', '', s.api_url], ['Public', s.public_domain ? `https://${s.public_domain}` : 'off (tailnet only)']];
+  const pairs = [['API URL', s.api_url || 'unknown', '', s.api_url], ['Public', s.public_domain ? `https://${s.public_domain}` : s.public_route ? (s.public_route.up ? 'on (hostname is set in Cloudflare)' : 'down') : 'off (tailnet only)']];
   if (keys.SUPABASE_PUBLISHABLE_KEY) pairs.push(['Publishable key', `${keys.SUPABASE_PUBLISHABLE_KEY.slice(0, 16)}…`, 'mono', keys.SUPABASE_PUBLISHABLE_KEY]);
   if (keys.ANON_KEY) pairs.push(['Anon key (legacy)', `${keys.ANON_KEY.slice(0, 16)}…`, 'mono', keys.ANON_KEY]);
   pairs.push(['Secret keys', 'sudo macserver keys', 'mono']);

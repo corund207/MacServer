@@ -527,6 +527,21 @@ class DashboardTests(unittest.TestCase):
         finally:
             tui.VT_REQUEST = original
 
+    def test_public_api_row_follows_the_gateway_containers(self):
+        """The row said "off · tailnet only" while a Cloudflare gateway served traffic, because the
+        hostname was never written to the config. Without PUBLIC_DOMAIN it follows the containers."""
+        def public_row(**fields):
+            sampler = tui_fixture.make_sampler("healthy")
+            sampler.status.update(public_domain="", public_ok=None, public_route=None)
+            sampler.status.update(fields)
+            return [(lvl, value) for lvl, label, value in tui.connections(sampler) if label == "Public API"][0]
+        self.assertEqual(public_row(), ("off", "off · tailnet only"))
+        self.assertEqual(public_row(public_route={"caddy": "running", "tunnel": "running", "up": True}),
+                         ("ok", "on · Caddy and Cloudflare tunnel running"))
+        self.assertEqual(public_row(public_route={"caddy": "running", "tunnel": "exited", "up": False}),
+                         ("bad", "down · tunnel exited, Caddy running"))
+        self.assertEqual(public_row(public_domain="api.x", public_ok=True)[1], "api.x · answering")
+
     def test_events_from_status_changes(self):
         ev = tui.Events()
         old = {"containers": [{"name": "supabase-db", "state": "running"}, {"name": "supabase-auth", "state": "running"}],

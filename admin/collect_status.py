@@ -153,6 +153,31 @@ def containers(ps_json_lines):
     return sorted(result, key=lambda c: (c["project"], c["name"]))
 
 
+GATEWAY_PROJECTS = ("macserver-gateway", "gateway")   # `name:` in gateway/compose.yml (older installs: "gateway")
+
+
+def public_route(items):
+    """The public API route as it really runs: the Caddy and cloudflared containers of the gateway
+    project, wherever their files live (`macserver public setup` puts them in /opt/macserver/gateway,
+    a hand-made copy works the same). Its hostname is set in Cloudflare, so the Mac may never have
+    been told PUBLIC_DOMAIN: the route is judged by its containers. None when there are none."""
+    mine = [c for c in items if c.get("project") in GATEWAY_PROJECTS]
+    if not mine:
+        return None
+
+    def part(word):
+        found = [c for c in mine if word in c.get("name", "")]
+        if not found:
+            return "missing"
+        c = found[0]
+        if c.get("state") != "running":
+            return c.get("state") or "down"
+        return "unhealthy" if "unhealthy" in c.get("status", "") else "running"
+
+    caddy, tunnel = part("caddy"), part("cloudflared")
+    return {"caddy": caddy, "tunnel": tunnel, "up": caddy == "running" and tunnel == "running"}
+
+
 def is_funnel_node(peer):
     """Tailscale's own Funnel ingress relays show up as dozens of online peers; they are not the owner's devices."""
     return peer.get("HostName") == "funnel-ingress-node"
@@ -1777,6 +1802,7 @@ def collect(state=None):
         "tailscale": tailscale(ts_text),
         "containers": with_logs(with_stats(containers(ps), stats)),
         "public_domain": domain,
+        "public_route": public_route(containers(ps)),
         "public_ok": cached(state, f"public:{domain}", PUBLIC_TTL_S, now, lambda: public_ok(domain)),
         "macserver_update": self_update(),
         "clock_synced": (run("timedatectl", "show", "-p", "NTPSynchronized", "--value") or "").strip() == "yes",

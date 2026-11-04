@@ -813,6 +813,12 @@ def alert_level(problems):
     return "critical" if any(p[0] == "bad" for p in problems) else "warning" if problems else "ok"
 
 
+def public_route_text(route):
+    if route.get("up"):
+        return "on · Caddy and Cloudflare tunnel running"
+    return f"down · tunnel {route.get('tunnel', '?')}, Caddy {route.get('caddy', '?')}"
+
+
 def connections(sampler):
     s, now = sampler.status or {}, sampler.now
     ts = s.get("tailscale", {}) if s else {}
@@ -832,10 +838,13 @@ def connections(sampler):
         rows.append(("ok" if state == "Running" else "bad", "Tailscale",
                      state + (f" · {peers} device(s) online" if peers is not None and state == "Running" else "")))
     dom = s.get("public_domain", "") if s else ""
+    route = s.get("public_route") if s else None
     if dom:
         pok = s.get("public_ok")
         rows.append(("ok" if pok else "bad" if pok is False else "warn", "Public API",
                      f"{dom} · {'answering' if pok else 'not answering' if pok is False else 'checking'}"))
+    elif route:   # a gateway that runs but whose hostname the Mac was never told
+        rows.append(("ok" if route.get("up") else "bad", "Public API", public_route_text(route)))
     else:
         rows.append(("off", "Public API", "off · tailnet only"))
     cl = s.get("claude", {}) if s else {}
@@ -1365,10 +1374,10 @@ def incidents(sampler):
                 ["sudo systemctl restart macserver-status.timer", "sudo journalctl -u macserver-status -n 30 --no-pager"],
                 files=["/run/macserver/status.json", "/usr/local/lib/macserver/collect_status.py"])
         if s.get("public_domain") and s.get("public_ok") is False:
-            gateway = [f"{c['name']}: {c.get('state')}" for c in containers if c.get("project") == "gateway"]
+            gateway = [f"{c['name']}: {c.get('state')}" for c in containers if c.get("project") in ("macserver-gateway", "gateway")]
             add("bad", "public API not answering", f"https://{s['public_domain']}/auth/v1/health fails",
                 ["sudo macserver public on", f"curl -sI https://{s['public_domain']}/auth/v1/health",
-                 "sudo docker logs --tail 50 gateway-cloudflared-1", "check the tunnel in the Cloudflare dashboard"],
+                 "sudo docker logs --tail 50 macserver-gateway-cloudflared-1", "check the tunnel in the Cloudflare dashboard"],
                 facts=gateway or ["no gateway containers found: the public route is not installed or not running"],
                 files=SERVICE_FILES["caddy"] + ["/etc/macserver/macserver.conf  (PUBLIC_DOMAIN)"])
         if (s.get("host") or {}).get("reboot_required"):
