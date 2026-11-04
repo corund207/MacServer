@@ -1092,3 +1092,30 @@ Verified: `tests/supabase_upgrade_test.sh` (dry run; the upgrade with secrets, d
 modes kept; already current; no version file; an edited file; upstream settings changes; a wrong pin; a failed backup; failed
 pull, restart and health probe each rolled back; bad use), shellcheck. Not verified: the run on the real Mac (needs sudo, the
 ~2 GB image download and a minute or two of downtime) and that the real v0.8.2 files there are stock (the command checks).
+
+## 2026-11-04: the first real lockdown was a false alarm; restore now restarts every container
+
+At 10:58 UTC the Mac isolated itself (trigger auto, score 13, threshold 6). The alert email went out first (GitHub run
+41817769026, HTTP 204), the lockdown screens showed the real facts, and the owner restored it with an Authenticator code at
+the Mac's keyboard (`doomsday off`, then `restore --code`). Nothing in the findings was an intrusion:
+
+- 10 points: five cloudflared connections to Cloudflare's tunnel edge on port 7844 (198.41.192.x / 198.41.200.x, UDP/QUIC).
+  The collector names a flow by its container (`macserver-gateway-cloudflared-1`, `macserver-apps-cloudflared-1`) or, for the
+  host-network RustDesk tunnel, "this Mac", so the `cloudflared` allowlist entry never matched, and 7844 is no trusted port.
+  The detector now trusts port 7844 to Cloudflare's own ranges (198.41.128.0/17, 2606:4700::/32) whoever sends it; 7844 to
+  anywhere else, and other ports to Cloudflare, still score. The dashboards call the port "cf tunnel".
+- 3 points: `irq/9-acpi`, a kernel thread (and `kworker/u16:2-kcryptd-25` scored right after the restore). The detector only
+  trusted names in `[brackets]`, which `/proc/PID/stat` never gives, and which any process can choose. The collector now marks
+  each process `kernel` from the kernel's own PF_KTHREAD flag (stat field 9) and the detector trusts that mark only.
+- Restore brought back only Supabase: every other container (apps, the hand-made gateway in `~/api-gateway`, RustDesk,
+  PlaneSight; all `restart: unless-stopped`) stayed exited. The pre-isolation snapshot now lists every running container by
+  name, and restore starts each of them again, naming any it cannot start. This time the 16 containers were started by hand
+  over SSH (each had stopped between 10:58:34 and 10:58:44 UTC).
+
+Verified: `tests/doomsday_restore_test.sh` (new, in CI; stub docker/systemctl/tailscale: snapshot lists the containers,
+restore starts them and survives a vanished one, docker down, an old snapshot without the list; 6 of its checks fail on the
+old script), new detector/collector tests, the whole suite in WSL Debian (255 tests), shellcheck; the new detector and
+collector run read-only on the real Mac's live data: score 0 (was 9 with the tunnels back up), `irq/9-acpi` marked kernel,
+`dockerd`/`containerd`/`systemd` not. Not verified: a full isolate -> restore on the Mac with the new script (it cuts the
+network). Detection is OFF on the Mac until this update is installed and `doomsday test` is quiet; then
+`sudo macserver doomsday on`.

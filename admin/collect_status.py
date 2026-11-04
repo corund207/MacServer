@@ -334,9 +334,13 @@ def disk_devices(diskstats_text, block_root="/sys/block"):
     return out
 
 
+PF_KTHREAD = 0x00200000   # /proc/PID/stat flags bit the kernel sets on its own threads only
+
+
 def process_ticks(proc_root, page_size):
-    """{pid: {name, user, ticks, start, rss, state, threads}} for every process. Only the
-    short process name is reported: command lines can carry secrets."""
+    """{pid: {name, user, ticks, start, rss, state, threads, kernel}} for every process. Only the
+    short process name is reported: command lines can carry secrets. `kernel` comes from the kernel's
+    own PF_KTHREAD flag: a name like "kworker/0:1" or "[kworker/0:1]" can be picked by any process."""
     out = {}
     for entry in Path(proc_root).iterdir():
         if not entry.name.isdigit():
@@ -356,7 +360,8 @@ def process_ticks(proc_root, page_size):
             user = str(uid)
         out[int(entry.name)] = {"name": head.partition("(")[2][:24], "user": user, "state": f[0],
                                 "ticks": int(f[11]) + int(f[12]), "start": int(f[19]),
-                                "rss": int(f[21]) * page_size, "threads": int(f[17])}
+                                "rss": int(f[21]) * page_size, "threads": int(f[17]),
+                                "kernel": bool(int(f[6]) & PF_KTHREAD)}
     return out
 
 
@@ -430,7 +435,7 @@ def live_stats(prev, now, proc_root="/proc", sys_root="/sys", tick_hz=None, page
         if known and old and old[1] == info["start"]:
             cpu_pct = round(100 * max(info["ticks"] - old[0], 0) / tick_hz / span, 1)
         busy.append({"pid": pid, "name": info["name"], "user": info["user"], "state": info["state"],
-                     "cpu": cpu_pct, "rss": info["rss"], "threads": info["threads"],
+                     "cpu": cpu_pct, "rss": info["rss"], "threads": info["threads"], "kernel": info["kernel"],
                      "mem": round(100 * info["rss"] / mem_total, 1) if mem_total else 0.0})
     busy.sort(key=lambda x: (-x["cpu"], -x["rss"]))
 
@@ -595,7 +600,7 @@ ID_SEGMENT = re.compile(r"/(?:[0-9a-fA-F]{8}-[0-9a-fA-F-]{27}|\d{2,})(?=/|$)")
 PORT_NAMES = {22: "ssh", 53: "dns", 80: "http", 123: "ntp", 443: "https", 465: "smtp", 587: "smtp",
               993: "imap", 3478: "stun", 5432: "postgres", 6543: "pooler", 8000: "api", 8090: "admin",
               8443: "studio", 20241: "metrics", 21115: "rustdesk", 21116: "rustdesk", 21117: "relay",
-              21118: "rd web", 21119: "rd web", 41641: "tailscale"}
+              21118: "rd web", 21119: "rd web", 7844: "cf tunnel", 41641: "tailscale"}
 TAILSCALE_PORT = 41641
 TAILNET = ipaddress.ip_network("100.64.0.0/10")
 TAILNET6 = ipaddress.ip_network("fd7a:115c:a1e0::/48")

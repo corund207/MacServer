@@ -98,7 +98,10 @@ disables detection only).
   LAN/public connections, unexpected listeners and outbound traffic, API 5xx
   spikes and unknown root processes. Tailscale SSH, loopback, DNS/NTP/Tailscale
   traffic, multicast and broadcast discovery (SSDP, mDNS: they never leave the LAN),
-  processes inside containers (the collector marks them from their cgroup) and the
+  Cloudflare Tunnel connections to Cloudflare's edge (port 7844 to Cloudflare's own
+  ranges, whichever container sends them), kernel threads (the collector marks them
+  from the kernel's PF_KTHREAD flag), processes inside containers (the collector marks
+  them from their cgroup) and the
   allowlisted AI-agent/owner processes never score; LAN SSH is noted but cannot fire
   alone. Isolation needs a score of at least `DOOMSDAY_SCORE` (default 6) for
   `DOOMSDAY_CONSECUTIVE` (default 2) checks in a row.
@@ -125,8 +128,9 @@ disables detection only).
   bricking the running system. **This setup installs no SSH server**, so after a
   lockdown the Mac is reachable only on its own keyboard and screen.
 - **Pre-emptive exclusions** (no config needed): Tailscale direct UDP 41641,
-  ephemeral-port hole-punching (≥ 32768), mDNS UDP 5353, kernel threads
-  (process names in brackets), container processes (containerd, docker-proxy,
+  ephemeral-port hole-punching (≥ 32768), mDNS UDP 5353, Cloudflare Tunnel's edge
+  (port 7844), kernel threads (by the kernel's own flag: a name in brackets proves
+  nothing, any process can choose it), container processes (containerd, docker-proxy,
   runc), and host-network services (RustDesk `hbbs`/`hbbr`, PlaneSight).
 - **Configurable allowlist** for anything else you run:
   `DOOMSDAY_TRUSTED_PROCS` / `DOOMSDAY_TRUSTED_USERS` in
@@ -138,7 +142,8 @@ disables detection only).
   `sudo macserver doomsday setup-totp`): `unlock --code` enters DEBUG mode
   (still isolated, amber banner, diagnose freely), `restore --code` returns to
   normal and auto-restores the firewall, Tailscale, Docker, Supabase, the
-  public route and the admin page from a pre-isolation snapshot. If an SSH server
+  public route, the admin page and every container that was running (the
+  pre-isolation snapshot lists them by name). If an SSH server
   exists it is started only during lockdown (LAN only) and returned to its prior state.
   The lockdown firewall persists across reboots until restored.
 

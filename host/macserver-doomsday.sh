@@ -49,7 +49,7 @@ state_set() {  # state_set KEY VALUE (VALUE is raw JSON; quote strings with jq -
 }
 
 publish_run() {  # dashboard + collector read the world-readable copy
-  install -d -m 0755 /run/macserver
+  install -d -m 0755 "$(dirname "$RUN")"
   local ssh threshold
   ssh=$(jq -r '.ssh // "missing"' "$SNAP" 2>/dev/null || echo missing)
   threshold=$(conf_get DOOMSDAY_SCORE 6)
@@ -67,8 +67,14 @@ snapshot_services() {
   tailscale_running 2>/dev/null && ts_state="up" || ts_state="down"
   [[ -f $GATEWAY_DIR/compose.yml ]] && docker ps --format '{{.Names}}' 2>/dev/null | grep -q . && gateway="on" || gateway="off"
   systemctl is-active --quiet macserver-admin.service 2>/dev/null && admin="on" || admin="off"
+  # Every running container by name: isolation stops them all, and most use `restart: unless-stopped`,
+  # so nothing but restore would ever start them again (apps, hand-made tunnels, RustDesk, PlaneSight).
+  local containers
+  containers=$(docker ps --format '{{.Names}}' 2>/dev/null | jq -Rsc 'split("\n") | map(select(length > 0))') || containers='[]'
+  [[ -n $containers ]] || containers='[]'
   jq -n --arg ssh "$ssh_state" --arg ts "$ts_state" --arg gw "$gateway" --arg admin "$admin" \
-    '{ssh: $ssh, tailscale: $ts, gateway: $gw, admin: $admin}' >"$SNAP.tmp" && mv "$SNAP.tmp" "$SNAP"
+    --argjson containers "$containers" \
+    '{ssh: $ssh, tailscale: $ts, gateway: $gw, admin: $admin, containers: $containers}' >"$SNAP.tmp" && mv "$SNAP.tmp" "$SNAP"
   chmod 0600 "$SNAP"
 }
 
@@ -219,6 +225,13 @@ do_restore() {
   [[ -f $SNAP ]] && { gw_was=$(jq -r '.gateway // "off"' "$SNAP"); ts_was=$(jq -r '.tailscale // "down"' "$SNAP"); ssh_was=$(jq -r '.ssh // "inactive"' "$SNAP"); }
   if [[ $ts_was == up ]]; then tailscale up --ssh --accept-dns=false >/dev/null 2>&1 || tailscale up >/dev/null 2>&1 || true; fi
   if [[ $gw_was == on && -f $GATEWAY_DIR/compose.yml ]]; then gateway_compose up -d --wait >/dev/null 2>&1 || true; fi
+  # Then every other container that ran before the lockdown (already running ones are a no-op).
+  local name started=0 failed=()
+  while IFS= read -r name; do
+    [[ -n $name ]] || continue
+    if docker start "$name" >/dev/null 2>&1; then started=$((started + 1)); else failed+=("$name"); fi
+  done < <(jq -r '(.containers // [])[]' "$SNAP" 2>/dev/null || true)
+  log "containers started again: $started, failed: ${#failed[@]}"
   systemctl restart macserver-admin.service >/dev/null 2>&1 || true
   systemctl start macserver-terminal.service macserver-claude-control.path >/dev/null 2>&1 || true
   if [[ $ssh_was != active ]]; then systemctl disable --now ssh.service ssh.socket >/dev/null 2>&1 || true; fi
@@ -231,7 +244,10 @@ do_restore() {
   state_set since 'null'
   log "restored to normal"
   wall -n "MacServer doomsday: back to NORMAL, everything restored." 2>/dev/null || true
-  ok "normal: network, Tailscale, Supabase, admin page and firewall restored"
+  ok "normal: network, Tailscale, Supabase, admin page, firewall and $started container(s) restored"
+  if [[ ${#failed[@]} -gt 0 ]]; then
+    warn "could not start: ${failed[*]} (see: sudo docker ps -a; start one: sudo docker start NAME)"
+  fi
   say "Extra encrypted volumes ($(conf_get DOOMSDAY_CRYPT_CLOSE "(none)")) stay locked: reopen by hand if you use them."
 }
 

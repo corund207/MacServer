@@ -185,10 +185,37 @@ class ScoringTests(unittest.TestCase):
                      procs=[{"pid": 1412006, "name": "MainThread", "user": "root", "container": True}])
         self.assertEqual(doomsday.score_findings(data, self.procs, self.users), (0, []))
 
-    def test_kernel_thread_auto_trusted(self):
-        procs = [{"pid": 10, "name": "[kworker/0:1]", "user": "root", "cpu": 50.0},
-                 {"pid": 11, "name": "[rcu_sched]", "user": "root", "cpu": 10.0}]
-        self.assertEqual(doomsday.score_findings(flows(procs=procs), self.procs, self.users), (0, []))
+    def test_kernel_threads_are_trusted_by_the_kernel_flag_not_by_name(self):
+        """On the real Mac irq/9-acpi scored in the first lockdown and kworker/u16:2-kcryptd-25 right after it:
+        the collector reports kernel threads without brackets. It marks them from PF_KTHREAD; a root process
+        that only names itself like a kernel thread, brackets or not, still scores."""
+        kernel = [{"pid": 58, "name": "irq/9-acpi", "user": "root", "cpu": 1.5, "kernel": True},
+                  {"pid": 495527, "name": "kworker/u16:2-kcryptd-25", "user": "root", "kernel": True}]
+        self.assertEqual(doomsday.score_findings(flows(procs=kernel), self.procs, self.users), (0, []))
+        for name in ("[kworker/0:1]", "kworker/0:1", "irq/9-acpi"):
+            fake = [{"pid": 4242, "name": name, "user": "root", "cpu": 50.0, "kernel": False}]
+            self.assertEqual(doomsday.score_findings(flows(procs=fake), self.procs, self.users)[0], 3, name)
+            unmarked = [{"pid": 4242, "name": name, "user": "root", "cpu": 50.0}]   # no mark at all
+            self.assertEqual(doomsday.score_findings(flows(procs=unmarked), self.procs, self.users)[0], 3, name)
+
+    def test_the_first_real_lockdown_scores_zero(self):
+        """2026-11-04 10:58 UTC, score 13: five cloudflared connections to Cloudflare's tunnel edge on port 7844,
+        named by tunnel container or, for the host-network RustDesk tunnel, "this Mac", plus irq/9-acpi.
+        The allowlist here has no "cloudflared": the edge itself is what is trusted."""
+        out = [{"who": who, "dst": dst, "kind": "public", "port": 7844, "svc": "udp", "n": 1}
+               for who, dst in (("macserver-gateway-cloudflared-1", "198.41.192.37"),
+                                ("macserver-gateway-cloudflared-1", "198.41.200.23"),
+                                ("macserver-gateway-cloudflared-1", "198.41.192.107"),
+                                ("this Mac", "198.41.192.77"),
+                                ("macserver-apps-cloudflared-1", "198.41.200.233"),
+                                ("macserver-apps-cloudflared-1", "2606:4700:a0::7"))]
+        procs = [{"pid": 58, "name": "irq/9-acpi", "user": "root", "cpu": 1.5, "kernel": True}]
+        self.assertEqual(doomsday.score_findings(flows(out=out, procs=procs), self.procs, self.users), (0, []))
+
+    def test_tunnel_port_elsewhere_and_other_ports_to_cloudflare_still_score(self):
+        for dst, port in (("203.0.113.9", 7844), ("198.41.200.23", 7845), ("cloudflared", 7844), ("104.16.0.1", 6667)):
+            data = flows(out=[{"who": "mystery", "dst": dst, "kind": "public", "port": port, "svc": "tcp"}])
+            self.assertEqual(doomsday.score_findings(data, self.procs, self.users)[0], 2, (dst, port))
 
     def test_mdns_listener_ignored(self):
         rows = [{"port": 5353, "addr": "0.0.0.0", "scope": "all", "proc": "avahi-daemon", "svc": "mdns"}]

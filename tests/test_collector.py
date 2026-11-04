@@ -178,6 +178,21 @@ class ParserTests(unittest.TestCase):
             self.assertEqual([collector.in_container(p, tmp) for p in (10, 11, 12, 13)], [True, False, False, True])
             self.assertFalse(collector.in_container(99, tmp))   # gone, or unreadable
 
+    def test_kernel_threads_are_marked_from_the_kernel_flag(self):
+        """/proc/PID/stat field 9 carries PF_KTHREAD (0x00200000) for the kernel's own threads only. The name
+        has no brackets there (irq/9-acpi), and any process can name itself "[kworker/0:1]"."""
+        with tempfile.TemporaryDirectory() as tmp:
+            rows = {"58": "58 (irq/9-acpi) S 2 0 0 0 -1 2129984 0 0 0 0 0 12 0 0 -51 0 1 0 15 0 0",
+                    "4242": "4242 ([kworker/0:1]) S 1 4242 4242 0 -1 4194560 90 0 0 0 7 3 0 0 20 0 1 0 900 1000 25"}
+            for pid, text in rows.items():
+                (Path(tmp) / pid).mkdir()
+                (Path(tmp) / pid / "stat").write_text(text + "\n")
+            procs = collector.process_ticks(tmp, 4096)
+        self.assertEqual((procs[58]["name"], procs[58]["kernel"]), ("irq/9-acpi", True))
+        self.assertEqual((procs[4242]["name"], procs[4242]["kernel"]), ("[kworker/0:1]", False))
+        self.assertEqual((procs[4242]["ticks"], procs[4242]["rss"]), (10, 25 * 4096))
+        self.assertEqual(collector.PORT_NAMES[7844], "cf tunnel")
+
     def test_hwmon_and_battery(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

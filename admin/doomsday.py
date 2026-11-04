@@ -5,8 +5,9 @@ Detection reads the status collector's debug section (flows, listeners, requests
 plus a root-process scan, and scores findings. Trusted activity never scores:
 Tailscale SSH and the tailnet, loopback, DNS/NTP/Tailscale control traffic,
 Tailscale direct LAN connections (UDP 41641) and ephemeral-port hole-punching,
-mDNS (UDP 5353), kernel threads (process names in brackets), container
-processes (containerd, docker-proxy, runc), and the allowlisted AI-agent /
+mDNS (UDP 5353), Cloudflare Tunnel connections to Cloudflare's edge (port 7844),
+kernel threads (the collector's `kernel` mark, from the kernel's own flag),
+container processes (containerd, docker-proxy, runc), and the allowlisted AI-agent /
 owner processes (including the listeners of allowlisted services, e.g. a
 self-hosted remote desktop, PlaneSight host-network services).
 
@@ -47,6 +48,13 @@ TRUSTED_OUT_PORTS = {53, 80, 123, 443, 465, 587, 993, 3478, 41641, 5353}
 TAILSCALE_DIRECT_PORT = 41641
 EPHEMERAL_PORT_MIN = 32768
 TRUSTED_OUT_SVC = {"tailscale", "dns", "ntp", "stun", "https", "http", "smtp", "imap", "mdns"}
+# cloudflared (the public route and any other tunnel) keeps its connections to Cloudflare's edge on
+# port 7844 (QUIC, or TCP), whichever container or host-network process runs it, so the source name
+# is no help: a tunnel container is "macserver-gateway-cloudflared-1", a host-network one is "this Mac".
+# The edge (region1/region2.v2.argotunnel.com, 198.41.192.x / 198.41.200.x, 2606:4700:a0::/a8::) lies
+# in Cloudflare's published ranges below; port 7844 to anywhere else still scores.
+CLOUDFLARE_TUNNEL_PORT = 7844
+CLOUDFLARE_TUNNEL_NETS = (ipaddress.ip_network("198.41.128.0/17"), ipaddress.ip_network("2606:4700::/32"))
 # Listeners that may exist without scoring (loopback is always fine).
 EXPECTED_LISTEN_PORTS = {22, 53, 123, 443, 41641, 5432, 6543, 8000, 8080, 8090, 8091, 8443, 5353}
 # Processes that are part of normal operation (short names, as reported).
@@ -63,9 +71,6 @@ DEFAULT_TRUSTED_PROCS = {
     "hbbs", "hbbr",
 }
 DEFAULT_TRUSTED_USERS = {"root", "macserver-admin", "macserver-console"}
-
-# Kernel thread marker: processes with names in [] are kernel threads
-KERNEL_THREAD_RE = re.compile(r"^\[.+\]$")
 
 SECRET_PATTERNS = [
     re.compile(r"eyJ[\w-]+\.[\w-]+\.[\w-]*"),
@@ -140,10 +145,6 @@ def read_allow(conf):
         }
         procs.update(container_procs)
 
-    # Auto-trust kernel threads (process names in brackets like [kworker/0:1])
-    if conf.get("DOOMSDAY_TRUST_KERNEL_THREADS", "true").lower() == "true":
-        pass  # handled in scoring via KERNEL_THREAD_RE
-
     return procs, users
 
 
@@ -162,6 +163,17 @@ def save_state(state, path=KEEP_STATE):
     tmp.write_text(json.dumps(state, indent=1))
     os.chmod(tmp, 0o600)
     os.replace(tmp, path)
+
+
+def is_cloudflare_tunnel(address, port):
+    """A tunnel's own connection to Cloudflare's edge: port 7844 to a Cloudflare address."""
+    if port != CLOUDFLARE_TUNNEL_PORT:
+        return False
+    try:
+        ip = ipaddress.ip_address(str(address).strip("[]").split("%")[0])
+    except ValueError:
+        return False
+    return any(ip in net for net in CLOUDFLARE_TUNNEL_NETS)
 
 
 def is_local_broadcast(address):
@@ -218,6 +230,8 @@ def score_findings(data, trusted_procs, trusted_users, trust_containers=True):
             continue  # HTTPS/DNS/NTP/mail/Tailscale to the Internet is normal
         if port >= EPHEMERAL_PORT_MIN:
             continue  # client-side ephemeral port: Tailscale direct, WebRTC, not a server C2 port
+        if is_cloudflare_tunnel(entry.get("dst", ""), port):
+            continue  # cloudflared holding its tunnel open (the public route, app and RustDesk tunnels)
         if who in trusted_procs:
             continue  # verified agent / service process
         score += 2
@@ -251,8 +265,9 @@ def score_findings(data, trusted_procs, trusted_users, trust_containers=True):
         name = (proc.get("name") or "")[:32]
         if name in trusted_procs:
             continue
-        # Auto-trust kernel threads (names in brackets like [kworker/0:1])
-        if KERNEL_THREAD_RE.match(name):
+        # A kernel thread (irq/9-acpi, kworker/...): the collector reads the kernel's own flag, because a
+        # name, brackets included, is whatever the process chose.
+        if proc.get("kernel"):
             continue
         if trust_containers and proc.get("container"):
             continue   # root inside its container, not on the host
