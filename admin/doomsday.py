@@ -20,6 +20,7 @@ Standard library only. All pure logic is unit-tested in tests/test_doomsday.py.
 import base64
 import hashlib
 import hmac
+import ipaddress
 import json
 import os
 import re
@@ -163,13 +164,25 @@ def save_state(state, path=KEEP_STATE):
     os.replace(tmp, path)
 
 
-def score_findings(data, trusted_procs, trusted_users):
+def is_local_broadcast(address):
+    """Multicast and broadcast destinations never leave the local network: SSDP/UPnP discovery (Tailscale's
+    port mapping sends it), mDNS, LLMNR. That is chatter, not a connection to anyone."""
+    try:
+        ip = ipaddress.ip_address(str(address).strip("[]").split("%")[0])
+    except ValueError:
+        return False
+    return ip.is_multicast or str(ip) == "255.255.255.255"
+
+
+def score_findings(data, trusted_procs, trusted_users, trust_containers=True):
     """Score intrusion-like behaviour. Returns (score, [reasons]).
 
     `data` is shaped like the collector output: debug.flows.{in,out},
     debug.listeners, debug.requests.classes, live.procs. Trusted tailnet /
     loopback / infra traffic never scores; AI-agent and owner processes on
-    the allowlist never score.
+    the allowlist never score; neither do processes inside containers
+    (`container` is set by the collector from the cgroup) unless
+    DOOMSDAY_TRUST_CONTAINERS=false.
     """
     score, reasons = 0, []
     debug = data.get("debug") or {}
@@ -192,7 +205,7 @@ def score_findings(data, trusted_procs, trusted_users):
         score += 3
         reasons.append(f"inbound {kind} connection to port {port} from {entry.get('src', '?')} (x{n})")
     for entry in flows.get("out") or []:
-        if entry.get("kind") != "public":
+        if entry.get("kind") != "public" or is_local_broadcast(entry.get("dst", "")):
             continue
         who = entry.get("who", "")
         if who in ("tailscaled", "this Mac") and entry.get("svc") in TRUSTED_OUT_SVC:
@@ -241,6 +254,8 @@ def score_findings(data, trusted_procs, trusted_users):
         # Auto-trust kernel threads (names in brackets like [kworker/0:1])
         if KERNEL_THREAD_RE.match(name):
             continue
+        if trust_containers and proc.get("container"):
+            continue   # root inside its container, not on the host
         score += 3
         reasons.append(f"unknown root process: {name} (pid {proc.get('pid', '?')})")
         break  # one is enough to report; the shell scan lists the rest
@@ -326,7 +341,8 @@ def check(source=STATUS, state=None):
     except (OSError, ValueError):
         return 0, [], False  # fail closed-safe: no data, no isolation
     procs, users = read_allow(conf)
-    score, reasons = score_findings(data, procs, users)
+    trust_containers = conf.get("DOOMSDAY_TRUST_CONTAINERS", "true").lower() == "true"
+    score, reasons = score_findings(data, procs, users, trust_containers)
     return score, reasons, should_isolate(score, threshold, consecutive, state)
 
 
@@ -364,7 +380,7 @@ def banner(state, ssh="missing", header="", now=None):
     else:
         access = "This keyboard and screen, or SSH from the local network only (192.168.x.x, port 22)."
     lines = [row("SYSTEM ISOLATION PROTOCOL INITIATED"),
-             row(f"Since {when}, trigger: {trigger.upper()}" + (f", score {score} (isolates over {threshold})" if threshold else f", score {score}")),
+             row(f"Since {when}, trigger: {trigger.upper()}" + (f", score {score} (isolates at {threshold} or more)" if threshold else f", score {score}")),
              row()]
     lines += [row("WHAT TRIGGERED IT")] + (sum((wrapped("- " + r) for r in reasons[:6]), []) or wrapped("- " + (
         "you isolated it by hand" if trigger == "manual" else "no detail was recorded")))

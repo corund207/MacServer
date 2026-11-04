@@ -165,6 +165,19 @@ class ParserTests(unittest.TestCase):
             state.write_text("not json")                                                # garbage is not a crash
             self.assertEqual(collector.backup_info(T0, drive=collector.backup_drive(conf, state))["count"], 0)
 
+    def test_multicast_is_local_and_container_processes_are_recognised(self):
+        for address in ("239.255.255.250", "224.0.0.251", "ff02::fb", "192.168.1.1"):
+            self.assertEqual(collector.ip_kind(address), "lan", address)
+        self.assertEqual(collector.ip_kind("8.8.8.8"), "public")
+        with tempfile.TemporaryDirectory() as tmp:
+            for pid, cgroup in {"10": "0::/system.slice/docker-0123abcd.scope\n", "11": "0::/system.slice/ssh.service\n",
+                                "12": "0::/user.slice/user-1000.slice/session-3.scope\n",
+                                "13": "0::/kubepods/burstable/pod1/abc\n"}.items():
+                (Path(tmp) / pid).mkdir()
+                (Path(tmp) / pid / "cgroup").write_text(cgroup)
+            self.assertEqual([collector.in_container(p, tmp) for p in (10, 11, 12, 13)], [True, False, False, True])
+            self.assertFalse(collector.in_container(99, tmp))   # gone, or unreadable
+
     def test_hwmon_and_battery(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -2181,7 +2181,7 @@ def page_doomsday(c, sampler, items, x, y, w, h):
     score_bar_w = min(inner_w - 4, 40)
     filled = round(score_pct * score_bar_w)
     bar_str = "█" * filled + "░" * (score_bar_w - filled)
-    c.put(inner_x + 2, metrics_y, f"ANOMALY SCORE  │{bar_str}│  {score}  (isolates over {threshold})", TRON_BRIGHT)
+    c.put(inner_x + 2, metrics_y, f"ANOMALY SCORE  │{bar_str}│  {score}  (isolates at {threshold} or more)", TRON_BRIGHT)
     metrics_y += 1
 
     # Trigger

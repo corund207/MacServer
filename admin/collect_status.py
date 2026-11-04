@@ -360,6 +360,15 @@ def process_ticks(proc_root, page_size):
     return out
 
 
+CONTAINER_CGROUP = re.compile(r"(?:^|/)(?:docker[-/]|containerd[-/]|crio-|libpod-|kubepods)")
+
+
+def in_container(pid, proc_root="/proc"):
+    """True for a process that runs inside a container: its cgroup is a docker/containerd scope. Such a
+    process is root only inside its container (a Node app in Docker shows up as root "MainThread" on the host)."""
+    return bool(CONTAINER_CGROUP.search(read(Path(proc_root) / str(pid) / "cgroup", "") or ""))
+
+
 def meminfo_fields(text):
     fields = {}
     for line in text.splitlines():
@@ -474,7 +483,8 @@ def live_stats(prev, now, proc_root="/proc", sys_root="/sys", tick_hz=None, page
                     "write": rate(disk[1], old_disk[1] if old_disk else None)},
         "tasks": {"total": len(procs), "running": sum(1 for i in procs.values() if i["state"] == "R"),
                   "threads": sum(i["threads"] for i in procs.values())},
-        "procs": busy[:LIVE_PROCS] + sorted(busy[LIVE_PROCS:], key=lambda x: -x["rss"])[:LIVE_PROCS_BY_MEM],
+        "procs": [dict(p, container=p["user"] == "root" and in_container(p["pid"], proc_root))
+                  for p in busy[:LIVE_PROCS] + sorted(busy[LIVE_PROCS:], key=lambda x: -x["rss"])[:LIVE_PROCS_BY_MEM]],
     }
     reading = {"at": now, "cpu": cpu, "net": net, "disk": disk, "cpu_kinds": kinds, "stat": counters, "vm": vm,
                "disks": disks_now, "procs": {str(pid): (i["ticks"], i["start"]) for pid, i in procs.items()}}
@@ -620,8 +630,8 @@ def ip_kind(text):
         return "loopback"
     if ip in TAILNET or ip in TAILNET6:
         return "tailnet"
-    if ip.is_private or ip.is_link_local:
-        return "lan"
+    if ip.is_private or ip.is_link_local or ip.is_multicast:
+        return "lan"   # multicast (SSDP, mDNS, LLMNR) never leaves the local network
     return "public"
 
 

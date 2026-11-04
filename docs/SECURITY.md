@@ -97,9 +97,11 @@ disables detection only).
 - **Detection** (`admin/doomsday.py`, checked every minute): scores inbound
   LAN/public connections, unexpected listeners and outbound traffic, API 5xx
   spikes and unknown root processes. Tailscale SSH, loopback, DNS/NTP/Tailscale
-  traffic and the allowlisted AI-agent/owner processes never score; LAN SSH is
-  noted but cannot fire alone. Isolation needs a score over `DOOMSDAY_SCORE`
-  (default 6) for `DOOMSDAY_CONSECUTIVE` (default 2) checks in a row.
+  traffic, multicast and broadcast discovery (SSDP, mDNS: they never leave the LAN),
+  processes inside containers (the collector marks them from their cgroup) and the
+  allowlisted AI-agent/owner processes never score; LAN SSH is noted but cannot fire
+  alone. Isolation needs a score of at least `DOOMSDAY_SCORE` (default 6) for
+  `DOOMSDAY_CONSECUTIVE` (default 2) checks in a row.
 - **Alert first**: the server POSTs a redacted payload (hostname, IPs, trigger,
   score, findings; secrets stripped) to the `doomsday-alert` GitHub workflow,
   which emails the owner. The workflow holds the SMTP secrets; the Mac holds

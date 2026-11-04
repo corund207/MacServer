@@ -161,6 +161,30 @@ class ScoringTests(unittest.TestCase):
         procs = [{"pid": 100, "name": "docker", "user": "root", "cpu": 5.0}]
         self.assertEqual(doomsday.score_findings(flows(procs=procs), self.procs, self.users), (0, []))
 
+    def test_multicast_and_broadcast_discovery_is_not_an_outbound_connection(self):
+        """Found on the real Mac: Tailscale's port mapping sends SSDP to 239.255.255.250:1900, which scored 2
+        as "unexpected outbound". Multicast never leaves the LAN. A real public host on that port still scores."""
+        for dst in ("239.255.255.250", "224.0.0.251", "255.255.255.255", "ff02::c"):
+            data = flows(out=[{"kind": "public", "who": "this Mac", "dst": dst, "port": 1900}])
+            self.assertEqual(doomsday.score_findings(data, self.procs, self.users), (0, []), dst)
+        data = flows(out=[{"kind": "public", "who": "this Mac", "dst": "203.0.113.9", "port": 1900}])
+        self.assertEqual(doomsday.score_findings(data, self.procs, self.users)[0], 2)
+
+    def test_root_inside_a_container_is_trusted_unless_turned_off(self):
+        """Found on the real Mac: a Node app in Docker is root "MainThread" on the host and scored 3."""
+        procs = [{"pid": 1412006, "name": "MainThread", "user": "root", "cpu": 2.5, "container": True}]
+        self.assertEqual(doomsday.score_findings(flows(procs=procs), self.procs, self.users), (0, []))
+        self.assertEqual(doomsday.score_findings(flows(procs=procs), self.procs, self.users, trust_containers=False)[0], 3)
+        host_proc = [{"pid": 7, "name": "MainThread", "user": "root", "cpu": 2.5, "container": False}]
+        self.assertEqual(doomsday.score_findings(flows(procs=host_proc), self.procs, self.users)[0], 3)
+        self.assertEqual(doomsday.score_findings(flows(procs=[{"pid": 7, "name": "xmrig", "user": "root"}]),
+                                                 self.procs, self.users)[0], 3)   # no container mark: still unknown
+
+    def test_both_real_mac_findings_together_are_quiet(self):
+        data = flows(out=[{"kind": "public", "who": "this Mac", "dst": "239.255.255.250", "port": 1900}],
+                     procs=[{"pid": 1412006, "name": "MainThread", "user": "root", "container": True}])
+        self.assertEqual(doomsday.score_findings(data, self.procs, self.users), (0, []))
+
     def test_kernel_thread_auto_trusted(self):
         procs = [{"pid": 10, "name": "[kworker/0:1]", "user": "root", "cpu": 50.0},
                  {"pid": 11, "name": "[rcu_sched]", "user": "root", "cpu": 10.0}]
@@ -361,7 +385,7 @@ class LockdownDisplayTests(unittest.TestCase):
 
     def test_banner_carries_the_real_facts(self):
         text = doomsday.banner(self.STATE, "missing")
-        for wanted in ("score 9 (isolates over 6)", "trigger: AUTO", "inbound LAN connection from 192.168.1.5",
+        for wanted in ("score 9 (isolates at 6 or more)", "trigger: AUTO", "inbound LAN connection from 192.168.1.5",
                        "listener on 0.0.0.0:9999", "(HTTP 204)", "sudo macserver doomsday restore"):
             self.assertIn(wanted, text)
         for invented in self.INVENTED:

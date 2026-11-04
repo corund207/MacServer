@@ -1044,3 +1044,23 @@ lockdown (it cuts the network; the banner was rendered from sample state only).
 
 Left alone on purpose: ruff's `B905` (zip without `strict=`) and `B023` in the battery code (the lambda runs inside its own
 loop pass, so it is safe).
+
+## 2026-11-04: doomsday no longer scores multicast chatter or processes inside containers
+
+The owner ran `sudo macserver doomsday test` as root on the real Mac: score 5 (threshold 6), from "unexpected outbound
+this Mac -> 239.255.255.250:1900" (2) and "unknown root process: MainThread (pid 1412006)" (3). Both false alarms, one finding
+short of isolating the Mac (which cuts Tailscale):
+
+- 239.255.255.250:1900 is SSDP discovery (Tailscale's port mapping sends it). `ip_kind` called multicast "public"; it is now
+  "lan", and the detector also skips multicast and broadcast destinations itself.
+- `MainThread` is a Node app inside a Docker container: root on the host, root only in its container. The collector now marks
+  each listed process that runs in a container (`in_container`: its cgroup is a docker/containerd scope) and the detector
+  trusts those unless `DOOMSDAY_TRUST_CONTAINERS=false`. On this Mac the live list also holds `beam.smp` (Supabase Realtime),
+  `next-server` and more root container processes; any of them could have been the next false finding.
+- The banner and lockdown page said "isolates over 6"; the code isolates at 6 or more (`score >= threshold`). Fixed, and the
+  security doc says "at least".
+
+Verified: new tests (multicast, container trust and its off switch, real-Mac pair together scores 0; `ip_kind`,
+`in_container`); the new detector run against the real Mac's live `status.json` from a temporary folder: score 0 (was 5), all
+nine root processes in the list classified (host services by name, container processes by cgroup). Not verified: the
+collector's own `container` field on the Mac (it appears after this update) and, as before, a real lockdown.
