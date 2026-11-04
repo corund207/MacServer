@@ -50,12 +50,12 @@ die()  { printf '%s  error:%s %s\n' "$C_R" "$C_0" "$*" >&2; exit 1; }
 MACSERVER_UNATTENDED=${MACSERVER_UNATTENDED:-0}
 unattended() { [[ $MACSERVER_UNATTENDED == 1 ]]; }
 
-ask() {  # ask "Question" "default" -> echoes answer
-  local reply
-  if unattended; then printf '%s' "$2"; return; fi
-  printf '%s [%s]: ' "$1" "$2" > /dev/tty
+ask() {  # ask "Question" ["default"] -> echoes answer
+  local reply def=${2:-}
+  if unattended; then printf '%s' "$def"; return; fi
+  if [[ -n $def ]]; then printf '%s [%s]: ' "$1" "$def" > /dev/tty; else printf '%s: ' "$1" > /dev/tty; fi
   IFS= read -r reply < /dev/tty || reply=''
-  printf '%s' "${reply:-$2}"
+  printf '%s' "${reply:-$def}"
 }
 
 ask_secret() {  # ask_secret "Question" -> echoes answer (not shown)

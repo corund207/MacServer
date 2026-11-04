@@ -35,4 +35,14 @@ put_file "$tmp/new" "$tmp/dest" 0644
 echo "second" > "$tmp/new"; put_file "$tmp/new" "$tmp/dest" 0644
 [[ $(cat "$tmp/dest.macserver-orig") == original ]] || fail put_file keeps first original
 
+# ask takes an optional default: `doomsday setup-totp` calls it with the question only, and the
+# missing $2 stopped it after it had drawn the QR code, before it saved anything.
+# (Assign first: a failure inside $( ) in a [[ ]] test is otherwise lost.)
+answer=$(MACSERVER_UNATTENDED=1 ask "Type the code") || fail "ask without a default"
+[[ -z $answer ]] || fail "ask without a default answered '$answer'"
+answer=$(MACSERVER_UNATTENDED=1 ask "Name" macserver) || fail "ask with a default"
+[[ $answer == macserver ]] || fail "ask with a default answered '$answer'"
+answer=$(MACSERVER_UNATTENDED=1 ask "Wi-Fi name" "") || fail "ask with an empty default"
+[[ -z $answer ]] || fail "ask with an empty default answered '$answer'"
+
 echo "lib tests passed"

@@ -943,3 +943,16 @@ min and the Mac installs within about 2 min of it passing), so the changes close
 Verified: `tests/self_update_test.sh` in WSL Debian (the old script fails the new retry cases, the new one passes
 all of them), shellcheck clean. Not verified: either path on the real Mac (it needs a failing update or a power
 loss); the installer-image workflow (runs on push).
+
+## 2026-11-04: `doomsday setup-totp` crashed before saving the authenticator
+
+The owner ran `sudo macserver doomsday setup-totp`: the QR code was drawn, then
+`lib.sh: line 56: $2: unbound variable`, and nothing was enrolled. `ask "Question"` (used for the
+6-digit code) read its optional default as `$2`, which `set -u` refuses. `ask` now treats the default as
+optional and shows no empty `[]`; `tests/test_lib.sh` calls it with and without a default (and fails on the
+old function). The secret printed in that failed run was never saved on the Mac; rerun setup-totp for a fresh
+one and delete the old entry from the phone.
+
+Verified: `tests/test_lib.sh` in WSL against the old and new `lib.sh`; the prompt typed on a pseudo-terminal
+(`script`) with and without a default; shellcheck. Not verified: the full `setup-totp` run on the Mac (it needs
+the phone and a sudo password; the Mac installs this after the full install test).
