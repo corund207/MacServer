@@ -24,10 +24,32 @@ SNAP=/var/lib/macserver/doomsday-snapshot.json
 TOTP_FILE=/etc/macserver/doomsday-totp
 GH_TOKEN_FILE=/etc/macserver/doomsday-gh-token
 NFT_BACKUP=/var/lib/macserver/nftables.before-doomsday
+NFT_CONF=/etc/nftables.conf
 LOG=/var/log/macserver-doomsday.log
 SHARE=${MACSERVER_SHARE:-/usr/local/share/macserver}
 
 log() { printf '%s doomsday: %s\n' "$(date -Is)" "$*" >>"$LOG" 2>/dev/null || true; }
+
+# The firewall the Mac had before this lockdown is saved, and put back by restore. The saved copy is
+# taken fresh at every lockdown (unless the live file already is the lockdown one: isolating twice) and
+# removed once restored. It used to be kept forever, so every restore put back the firewall of the first
+# lockdown (2026-10-01) and wiped every rule added since (RustDesk, a host service for a tunnel).
+lockdown_firewall() {
+  local lock=$SHARE/host/nftables-doomsday.conf
+  if [[ -f $NFT_CONF ]] && ! { [[ -f $lock ]] && cmp -s "$NFT_CONF" "$lock"; }; then
+    cp -p "$NFT_CONF" "$NFT_BACKUP"
+  fi
+  if [[ -f $lock ]]; then
+    nft -c -f "$lock" && cp -p "$lock" "$NFT_CONF" && nft -f "$NFT_CONF"
+  fi
+  return 0
+}
+
+restore_firewall() {
+  [[ -f $NFT_BACKUP ]] || return 0
+  cp -p "$NFT_BACKUP" "$NFT_CONF" && rm -f "$NFT_BACKUP"
+  nft -f "$NFT_CONF" || true
+}
 
 need_root() { [[ $EUID -eq 0 ]] || die "run with sudo: sudo macserver doomsday $*"; }
 
@@ -133,10 +155,7 @@ isolate_now() {  # isolate_now auto|manual SCORE REASONS_JSON
   systemctl stop macserver-claude.service macserver-claude-control.path >/dev/null 2>&1 || true
   tailscale down >/dev/null 2>&1 || true
   # 3. Lockdown firewall (persists across reboots; restore puts the old one back).
-  if [[ ! -f $NFT_BACKUP && -f /etc/nftables.conf ]]; then cp -p /etc/nftables.conf "$NFT_BACKUP"; fi
-  if [[ -f $SHARE/host/nftables-doomsday.conf ]]; then
-    nft -c -f "$SHARE/host/nftables-doomsday.conf" && cp -p "$SHARE/host/nftables-doomsday.conf" /etc/nftables.conf && nft -f /etc/nftables.conf
-  fi
+  lockdown_firewall
   # 4. Emergency SSH from the LAN only, if an SSH server is installed (this Mac normally has none).
   if systemctl list-unit-files ssh.service >/dev/null 2>&1; then
     systemctl start ssh.service >/dev/null 2>&1 || true
@@ -218,7 +237,7 @@ do_restore() {
   say "Restoring everything..."
   log "restoring from $cur"
   # Firewall back first so services can talk again.
-  if [[ -f $NFT_BACKUP ]]; then cp -p "$NFT_BACKUP" /etc/nftables.conf; nft -f /etc/nftables.conf || true; fi
+  restore_firewall
   systemctl start docker >/dev/null 2>&1 || true
   if [[ -f $SUPABASE_DIR/docker-compose.yml ]]; then (cd "$SUPABASE_DIR" && docker compose up -d --wait >/dev/null 2>&1) || true; fi
   local gw_was="off" ts_was="down" ssh_was="inactive"

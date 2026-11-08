@@ -55,7 +55,7 @@ MACSERVER_LIB=$ROOT/installer/lib.sh
 source "$W/doomsday.sh"
 MACSERVER_CONF=$W/etc/macserver.conf SUPABASE_DIR=$W/opt/supabase GATEWAY_DIR=$W/opt/gateway
 RUN=$W/run-state/doomsday.json KEEP=$W/var/doomsday.json SNAP=$W/var/snapshot.json LOG=$W/doomsday.log
-NFT_BACKUP=$W/var/no-backup TOTP_FILE=$W/etc/totp GH_TOKEN_FILE=$W/etc/no-token
+NFT_BACKUP=$W/var/nft-backup NFT_CONF=$W/etc/nftables.conf SHARE=$W/share TOTP_FILE=$W/etc/totp GH_TOKEN_FILE=$W/etc/no-token
 need_root() { :; }
 verify_totp() { :; }
 "\$@"
@@ -93,6 +93,27 @@ printf '{"state":"debug"}\n' > "$W/var/doomsday.json"
 "$W/run" do_restore --code 123456 > "$W/out" 2>&1; rc=$?
 check "restore still succeeds" '[[ $rc == 0 && $(jq -r .state "$W/var/doomsday.json") == normal ]]'
 check "starts nothing it did not record" '[[ ! -s "$W/started" ]]'
+
+echo "the firewall saved at lockdown is this lockdown's, and restore puts it back once"
+mkdir -p "$W/share/host"
+echo lockdown > "$W/share/host/nftables-doomsday.conf"
+echo first > "$W/etc/nftables.conf"
+"$W/run" lockdown_firewall
+check "lockdown applies the lockdown firewall" '[[ $(cat "$W/etc/nftables.conf") == lockdown ]]'
+check "and saves the one it replaced" '[[ $(cat "$W/var/nft-backup") == first ]]'
+"$W/run" lockdown_firewall      # isolating twice must not save the lockdown file as "before"
+check "a second lockdown keeps the real one" '[[ $(cat "$W/var/nft-backup") == first ]]'
+"$W/run" restore_firewall
+check "restore puts it back" '[[ $(cat "$W/etc/nftables.conf") == first ]]'
+check "and drops the saved copy" '[[ ! -e "$W/var/nft-backup" ]]'
+echo "first + a rule added later" > "$W/etc/nftables.conf"   # the owner opens a port for a new service
+"$W/run" lockdown_firewall
+"$W/run" restore_firewall
+check "a rule added after the first lockdown survives the next one" \
+  '[[ $(cat "$W/etc/nftables.conf") == "first + a rule added later" ]]'
+"$W/run" restore_firewall; rc=$?
+check "restore without a saved copy changes nothing" \
+  '[[ $rc == 0 && $(cat "$W/etc/nftables.conf") == "first + a rule added later" ]]'
 
 if [[ $fails -gt 0 ]]; then echo "doomsday restore test: $fails failure(s)"; exit 1; fi
 echo "doomsday restore test: all passed"

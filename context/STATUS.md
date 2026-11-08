@@ -1158,3 +1158,14 @@ The 2026-11-07 22:51 lockdown (score 7, threshold 6) was a false alarm. The aler
 Verified: new tests for all three findings (and that the same things elsewhere still score). The whole suite on the
 Mac passes except `test_debug_never_breaks_the_snapshot`, which needs root there (it stats `/var/lib/macserver`). The
 fixed collector and detector, run read-only on the Mac's live status with the three findings injected, give score 0.
+
+## 2026-11-08: restore no longer puts back the first lockdown's firewall
+
+Lockdown saved `/etc/nftables.conf` to `/var/lib/macserver/nftables.before-doomsday` only when no saved copy
+existed, and restore never removed it. So the copy from the first lockdown (2026-10-01) came back after every
+restore since. The real Mac's firewall had lost the RustDesk lines of `host/nftables.conf`, and the 2026-11-07
+restore removed the owner's rule for a host service the tunnel reaches (pc.jonahchang.com -> 172.18.0.1:8088).
+`lockdown_firewall` now saves a fresh copy at every lockdown (unless the live file already is the lockdown one), and
+`restore_firewall` removes the copy once it is back. Verified: `tests/doomsday_restore_test.sh` (new cases: second
+lockdown, rule added between lockdowns, restore without a copy) on the Mac. Not verified: a real lockdown with it.
+On the Mac the stale 2026-10-01 copy still exists until the next restore removes it, or `sudo rm` it.
