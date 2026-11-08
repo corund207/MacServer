@@ -1702,7 +1702,8 @@ def procs_panel(c, sampler, x, y, w, h):
 def scope_tag(c, x, y, scope):
     text, colour = {"all": ("ALL NETS", C["bad"]), "public": ("PUBLIC", C["bad"]), "lan": ("LAN", C["warn"]),
                     "open": ("FW OPEN", C["accent"]), "blocked": ("FW DROP", C["off"]),
-                    "tailnet": ("TAILNET", C["ok"]), "loopback": ("LOCAL", C["off"])}.get(scope, (scope.upper()[:8], C["off"]))
+                    "tailnet": ("TAILNET", C["ok"]), "docker": ("DOCKER", C["off"]),
+                    "loopback": ("LOCAL", C["off"])}.get(scope, (scope.upper()[:8], C["off"]))
     return c.put(x, y, text.center(8), C["pill_fg"] if c.rich else C["bright"], colour, bold=True)
 
 

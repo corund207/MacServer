@@ -797,12 +797,16 @@ def firewall_ports(conf_text, active=True):
     return ports
 
 
-def parse_ss_listeners(text, published, firewall=None):
+def parse_ss_listeners(text, published, firewall=None, bridges=()):
     """`ss -tlnpH` -> listening ports with who owns them and how far they reach.
 
     A port bound to every address is "all" (reachable from the Wi-Fi/LAN) unless the firewall decides:
-    "open" when it deliberately admits the port, "blocked" when it drops it."""
+    "open" when it deliberately admits the port, "blocked" when it drops it. A port bound to a Docker
+    bridge's own address (`bridges`, e.g. 172.18.0.1, a host service a tunnel container reaches) is
+    "docker" while the firewall enforces: its default-drop input chain keeps the LAN off that address.
+    Without a firewall verdict the kernel would answer a LAN host routing to it, so it stays "lan"."""
     rows, seen = [], set()
+    bridges = set(bridges or ())
     for line in (text or "").splitlines():
         parts = line.split(None, 5)
         if len(parts) < 4:
@@ -819,13 +823,15 @@ def parse_ss_listeners(text, published, firewall=None):
         if proc == "docker-proxy":
             proc = published.get(port, proc)
         scope = "all" if addr in ("0.0.0.0", "::") else ip_kind(addr) or "lan"
+        if scope == "lan" and addr in bridges and firewall is not None:
+            scope = "docker"
         if scope == "all" and firewall is not None:
             scope = "open" if port in firewall else "blocked"
         if (port, proc, scope) in seen:
             continue
         seen.add((port, proc, scope))
         rows.append({"port": port, "addr": addr, "scope": scope, "proc": proc, "svc": PORT_NAMES.get(port, "")})
-    order = {"all": 0, "public": 0, "lan": 1, "open": 1, "tailnet": 2, "blocked": 3, "loopback": 3}
+    order = {"all": 0, "public": 0, "lan": 1, "open": 1, "tailnet": 2, "docker": 2, "blocked": 3, "loopback": 3}
     return sorted(rows, key=lambda r: (order.get(r["scope"], 1), r["port"]))[:20]
 
 
@@ -896,6 +902,12 @@ def host_addresses():
     """This Mac's own IPv4 addresses (LAN, tailnet, Docker bridges)."""
     text = run("ip", "-o", "-4", "addr") or ""
     return sorted({m.group(1) for m in re.finditer(r"inet (\d+\.\d+\.\d+\.\d+)/", text)})
+
+
+def bridge_addresses(ip_o_text):
+    """The Mac's own address on each Docker bridge (docker0, br-<id>), from `ip -o -4 addr`."""
+    return sorted({m.group(2) for m in re.finditer(r"^\d+:\s+(docker0|br-[0-9a-f]+)\s+inet (\d+\.\d+\.\d+\.\d+)/",
+                                                    ip_o_text or "", re.M)})
 
 
 def default_gateway(route_text):
@@ -1086,7 +1098,8 @@ def debug_info(state, now, ps, ids, containers_now, peers, direct=None, conf=Non
     procs = {(k[0], k[1]): v for k, v in established}
     flows = flow_summary(parse_conntrack(read("/proc/net/nf_conntrack", "")), set(host_ips), names, peers, procs, direct)
     listeners = cached(state, "listeners", 5, now, lambda: parse_ss_listeners(
-        run("ss", "-tlnpH"), published_ports(ps), firewall_ports(read("/etc/nftables.conf", ""), unit_state("nftables") == "active")))
+        run("ss", "-tlnpH"), published_ports(ps), firewall_ports(read("/etc/nftables.conf", ""), unit_state("nftables") == "active"),
+        bridge_addresses(run("ip", "-o", "-4", "addr"))))
     envoy = next((n for n in sorted(ids) if re.search(r"envoy|kong|api-gw", n)), None)
     requests = None
     if envoy:

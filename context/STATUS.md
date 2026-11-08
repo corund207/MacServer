@@ -1139,3 +1139,22 @@ Verified: new tests (the notice line at three sizes, the overview during an inci
 critical/muted, `--issues` as a process, the status jq program), whole suite in WSL (259 tests), shellcheck; the new
 dashboard run read-only on the real Mac: the line reads "WARN restart needed for updates fix: sudo reboot (then type the
 disk passphrase)" and `--issues` prints why/fix/look. Not verified: the line on the Mac's own screen after it updates.
+
+## 2026-11-08: doomsday false alarm from DNS over TLS, journald and a Docker-bridge listener
+
+The 2026-11-07 22:51 lockdown (score 7, threshold 6) was a false alarm. The alert's three findings:
+`unexpected outbound this Mac -> 1.1.1.1:853`, `listener on 172.18.0.1:8088 (python) reachable from lan` and
+`unknown root process: systemd-journal (pid 357)`.
+- 853 is MacServer's own DNS over TLS (`host/resolved.conf`: `DNSOverTLS=opportunistic`). Now in `TRUSTED_OUT_PORTS`.
+- systemd-journal is journald (the kernel keeps 15 characters of a name). It shows up in the collector's
+  second, by-memory list. Debian's root daemons seen on the Mac are now default-trusted under their 15-character
+  names: systemd-journal/-logind/-udevd/-network/-timesyn/-timedat, login, agetty, smartd, wpa_supplicant,
+  unattended-upgr. (The old `systemd-networkd` entry never matched.)
+- A port bound to a Docker bridge's own address (a host service that only a tunnel container reaches, here the
+  owner's remoted on 172.18.0.1:8088) has the new listener scope `docker` while the firewall enforces, because the
+  default-drop input chain keeps the LAN off that address. Without a firewall verdict it is still `lan`. The dashboard
+  shows DOCKER, the web page shows "containers only", and it is no longer counted as "reachable from the local network".
+
+Verified: new tests for all three findings (and that the same things elsewhere still score). The whole suite on the
+Mac passes except `test_debug_never_breaks_the_snapshot`, which needs root there (it stats `/var/lib/macserver`). The
+fixed collector and detector, run read-only on the Mac's live status with the three findings injected, give score 0.

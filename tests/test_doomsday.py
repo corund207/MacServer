@@ -185,6 +185,21 @@ class ScoringTests(unittest.TestCase):
                      procs=[{"pid": 1412006, "name": "MainThread", "user": "root", "container": True}])
         self.assertEqual(doomsday.score_findings(data, self.procs, self.users), (0, []))
 
+    def test_the_2026_11_07_lockdown_findings_are_quiet(self):
+        """The real alert (score 7): "unexpected outbound this Mac -> 1.1.1.1:853 | listener on
+        172.18.0.1:8088 (python) reachable from lan | unknown root process: systemd-journal (pid 357)".
+        853 is MacServer's own DNS over TLS, systemd-journal is journald, and the listener is now reported
+        as "docker" by the collector. The same things somewhere else still score."""
+        data = flows(out=[{"kind": "public", "who": "this Mac", "dst": "1.1.1.1", "port": 853}],
+                     listeners=[{"port": 8088, "addr": "172.18.0.1", "scope": "docker", "proc": "python", "svc": ""}],
+                     procs=[{"pid": 357, "name": "systemd-journal", "user": "root", "cpu": 0.0, "kernel": False}])
+        procs, users = doomsday.read_allow({})                    # the shipped defaults, not this suite's set
+        self.assertEqual(doomsday.score_findings(data, procs, users), (0, []))
+        lan = [{"port": 8088, "addr": "192.168.18.33", "scope": "lan", "proc": "python", "svc": ""}]
+        self.assertEqual(doomsday.score_findings(flows(listeners=lan), self.procs, self.users)[0], 2)
+        odd = flows(out=[{"kind": "public", "who": "this Mac", "dst": "203.0.113.9", "port": 4444}])
+        self.assertEqual(doomsday.score_findings(odd, self.procs, self.users)[0], 2)
+
     def test_kernel_threads_are_trusted_by_the_kernel_flag_not_by_name(self):
         """On the real Mac irq/9-acpi scored in the first lockdown and kworker/u16:2-kcryptd-25 right after it:
         the collector reports kernel threads without brackets. It marks them from PF_KTHREAD; a root process

@@ -359,6 +359,25 @@ class DebugParserTests(unittest.TestCase):
         # without a firewall verdict an every-address port is still reported as reachable
         self.assertEqual({r["port"]: r["scope"] for r in collector.parse_ss_listeners(ss, {})}[20241], "all")
 
+    def test_a_port_on_a_docker_bridge_address_is_for_containers_only(self):
+        """Found on the real Mac: a host service bound to 172.18.0.1 (so a tunnel container can reach it) was
+        reported as reachable from the LAN and scored in the 2026-11-07 lockdown. The firewall's default-drop
+        input chain keeps the LAN off that address; without a firewall verdict it is still "lan"."""
+        ip_o = "\n".join([
+            "1: lo    inet 127.0.0.1/8 scope host lo",
+            "3: wlp2s0    inet 192.168.18.33/24 brd 192.168.18.255 scope global dynamic wlp2s0",
+            "5: docker0    inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0",
+            "7: br-0e5b61fc7fe6    inet 172.18.0.1/16 brd 172.18.255.255 scope global br-0e5b61fc7fe6"])
+        bridges = collector.bridge_addresses(ip_o)
+        self.assertEqual(bridges, ["172.17.0.1", "172.18.0.1"])
+        ss = "\n".join([
+            'LISTEN 0 1024 172.18.0.1:8088 0.0.0.0:* users:(("python",pid=7,fd=6))',
+            'LISTEN 0 4096 192.168.18.33:9999 0.0.0.0:* users:(("thing",pid=4,fd=3))'])
+        scopes = {r["port"]: r["scope"] for r in collector.parse_ss_listeners(ss, {}, set(), bridges)}
+        self.assertEqual(scopes, {8088: "docker", 9999: "lan"})       # the Wi-Fi address is still the LAN
+        scopes = {r["port"]: r["scope"] for r in collector.parse_ss_listeners(ss, {}, None, bridges)}
+        self.assertEqual(scopes[8088], "lan")                          # firewall off: the LAN could reach it
+
     def test_tailscale_direct_peer_is_not_an_unknown_lan_host(self):
         status = json.dumps({"Peer": {"a": {"HostName": "DESKTOP-JQVC05U", "CurAddr": "192.168.18.41:41641"},
                                       "b": {"HostName": "relayed", "CurAddr": "", "Relay": "nyc"}}})

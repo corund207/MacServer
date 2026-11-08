@@ -39,7 +39,9 @@ TOTP_FILE = Path(os.environ.get("MACSERVER_DOOMSDAY_TOTP", "/etc/macserver/dooms
 
 # Ports that are normal on the public Internet / infra side. Anything else out
 # to a public address scores. Tailscale control + tunnel keepalive never count.
-TRUSTED_OUT_PORTS = {53, 80, 123, 443, 465, 587, 993, 3478, 41641, 5353}
+# 853 is DNS over TLS: host/resolved.conf sets DNSOverTLS=opportunistic, so systemd-resolved talks to
+# 1.1.1.1/9.9.9.9 on 853 (the collector often cannot name the socket, so it shows as "this Mac").
+TRUSTED_OUT_PORTS = {53, 80, 123, 443, 465, 587, 853, 993, 3478, 41641, 5353}
 # Tailscale peers connect directly over the LAN on UDP 41641, then keep
 # punching UDP holes on ephemeral ports: that is the tailnet working as
 # designed (tailscale status shows them as `direct <lan-ip>:41641`), not an
@@ -67,6 +69,12 @@ DEFAULT_TRUSTED_PROCS = {
     "avahi-daemon", "avahi-dnsconfd", "systemd-resolve", "systemd-networkd",
     "NetworkManager", "polkitd", "accounts-daemon", "udisksd", "upowerd",
     "rtkit-daemon", "colord", "cupsd", "cups-browsed",
+    # Debian's own root daemons. The kernel keeps 15 characters of a process name, so
+    # systemd-journald is "systemd-journal" and unattended-upgrade is "unattended-upgr".
+    # systemd-journal scored 3 in the 2026-11-07 lockdown: it is often among the largest
+    # processes by memory, which is how the collector picks its second list.
+    "systemd-journal", "systemd-logind", "systemd-udevd", "systemd-network", "systemd-timesyn",
+    "systemd-timedat", "login", "agetty", "smartd", "wpa_supplicant", "unattended-upgr",
     # PlaneSight / host-network services
     "hbbs", "hbbr",
 }
