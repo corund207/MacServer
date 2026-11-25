@@ -405,7 +405,7 @@ class RepoWiringTests(unittest.TestCase):
         self.assertIn('"doomsday"', collector)
 
     def test_dashboard_shows_lockdown(self):
-        tui = (ROOT / "admin/tui.py").read_text()
+        tui = (ROOT / "admin/tui.py").read_text(encoding="utf-8")
         self.assertIn("DOOMSDAY LOCKDOWN", tui)
         self.assertIn("doomsday DEBUG", tui)
 
@@ -484,11 +484,16 @@ class LockdownDisplayTests(unittest.TestCase):
         self.assertNotIn("reachable ONLY from the local network over SSH", alert)
 
     def test_the_lockdown_screen_has_no_invented_rows(self):
-        screen = (ROOT / "admin/tui.py").read_text(encoding="utf-8")
-        start = screen.index("def page_doomsday")
-        page = screen[start:screen.index("\ndef page_logs", start)]
+        sys.path.insert(0, str(ROOT / "tests"))
+        import tui_fixture   # a sample machine for the dashboard
+        sampler = tui_fixture.make_sampler("healthy")
+        sampler.status["doomsday"] = {"state": "doomsday"}
+        text = tui_fixture.screen("healthy", 232, 64, sampler=sampler).text()
+        tui_fixture.tui.set_theme(False)
+        self.assertIn("DOOMSDAY LOCKDOWN: this Mac is isolated", text)     # the one page leads with it, red
+        self.assertIn("sudo macserver doomsday status", text)
         for invented in self.INVENTED + ("hits = 2",):
-            self.assertNotIn(invented, page)
+            self.assertNotIn(invented, text)
 
 
 if __name__ == "__main__":

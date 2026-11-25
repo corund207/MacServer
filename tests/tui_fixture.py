@@ -308,11 +308,9 @@ def status(scenario):
     (BASE / "status.json").write_text(json.dumps(data))
 
 
-def make_sampler(scenario="healthy", overview=False, page=None, home=None):
+def make_sampler(scenario="healthy"):
     """Draw the dashboard for a scenario with 20 minutes of made-up history.
-    healthy | warning (notices only) | trouble (critical: incident view) | setup.
-    overview=True shows the normal dashboard during an incident (as Space does).
-    page=NAME (incident, network, requests, system, logs) picks the incident page and holds it."""
+    healthy | warning (notices only) | trouble (critical: the screen turns red) | setup."""
     trouble = scenario == "trouble"
     # Trouble includes a broken cooling system: a hot CPU whose fan is not turning (tui.cooling_fault).
     temp, fan = (97, 0) if trouble else (62, 2400)
@@ -370,7 +368,6 @@ def make_sampler(scenario="healthy", overview=False, page=None, home=None):
         sampler.status_hist["svc_cpu"].append(8 + 10 * wave + 4 * fast)
     for i in range(120):
         h["fan"].append(2300 + 600 * ((math.sin(i / 13) + 1) / 2))
-    sampler.force_overview = overview
     sampler.procs = {"cpu": [{"name": "postgres", "cpu": 34.5, "rss": 380_000_000, "n": 9},
                              {"name": "beam.smp", "cpu": 12.1, "rss": 168_000_000, "n": 1},
                              {"name": "deno", "cpu": 6.4, "rss": 98_000_000, "n": 4},
@@ -379,17 +376,12 @@ def make_sampler(scenario="healthy", overview=False, page=None, home=None):
                              {"name": "studio", "cpu": 0.4, "rss": 281_000_000, "n": 1},
                              {"name": "beam.smp", "cpu": 12.1, "rss": 168_000_000, "n": 1},
                              {"name": "deno", "cpu": 6.4, "rss": 98_000_000, "n": 4}]}
-    if page:
-        sampler.page, sampler.paused, sampler.last_items = tui.PAGES.index(page), True, 99
-    if home:
-        sampler.home, sampler.paused = tui.HOME_PAGES.index(home), True      # hold that page: no rotation under test
-    sampler.crit_since = time.time() - 754
     return sampler
 
 
-def screen(scenario="healthy", cols=160, rows=50, rich=True, overview=False, page=None, sampler=None, home=None):
+def screen(scenario="healthy", cols=160, rows=50, rich=True, sampler=None):
     """Draw the dashboard for a scenario (see make_sampler); pass a sampler to draw one you changed."""
-    sampler = sampler or make_sampler(scenario, overview, page, home)
+    sampler = sampler or make_sampler(scenario)
     c = tui.Canvas(cols, rows, rich)
     tui.draw(c, sampler, kiosk=True)
     return c

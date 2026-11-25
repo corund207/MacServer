@@ -1169,3 +1169,21 @@ restore removed the owner's rule for a host service the tunnel reaches (pc.jonah
 `restore_firewall` removes the copy once it is back. Verified: `tests/doomsday_restore_test.sh` (new cases: second
 lockdown, rule added between lockdowns, restore without a copy) on the Mac. Not verified: a real lockdown with it.
 On the Mac the stale 2026-10-01 copy still exists until the next restore removes it, or `sudo rm` it.
+
+## 2026-11-25: the screen is one simple page
+
+The Mac's screen had five normal pages that turned by themselves (overview, hardware, network, services, system)
+and a red incident view with six more (n / b / p / space keys). Now it is one steady page, read from across the
+room, with no keys besides 2 (log in): a **needs attention** panel only when something is wrong (each issue, why,
+the first fix; up to three numbered fixes for a critical one; `macserver issues` has the rest), five big readings
+in 5-row block figures with their history (CPU, memory, disk with the last backup, temperature and fan, network),
+every container as a dot grouped by app (stopped ones first, in red), connections, and events. A critical issue
+still turns the whole screen red and flashes the edge; a notice pulses it orange. `admin/tui.py` lost the page
+machinery and every panel only those pages used (3561 -> 1791 lines); the collector still gathers the debug
+data, which `macserver issues` and the issue facts use. The Tron doomsday page was unreachable (the rotation always
+skipped it); a lockdown now leads the one page as a critical issue with its real recovery commands.
+
+Verified: `tests/run.sh` on the Mac (250 tests; the only failure is `test_debug_never_breaks_the_snapshot`, which
+needs root there), previews at 232x64 for healthy, warning and trouble (docs/images/dashboard.png), and every size
+from 40x12 to 232x64 in both looks draws only font characters. Not verified yet: the live screen after the
+self-update installs it.

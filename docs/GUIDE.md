@@ -122,31 +122,20 @@ Macs with a T2 chip only start macOS unless you allow otherwise.
 
 ![The MacServer dashboard](images/dashboard.png)
 
-The dashboard stays on screen all the time and never goes dark. It has five pages that
-turn by themselves (the overview stays 30 seconds, the others 15): press **n** for the
-next page, **b** for the previous one and **p** to hold the page you are on. The top bar
-shows the server's name, an overall status (green = all good), the battery, the time and
-uptime; the bar under it shows which page you are on and when the next one comes.
+The dashboard stays on screen all the time and never goes dark. It is one steady page, made
+to be read from across the room; nothing turns by itself and there are no keys to learn.
+The top bar shows the server's name, an overall status (green = all good), the battery,
+the time and uptime. Below it, from top to bottom:
 
-- **Overview**: a row of headline numbers (CPU, memory, network, disk, temperature and
-  fan, services, power, load) each with its last few minutes, then the CPU (every core,
-  where its time goes, load, how long work waited for it), memory (used, available, cached,
-  kernel, swap, swap traffic), storage (every filesystem, the SSD, its reads and writes,
-  Docker's disk use) and network (every interface, Wi-Fi, router / Internet / DNS checks,
-  open connections), the **Connections** (Internet, Tailscale, the public API, Claude,
-  clock, updates, each with an **OK / WARN / DOWN / OFF** tag), every service grouped by
-  project with its CPU, memory, traffic, restarts and uptime, and the **Events** log.
-- **Hardware**: CPU with a live graph, every temperature sensor with its own limit, the
-  fan, the battery (health, cycles, charge or time left), the biggest programs, memory,
-  the SSD and the machine's facts (model, firmware, kernel, Debian version).
-- **Network**: interfaces with speeds, totals, errors and drops, the Wi-Fi network, every
-  Tailscale device with how it connects and when it was last seen, listening ports,
-  inbound and outbound connections, and what your apps ask the API for.
-- **Services**: every container in full (health, CPU, memory, traffic, disk writes,
-  processes, restarts, uptime, image), the **database** (connections, transactions per
-  second, cache hit ratio, size, app users, stored files), API traffic and events.
-- **System**: the machine's facts, the status tags, events, system and kernel logs,
-  the last error lines of each service, and the files that matter.
+- **Needs attention** (only when something is wrong): each issue with why, and the first
+  thing to run. `macserver issues` has the full details and every fix.
+- **Five big readings**: CPU, memory, disk (with when the last backup was made),
+  temperature and fan, and network, each with its last few minutes as a graph.
+- **Apps and services**: every container as a dot, grouped by app (green = running). A
+  stopped one turns red and comes first in its app.
+- **Connections**: Internet, Tailscale, the public API, Claude, clock, updates, each with
+  an **OK / WARN / DOWN / OFF** tag, and the admin and Studio addresses.
+- **Events**: what changed lately (a service stopped, a device joined, a busy CPU).
 
 **Heat is not a warning.** A MacBook Air under load runs in the 90s and touches the CPU's
 own 100 °C limit many times a minute with the fans at full speed; that is how it works.
@@ -160,22 +149,9 @@ MacServer folder and log out of the Mac's screen.
 
 **Alerts.** When something needs attention, the edge of the screen **pulses orange**.
 When something is broken (a service stopped, Tailscale or the network down, the public
-API not answering), the edge **flashes red**, the whole screen turns red, and it
-switches to the **incident view**, a debugging console with five pages that turn by
-themselves every 8 seconds (**n** next, **b** back, **p** hold the page, **space**
-switches to the normal dashboard and back):
-
-- **Incident**: each problem with the reason, facts (exit code, out-of-memory kill,
-  restarts, health-check output), numbered commands to run, the files and folders to
-  open, and the last log lines (passwords and keys hidden), next to live vitals,
-  temperatures, the busiest programs and the event log.
-- **Network**: every listening port and how far it reaches (ALL NETS and LAN are
-  flagged), live inbound and outbound connections, router / Internet / DNS checks.
-- **Requests**: what your apps are asking the API for: a live feed, the status
-  codes, the busiest requests and callers, and recent errors.
-- **System**: CPU cores, memory, every temperature sensor, fans and heat throttling.
-- **Logs**: failed services, system and kernel errors, the last error lines of each
-  Supabase service, the files that matter and when they last changed, and commands.
+API not answering), the edge **flashes red** and the whole screen turns red, with the
+problems at the top and up to three numbered commands for each. For the facts, logs and
+files to open, log in (press **2**) and run `macserver issues`.
 
 The screen returns to normal by itself once everything works again.
 
