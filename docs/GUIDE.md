@@ -176,6 +176,13 @@ and never the notices the screen itself mutes.
   alert. One alert lists everything that is open, worst first.
 - At most 4 alerts an hour and 12 a day. An alert that could not be sent is retried every
   5 minutes.
+- **Every hour**, on the hour, a quiet status report: one line with the state and the key
+  numbers (CPU, memory, disk, temperature, services, devices online, last backup, uptime),
+  for example `MacServer: All systems normal | CPU 12% | mem 64% | disk 18% | 77C | 27/27
+  services | 2 device(s) online | backup 1h ago | up 3d`. It is sent at low priority, so it
+  does not buzz like an alert, and it never counts against the alert limits. Send one now
+  with `sudo macserver notify report`; turn them off or on with
+  `sudo macserver notify report off` / `on`.
 
 The alert goes out through GitHub and the free **ntfy** push service, so nothing about your
 phone is stored on the Mac. (It used to be a text through your carrier's email-to-text

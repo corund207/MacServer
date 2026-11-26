@@ -14,10 +14,10 @@ on:
   workflow_dispatch:
     inputs:
       message:
-        description: "The alert: one line, 160 characters at most, with the admin link in it"
+        description: "The alert (160 characters at most) or the hourly report (300), one line, with the admin link in it"
         required: true
       level:
-        description: "critical, issue or test"
+        description: "critical, issue, report or test"
         required: false
         default: "issue"
 
@@ -57,9 +57,11 @@ jobs:
           level = str(inputs.get("level", "issue"))
           headers = {
               # critical alerts are "urgent" (5): the ntfy app can let them through Focus / Do Not Disturb
-              "Title": {"critical": "MacServer: CRITICAL", "test": "MacServer: test alert"}.get(level, "MacServer: needs attention"),
-              "Priority": {"critical": "5", "test": "3"}.get(level, "4"),
-              "Tags": {"critical": "rotating_light", "test": "white_check_mark"}.get(level, "warning"),
+              # the hourly report is "low" (2): it arrives quietly, an alert never does
+              "Title": {"critical": "MacServer: CRITICAL", "test": "MacServer: test alert",
+                        "report": "MacServer: hourly status"}.get(level, "MacServer: needs attention"),
+              "Priority": {"critical": "5", "test": "3", "report": "2"}.get(level, "4"),
+              "Tags": {"critical": "rotating_light", "test": "white_check_mark", "report": "bar_chart"}.get(level, "warning"),
           }
           link = re.search(r"https://[A-Za-z0-9.-]+/", text)
           if link:

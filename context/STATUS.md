@@ -1249,3 +1249,16 @@ packages waiting are `info` on the page too (same wording as the screen).
 
 Verified: unit tests; headless Chromium screenshots of every page (healthy and trouble, 1600 px and 420 px).
 Not verified: the live page on the Mac.
+
+## 2026-11-25: an hourly status report to the phone
+
+`admin/notify.py` (the 30 s timer) now also sends a status report once per clock hour (`report_hour` =
+`int(now // 3600)` in notify.json; a failed send retries after 5 min). `compose_report` builds one ASCII line of at
+most 300 characters: the state ("All systems normal" or the open issues, critical count first), then CPU, memory,
+disk, temperature, services up, tailnet devices online, newest backup, pending packages, uptime (missing numbers
+are left out), then the admin link. It goes through `alert-push.yml` with level `report`: title "MacServer: hourly
+status", ntfy priority 2 (low), tag bar_chart. Reports keep their own clock and never touch the alert limits.
+`NOTIFY_REPORT=on|off` in macserver.conf (default on; off when NOTIFY_SMS is off); `macserver notify report
+[now|on|off]`; `macserver notify status` shows the last report. 24 Actions runs a day (public repository: free).
+
+Verified: unit tests (once an hour, retry, limits untouched, the line). Not verified: a real report on the phone.

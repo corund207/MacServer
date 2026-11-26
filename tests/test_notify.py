@@ -191,6 +191,52 @@ class WhenToTextTests(unittest.TestCase):
         self.assertEqual(len(phone.texts), notify.MAX_PER_HOUR)
 
 
+class HourlyReportTests(unittest.TestCase):
+    HOUR = 1_000_000 * 3600            # a time on the hour
+
+    def test_one_report_at_the_top_of_every_hour(self):
+        state, phone, sent = {}, Phone(), []
+        for t in range(0, 3 * 3600, 30):                    # three hours of looks, every 30 s
+            done = notify.report(state, sample("healthy"), self.HOUR + 1800 + t, phone, URL, tui)
+            if done:
+                sent.append(t)
+        self.assertEqual(sent, [0, 1800, 5400, 9000])      # now, then on each hour, never more than once
+        self.assertTrue(all(level == "report" for _, level in phone.texts))
+
+    def test_a_failed_report_is_retried_after_five_minutes(self):
+        state, phone = {}, Phone()
+        phone.ok = False
+        tries = [t for t in range(0, 900, 30) if notify.report(state, sample("healthy"), self.HOUR + t, phone, URL, tui)]
+        self.assertEqual(tries, [0, 300, 600])
+        phone.ok = True
+        self.assertTrue(notify.report(state, sample("healthy"), self.HOUR + 900, phone, URL, tui)[1])
+        self.assertIsNone(notify.report(state, sample("healthy"), self.HOUR + 930, phone, URL, tui))
+
+    def test_reports_never_use_up_the_alert_limits(self):
+        state, phone = {}, Phone()
+        for hour in range(30):
+            notify.report(state, sample("healthy"), self.HOUR + hour * 3600, phone, URL, tui)
+        self.assertEqual(len(phone.texts), 30)
+        self.assertEqual(state.get("texts", []), [])
+
+    def test_the_report_says_how_the_mac_is_in_one_line(self):
+        text = notify.compose_report(sample("healthy"), [], URL)
+        self.assertTrue(text.startswith("MacServer: All systems normal | CPU "), text)
+        for part in ("mem ", "disk 18%", "services", "device(s) online", "backup ", "up "):
+            self.assertIn(part, text)
+        self.assertTrue(text.endswith(" " + URL))
+        self.assertLessEqual(len(text), notify.REPORT_LIMIT)
+        self.assertEqual(text, notify.ascii_line(text))      # one plain line
+
+        status = broken(service=True, public=True)
+        text = notify.compose_report(status, notify.open_issues(status, tui), URL)
+        self.assertTrue(text.startswith("MacServer: 2 issue(s), 2 critical: service edge-functions is exited"), text)
+        self.assertIn("14/15 services", text)
+
+        bare = notify.compose_report({"host": {}}, [], URL)    # missing numbers are left out, never invented
+        self.assertEqual(bare, "MacServer: All systems normal " + URL)
+
+
 class MessageTests(unittest.TestCase):
     def test_a_text_fits_one_sms_and_ends_with_the_link(self):
         issues = [{"key": "k", "level": "bad", "title": "service " + "x" * 300 + " is exited", "why": "w" * 300}]
@@ -261,6 +307,7 @@ class FilesTests(unittest.TestCase):
         self.assertNotRegex(text, r"print\([^)]*topic", "the topic must never be printed")
         self.assertIn('"Priority"', text)                     # critical alerts are urgent
         self.assertFalse((ROOT / ".github/workflows/alert-sms.yml").exists(), "the carrier gateway route is gone")
+        self.assertIn('"report": "2"', text)                  # the hourly report arrives quietly
 
     def test_it_is_installed_and_runs_every_half_minute(self):
         installer = (ROOT / "installer/steps/40-access.sh").read_text(encoding="utf-8")

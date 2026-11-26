@@ -5,6 +5,7 @@ Runs as root from macserver-notify.timer (every 30 s):
 
     notify.py [check]   look at /run/macserver/status.json and text when something is wrong
     notify.py test      send a test text now
+    notify.py report    send the hourly status report now
     notify.py status    what is on, what is open, what was sent
 
 "Something is wrong" is exactly what the Mac's screen and the admin page call an issue: it is
@@ -23,6 +24,10 @@ To keep it to a few useful texts instead of a stream:
     open is texted again every 4 hours; a lasting non-critical one is texted once, and waits until
     15 minutes after the last text (one incident is one text now and one summary later);
   - at most 4 texts an hour and 12 a day; a text that failed is retried every 5 minutes.
+
+Once an hour, at the top of the hour, it also sends a status report: one line with the state, the key
+numbers and the admin link, at low priority so it arrives quietly. Reports have their own clock and
+never count against the alert limits (NOTIFY_REPORT=off in macserver.conf turns them off).
 """
 import importlib.machinery
 import importlib.util
@@ -50,6 +55,8 @@ WARN_GAP_S = 900          # a non-critical issue waits this long after the last 
 RETRY_S = 300             # after a failed send
 MAX_PER_HOUR, MAX_PER_DAY = 4, 12
 LEVEL_WORD = {"bad": "CRITICAL", "warn": "Issue"}
+REPORT_S = 3600           # the status report: once an hour, at the top of the hour
+REPORT_LIMIT = 300        # a report may run longer than an alert: it is read in the ntfy app
 
 
 # --- what is wrong ---------------------------------------------------------------------------------
@@ -185,6 +192,78 @@ def check(state, status, now, send, url, tui):
     return text, sent, detail
 
 
+# --- the hourly report -----------------------------------------------------------------------------
+
+def ago(seconds):
+    s = max(int(seconds), 0)
+    return f"{s // 86400}d" if s >= 86400 else f"{s // 3600}h" if s >= 3600 else f"{s // 60}m"
+
+
+def compose_report(status, issues, url, limit=REPORT_LIMIT):
+    """One line: how the Mac is, then its key numbers, then the admin link. Missing numbers are left out."""
+    host = status.get("host") or {}
+    live = status.get("live") if isinstance(status.get("live"), dict) and not status["live"].get("error") else {}
+    critical = sum(i["level"] == "bad" for i in issues)
+    if not issues:
+        head = "All systems normal"
+    else:
+        head = (f"{len(issues)} issue(s)" + (f", {critical} critical" if critical else "") + ": "
+                + "; ".join(i["title"] for i in issues[:2]) + ("; ..." if len(issues) > 2 else ""))
+    parts = []
+    cpu = ((live or {}).get("cpu") or {}).get("total")
+    if cpu is not None:
+        parts.append(f"CPU {cpu:.0f}%")
+    mem = host.get("memory") or {}
+    if mem.get("total"):
+        parts.append(f"mem {100 * mem.get('used', 0) / mem['total']:.0f}%")
+    disk = host.get("disk") or {}
+    if disk.get("total"):
+        parts.append(f"disk {100 * disk.get('used', 0) / disk['total']:.0f}%")
+    temp = (host.get("sensors") or {}).get("cpu_temp_c")
+    if temp is not None:
+        parts.append(f"{temp:.0f}C")
+    containers = status.get("containers") or []
+    if containers:
+        parts.append(f"{sum(c.get('state') == 'running' for c in containers)}/{len(containers)} services")
+    online = (status.get("tailscale") or {}).get("peers_online")
+    if online is not None:
+        parts.append(f"{online} device(s) online")
+    backups = ((status.get("debug") or {}).get("backups") or {}) if isinstance(status.get("debug"), dict) else {}
+    if backups.get("newest_age_s") is not None:
+        parts.append(f"backup {ago(backups['newest_age_s'])} ago")
+    if host.get("updates_pending"):
+        parts.append(f"{host['updates_pending']} package update(s)")
+    if host.get("uptime_s"):
+        parts.append(f"up {ago(host['uptime_s'])}")
+    tail = " " + url
+    body = ascii_line(f"MacServer: {head} | " + " | ".join(parts)) if parts else ascii_line(f"MacServer: {head}")
+    room = limit - len(tail)
+    if len(body) > room:
+        body = body[:room - 3].rstrip() + "..."
+    return body + tail
+
+
+def report_due(state, now):
+    """Due once in each clock hour; after a failed send, again 5 minutes later (not every 30 s)."""
+    if int(now // REPORT_S) == state.get("report_hour"):
+        return False
+    return now - state.get("report_attempt", 0) >= RETRY_S
+
+
+def report(state, status, now, send, url, tui):
+    """The hourly report when it is due. Returns (text, sent, detail) when it tried, else None."""
+    if not report_due(state, now):
+        return None
+    text = compose_report(status, open_issues(status, tui), url)
+    sent, detail = send(text, "report")
+    if sent:
+        state["report_hour"], state["last_report"] = int(now // REPORT_S), {"at": now, "text": text}
+        state.pop("report_attempt", None)
+    else:
+        state["report_attempt"] = now
+    return text, sent, detail
+
+
 # --- the outside world -----------------------------------------------------------------------------
 
 def read_conf(path=CONF):
@@ -285,14 +364,21 @@ def run_check(now=None):
     token = read_token()
     repo = conf.get("DOOMSDAY_GH_REPO", DEFAULT_REPO)
     status = load_status()
-    done = check(state, status, now, lambda text, level: dispatch(repo, token, text, level),
-                 admin_url(status, conf), load_tui())
+    send = lambda text, level: dispatch(repo, token, text, level)
+    tui, url = load_tui(), admin_url(status, conf)
+    done = check(state, status, now, send, url, tui)
+    hourly = report(state, status, now, send, url, tui) if conf.get("NOTIFY_REPORT", "on") == "on" and status else None
     write_state(state)
+    failed = False
     if done:
         text, sent, detail = done
         print(f"{'texted' if sent else 'text FAILED'} ({detail}): {text}", flush=True)
-        return 0 if sent else 1
-    return 0
+        failed = not sent
+    if hourly:
+        text, sent, detail = hourly
+        print(f"{'hourly report sent' if sent else 'hourly report FAILED'} ({detail}): {text}", flush=True)
+        failed = failed or not sent
+    return 1 if failed else 0
 
 
 def run_test():
@@ -310,6 +396,22 @@ def run_test():
     return 0 if sent else 1
 
 
+def run_report():
+    conf = read_conf()
+    problem = setup_problem()
+    if problem:
+        print(problem)
+        return 1
+    status = load_status()
+    if not status:
+        print("no status yet: is macserver-status.timer running?")
+        return 1
+    text = compose_report(status, open_issues(status, load_tui()), admin_url(status, conf))
+    sent, detail = dispatch(conf.get("DOOMSDAY_GH_REPO", DEFAULT_REPO), read_token(), text, "report")
+    print(f"{'asked GitHub to send the report' if sent else 'FAILED'} ({detail}): {text}")
+    return 0 if sent else 1
+
+
 def compose_test(url):
     return ascii_line("MacServer test: phone alerts work. This is what an alert looks like.") + " " + url
 
@@ -323,6 +425,9 @@ def run_status():
     last = state.get("last_text")
     print("last alert:   " + (f"{int((now - last['at']) // 60)} min ago: {last['text']}" if last else "none yet"))
     print(f"sent today:   {sum(now - t < 86400 for t in state.get('texts', []))} of {MAX_PER_DAY}")
+    on = conf.get("NOTIFY_SMS", "on") == "on" and conf.get("NOTIFY_REPORT", "on") == "on"
+    rep = state.get("last_report")
+    print(f"hourly report: {'on' if on else 'off'}" + (f"   last {int((now - rep['at']) // 60)} min ago: {rep['text']}" if rep else ""))
     seen = state.get("seen", {})
     print("open issues:  " + ("none" if not seen else ""))
     for key, entry in sorted(seen.items(), key=lambda kv: kv[1].get("level") != "bad"):
@@ -337,6 +442,8 @@ def main(argv):
         return run_check()
     if command == "test":
         return run_test()
+    if command == "report":
+        return run_report()
     if command == "status":
         return run_status()
     print(__doc__)
