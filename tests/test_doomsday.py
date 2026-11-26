@@ -489,8 +489,7 @@ class LockdownDisplayTests(unittest.TestCase):
         sampler = tui_fixture.make_sampler("healthy")
         sampler.status["doomsday"] = {"state": "doomsday"}
         text = tui_fixture.screen("healthy", 232, 64, sampler=sampler).text()
-        tui_fixture.tui.set_theme(False)
-        self.assertIn("DOOMSDAY LOCKDOWN: this Mac is isolated", text)     # the one page leads with it, red
+        self.assertIn("DOOMSDAY LOCKDOWN: this Mac is isolated", text)     # the one page leads with it
         self.assertIn("sudo macserver doomsday status", text)
         for invented in self.INVENTED + ("hits = 2",):
             self.assertNotIn(invented, text)

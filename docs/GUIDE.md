@@ -122,20 +122,25 @@ Macs with a T2 chip only start macOS unless you allow otherwise.
 
 ![The MacServer dashboard](images/dashboard.png)
 
-The dashboard stays on screen all the time and never goes dark. It is one steady page, made
-to be read from across the room; nothing turns by itself and there are no keys to learn.
-The top bar shows the server's name, an overall status (green = all good), the battery,
-the time and uptime. Below it, from top to bottom:
+The dashboard stays on screen all the time and never goes dark. It is one page on a black
+background with a fixed place for everything; nothing turns by itself and there are no keys
+to learn. Colour carries meaning: green is good, amber a notice, red broken, and each metric
+has its own hue. The top bar shows the server's name, an overall status (green = all good),
+the battery, the time and uptime. Below it, from top to bottom:
 
 - **Needs attention** (only when something is wrong): each issue with why, and the first
   thing to run. `macserver issues` has the full details and every fix.
-- **Five big readings**: CPU, memory, disk (with when the last backup was made),
-  temperature and fan, and network, each with its last few minutes as a graph.
-- **Apps and services**: every container as a dot, grouped by app (green = running). A
-  stopped one turns red and comes first in its app.
+- **CPU, memory, disk, network, thermal**: the reading, a meter, the last 20 minutes as a
+  graph, and the key figures (load, available memory, reads and writes, when the last
+  backup was made, Wi-Fi signal, fan, battery).
+- **Services**: every container grouped by app, with its state, CPU, memory and uptime
+  (and restarts and traffic when there is room). A stopped one is red and comes first.
+- **Devices**: every device on your tailnet (name, Tailscale address, system, whether it
+  connects directly or through a relay, last seen, traffic), and every device the Mac has
+  talked to on its own network lately (address and hardware address; the router is marked,
+  and "private MAC" means a phone or laptop using a randomised address).
 - **Connections**: Internet, Tailscale, the public API, Claude, clock, updates, each with
-  an **OK / WARN / DOWN / OFF** tag, and the admin and Studio addresses.
-- **Events**: what changed lately (a service stopped, a device joined, a busy CPU).
+  an **OK / WARN / DOWN / OFF** tag, the admin and Studio addresses, and the **Events** log.
 
 **Heat is not a warning.** A MacBook Air under load runs in the 90s and touches the CPU's
 own 100 °C limit many times a minute with the fans at full speed; that is how it works.
@@ -149,7 +154,7 @@ MacServer folder and log out of the Mac's screen.
 
 **Alerts.** When something needs attention, the edge of the screen **pulses orange**.
 When something is broken (a service stopped, Tailscale or the network down, the public
-API not answering), the edge **flashes red** and the whole screen turns red, with the
+API not answering), the edge **flashes red** and the status turns red, with the
 problems at the top and up to three numbered commands for each. For the facts, logs and
 files to open, log in (press **2**) and run `macserver issues`.
 

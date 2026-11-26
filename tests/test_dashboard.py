@@ -19,8 +19,6 @@ SIZES = [(232, 64), (180, 50), (140, 40), (100, 30), (80, 24), (40, 12)]
 
 
 class DashboardTests(unittest.TestCase):
-    def setUp(self):
-        tui.set_theme(False)        # every test starts from the normal colours
     def test_every_scenario_size_and_mode_draws_only_allowed_characters(self):
         for rich, allowed in ((True, RICH_CHARS), (False, CONSOLE_CHARS)):
             for scenario in ("healthy", "warning", "trouble", "setup"):
@@ -132,10 +130,12 @@ class DashboardTests(unittest.TestCase):
     def test_healthy(self):
         text = tui_fixture.screen("healthy", 232, 64).text()
         for expected in ("ALL SYSTEMS NORMAL", "15/15 running", "https://macserver.tail4f2a.ts.net/",
-                         "CPU", "MEMORY", "DISK", "TEMPERATURE", "NETWORK", "4 threads · 1.6 GHz", "load 0.62",
-                         "5.2 GB of 8.2 GB", "41.2 GB of 233 GB", "last backup 1h ago", "fan 2400 rpm",
-                         "MB/s down · 86.0 KB/s up", "up to date · 6bc4f51", "BAT ▲  80%", "3.2W",
-                         "APPS AND SERVICES", "supabase 13/13", "gateway 2/2", "realtime", "cloudflared",
+                         "CPU", "MEMORY", "DISK", "NETWORK", "THERMAL", "4 threads · 1.64 GHz", "0.62  0.48  0.41",
+                         "5.2 GB of 8.2 GB", "41.2 GB of 233 GB", "1h ago", "fan 2400 rpm", "▼ 1.2 MB/s", "▲ 86.0 KB/s",
+                         "up to date · 6bc4f51", "BAT ▲  80%", "3.2W",
+                         "SERVICES", "NAME", "STATE", "SUPABASE", "13/13", "GATEWAY", "realtime", "cloudflared", "3d",
+                         "DEVICES", "TAILNET", "jonahs-iphone", "100.1.1.2", "iOS", "direct", "relay nyc", "30d ago",
+                         "LOCAL NETWORK", "router", "192.168.18.1", "4c:53:fd:4d:40:2e", "private MAC",
                          "CONNECTIONS", "EVENTS", "press 2 to log in"):
             self.assertIn(expected, text)
         self.assertNotIn("NEEDS ATTENTION", text)        # nothing wrong: no issues panel
@@ -143,21 +143,34 @@ class DashboardTests(unittest.TestCase):
         self.assertNotIn("public-anon-key", text)       # no keys on the screen, not even public ones
         for gone in ("OVERVIEW", "next page", "n/b", "page held"):
             self.assertNotIn(gone, text)                 # one page: nothing turns, no keys to learn
-
-    def test_readings_are_big_figures_from_across_the_room(self):
         c = tui_fixture.screen("healthy", 232, 64)
-        lines = c.text().splitlines()
-        self.assertTrue(all(lines[r].count("█") > 20 for r in range(2, 7)))   # five rows of block figures
-        figure = tui.Canvas(30, 5)
-        end = tui.figures(figure, 0, 0, "27%", tui.C["text"])
-        self.assertEqual(end, tui.figures_width("27%") + 2)
-        self.assertEqual(figure.text().splitlines()[0].rstrip(), "██████  ██████  ██  ██")
+        self.assertEqual(c.cells[30][120][2], (0, 0, 0))  # a black background
+
+    def test_metric_panels_fit_any_size(self):
         for cols, rows in SIZES:
-            for card in tui.readings(tui_fixture.make_sampler("healthy")):
-                with self.subTest(size=(cols, rows), card=card["title"]):
+            for m in tui.metrics(tui_fixture.make_sampler("healthy")):
+                with self.subTest(size=(cols, rows), metric=m["title"]):
                     small = tui.Canvas(cols, rows)
-                    tui.reading_card(small, 0, 0, cols, rows, card)          # any size: no spill, no crash
+                    tui.metric_panel(small, 0, 0, cols, rows, m)          # any size: no spill, no crash
                     self.assertEqual(len(small.cells), rows)
+                    self.assertTrue(all(len(r) == cols for r in small.cells))
+
+    def test_devices_on_the_tailnet_and_the_local_network(self):
+        self.assertEqual(tui.gateway("wlp3s0"), "192.168.18.1")
+        lan = tui.lan_neighbours("wlp3s0")
+        self.assertEqual([ip for ip, _ in lan], ["192.168.18.1", "192.168.18.9", "192.168.18.20", "192.168.18.34"])
+        s = tui_fixture.make_sampler("healthy")
+        lines = tui.device_lines(s)
+        self.assertEqual([e[1] for e in lines if e[0] == "head"], ["tailnet", "local network"])
+        devices = {e[1][0]: e for e in lines if e[0] == "dev"}
+        self.assertEqual(devices["desktop-nlhe9il"][2], "off")            # an offline device is greyed
+        self.assertEqual(devices["router"][1][2], "router")
+        self.assertEqual(devices["76:da:88:94:ec:c8"][1][2], "private MAC")   # a phone's randomised address
+        s.status["system"].pop("tailscale")
+        s.now["lan"] = []
+        c = tui.Canvas(80, 6)
+        tui.devices_panel(c, s, 0, 0, 80, 6)
+        self.assertIn("No devices yet", c.text())
 
     def test_idle_row_and_badge(self):
         text = tui_fixture.screen("healthy", 232, 64).text()
@@ -254,7 +267,7 @@ class DashboardTests(unittest.TestCase):
                 c = tui_fixture.screen("healthy", 232, 64, sampler=s)
                 self.assertEqual(c.alert, "ok")
                 self.assertIn("ALL SYSTEMS NORMAL", c.text())
-                for word in ("warm", "hot", "HOT", "not turning"):
+                for word in ("warm", "hot", "HOT", "NOT TURNING"):
                     self.assertNotIn(word, c.text())
         # No fan reading at all (some Macs expose none) is not a fault either, nor is a cool CPU with a stopped fan.
         for temp, fans in ((97, []), (97, None), (60, [0]), (None, [0])):
@@ -277,30 +290,30 @@ class DashboardTests(unittest.TestCase):
 
     # --- the home pages --------------------------------------------------------------------------------------
 
-    def test_readings_keep_the_first_cards_on_narrow_screens(self):
+    def test_metrics_keep_the_first_panels_on_narrow_screens(self):
         wide = tui_fixture.screen("healthy", 232, 64).text().splitlines()[1]
-        for title in ("CPU", "MEMORY", "DISK", "TEMPERATURE", "NETWORK"):
-            self.assertIn(title, wide)                                # five readings across 232 columns
+        for title in ("CPU", "MEMORY", "DISK", "NETWORK", "THERMAL"):
+            self.assertIn(title, wide)                                # five metrics across 232 columns
         narrow = tui_fixture.screen("healthy", 100, 30).text().splitlines()[1]
-        for title in ("CPU", "MEMORY", "DISK"):
+        for title in ("CPU", "MEMORY"):
             self.assertIn(title, narrow)
-        self.assertNotIn("NETWORK", narrow)                           # the least important go first
-        self.assertEqual([k["title"] for k in tui.readings(tui_fixture.make_sampler("healthy"))],
-                         ["cpu", "memory", "disk", "temperature", "network"])
-        # the temperature card is a reading, red only for a stopped fan
+        self.assertNotIn("THERMAL", narrow)                           # the least important go first
+        self.assertEqual([k["title"] for k in tui.metrics(tui_fixture.make_sampler("healthy"))],
+                         ["cpu", "memory", "disk", "network", "thermal"])
+        # the temperature is a reading, red only for a stopped fan
         hot = tui_fixture.make_sampler("healthy")
         hot.now.update(temp=100, fans=[8000])
-        self.assertNotEqual(next(k for k in tui.readings(hot) if k["title"] == "temperature")["vcolour"], tui.C["bad"])
+        self.assertNotEqual(next(k for k in tui.metrics(hot) if k["title"] == "thermal")["vcolour"], tui.C["bad"])
         hot.now.update(fans=[0])
-        self.assertEqual(next(k for k in tui.readings(hot) if k["title"] == "temperature")["vcolour"], tui.C["bad"])
-        # the disk card says when the newest backup was made, and warns when the drive needs attention
+        self.assertEqual(next(k for k in tui.metrics(hot) if k["title"] == "thermal")["vcolour"], tui.C["bad"])
+        # the disk panel says when the newest backup was made, and warns when the drive needs attention
         s = tui_fixture.make_sampler("healthy")
         s.status["debug"]["backups"] = {"count": 3, "newest_age_s": 3 * 86400, "drive": {"present": False,
                                         "error": "the backup drive is not plugged in"}}
-        disk = next(k for k in tui.readings(s) if k["title"] == "disk")
-        self.assertEqual((disk["foot"], disk["fcolour"]), ("backup needs attention", tui.C["warn"]))
+        disk = next(k for k in tui.metrics(s) if k["title"] == "disk")
+        self.assertIn(("last backup", "needs attention", tui.C["warn"]), disk["stats"])
 
-    def test_critical_turns_the_one_page_red_with_the_issues_on_top(self):
+    def test_critical_puts_the_issues_on_top_and_flashes_the_edge(self):
         c = tui_fixture.screen("trouble", 232, 64)
         text = c.text()
         self.assertEqual(c.alert, "critical")
@@ -309,16 +322,16 @@ class DashboardTests(unittest.TestCase):
                          "public API not answering", "the fan is not turning (97°C)",
                          "3 port(s) reachable from the local network",
                          "the API answered 2 request(s) with a server error",
-                         "CPU", "TEMPERATURE", "the fan is not turning!", "EVENTS", "CONNECTIONS", "14/15 running"):
+                         "CPU", "THERMAL", "FAN NOT TURNING", "EVENTS", "CONNECTIONS", "14/15 running"):
             self.assertIn(expected, text)
         lines = text.splitlines()
         self.assertIn("NEEDS ATTENTION", lines[1])                  # the issues come first
-        header = next(i for i, line in enumerate(lines) if "supabase 12/13" in line)
-        self.assertIn("edge-functions (exited)", lines[header])     # the stopped service leads its app
+        header = next(i for i, line in enumerate(lines) if "SUPABASE" in line and "12/13" in line)
+        self.assertIn("edge-functions", lines[header + 1])          # the stopped service leads its app
+        self.assertIn("exited", lines[header + 1])
         for gone in ("INCIDENT", "space:", "n/b", "next page"):
             self.assertNotIn(gone, text)
-        self.assertEqual(c.cells[30][100][2], tui.RED_THEME[0]["bg"])    # the whole screen is red
-        tui.set_theme(False)
+        self.assertEqual(c.cells[30][100][2], (0, 0, 0))            # the screen stays black; the edge flashes red
 
     def test_warning_pulses_the_edge_orange(self):
         c = tui_fixture.screen("warning", 232, 64)
@@ -442,15 +455,19 @@ class DashboardTests(unittest.TestCase):
             self.assertIn(expected, text)
         self.assertEqual(tui.SAMPLE_S, 2.0)     # the screen samples as often as the collector writes, not in a 1 ms loop
         s = tui_fixture.make_sampler("healthy")
-        s.status["containers"] = [{"name": f"macserver-apps-app{n}-1", "project": "macserver-apps", "state": "running"}
-                                  for n in range(40)]
-        rows = tui.service_layout(s, 60)
-        self.assertEqual(rows[0][0], (0, "apps 40/40", "app"))       # the compose prefix is dropped
-        self.assertGreater(len(rows), 1)                             # names wrap under the app
-        self.assertTrue(all(col + len(text) <= 60 for row in rows for col, text, _ in row))
-        c = tui.Canvas(60, 5)
-        tui.services_panel(c, s, 0, 0, 60, 5)
-        self.assertIn("more rows", c.text())                         # too many for the room: says so
+        s.status["containers"] = ([{"name": f"macserver-apps-app{n}-1", "project": "macserver-apps", "state": "running"}
+                                   for n in range(12)] +
+                                  [{"name": f"tools-t{n}-1", "project": "tools", "state": "running"} for n in range(5)])
+        blocks = tui.service_blocks(s)
+        self.assertEqual(blocks[0][0], ("app", "apps", "12/12", "ok"))   # the compose prefix is dropped
+        cols = tui.pack_columns(blocks, 2, 13)
+        self.assertEqual([col[0][1] for col in cols], ["apps", "tools"])  # columns break between apps
+        split = tui.pack_columns(blocks, 3, 8)
+        self.assertEqual(split[1][0], blocks[0][0])                      # a long app goes on under its title again
+        self.assertIsNone(tui.pack_columns(blocks, 1, 8))
+        c = tui.Canvas(60, 6)
+        tui.services_panel(c, s, 0, 0, 60, 6)
+        self.assertIn("more: sudo macserver status", c.text())          # too many for the room: says so
 
     def test_readings_are_smoothed(self):
         tui_fixture.machine()

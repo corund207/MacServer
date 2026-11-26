@@ -1187,3 +1187,20 @@ Verified: `tests/run.sh` on the Mac (250 tests; the only failure is `test_debug_
 needs root there), previews at 232x64 for healthy, warning and trouble (docs/images/dashboard.png), and every size
 from 40x12 to 232x64 in both looks draws only font characters. Not verified yet: the live screen after the
 self-update installs it.
+
+## 2026-11-25: the screen's professional redesign, with a devices panel
+
+The one-page screen used 5-row block digits that looked toy-like. Now: a pure black background (`host/foot.ini` too),
+saturated colour only for meaning (green good, amber notice, red broken, one hue per metric), neutral thin panel
+borders with coloured titles, and aligned tables. Top to bottom: needs attention (only with issues), five metric
+panels (CPU, memory, disk, network, thermal: reading, meter, 20-minute graph, key figures; the disk panel shows the
+last backup), services by app in a table (state, CPU, memory, uptime; restarts and traffic when wide; columns break
+only between apps), a new **devices** panel, then connections and events. Devices lists the tailnet peers from
+status.json (name, address, OS, direct/relay, last seen, traffic) and the Mac's LAN neighbours from `/proc/net/arp`
+(readable without root; the router from `/proc/net/route` is marked, locally administered MACs read "private MAC").
+A critical issue no longer tints the screen red: it stays black, the status pill and issues panel turn red and the
+edge flashes. Spare rows make the metric graphs taller.
+
+Verified: `tests/run.sh` on the Mac (same single root-only failure as before), previews at 232x64 for healthy,
+warning, trouble and with the Mac's real 27 containers (two service columns, apps unsplit), and every size from 40x12
+up in both looks. Not verified yet: the live screen after the self-update installs it.

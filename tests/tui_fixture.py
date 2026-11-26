@@ -61,7 +61,14 @@ def machine(temp_c=62, tick=0, fan_rpm=2400):
                           "Cached: 1610000 kB\nSReclaimable: 90000 kB\nSwapTotal: 3990000 kB\nSwapFree: 3700000 kB\n")
     write("proc/loadavg", "0.62 0.48 0.41 2/412 9876\n")
     write("proc/diskstats", f"259 0 nvme0n1 900 0 {4000000 + tick * 2400} 0 700 0 {9000000 + tick * 600} 0 0 0 0\n")
-    write("proc/net/route", "Iface\tDestination\tGateway\nwlp3s0\t00000000\t0101A8C0\n")
+    write("proc/net/route", "Iface\tDestination\tGateway\nwlp3s0\t00000000\t0112A8C0\n")   # router 192.168.18.1
+    write("proc/net/arp", "IP address       HW type     Flags       HW address            Mask     Device\n"
+          "192.168.18.1     0x1         0x2         d8:31:34:67:b6:38     *        wlp3s0\n"
+          "192.168.18.20    0x1         0x2         4c:53:fd:4d:40:2e     *        wlp3s0\n"
+          "192.168.18.34    0x1         0x2         76:da:88:94:ec:c8     *        wlp3s0\n"
+          "192.168.18.9     0x1         0x2         60:92:c8:9a:06:1e     *        wlp3s0\n"
+          "192.168.18.77    0x1         0x0         00:00:00:00:00:00     *        wlp3s0\n"
+          "172.18.0.8       0x1         0x2         46:f9:62:08:92:a8     *        br-0e5b61fc7fe6\n")
     write("proc/net/dev", f"h1\nh2\n    lo: 1 0 0 0 0 0 0 0 1 0\n"
                           f"wlp3s0: {3_412_000_000 + tick * 1_240_000} 0 0 0 0 0 0 0 {812_000_000 + tick * 86_000} 0\n"
                           f"tailscale0: {95_000_000 + tick * 42_000} 0 0 0 0 0 0 0 {61_000_000 + tick * 18_000} 0\n")

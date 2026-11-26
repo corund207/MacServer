@@ -89,47 +89,25 @@ def rgb(h):
 
 
 C = {k: rgb(v) for k, v in {
-    "bg": "#0b0e14", "panel": "#0f131b", "text": "#c9d1d9", "bright": "#f0f6fc", "dim": "#7d8590",
-    "faint": "#2d333b", "line": "#262c36",
-    "cpu": "#3fb950", "mem": "#e3b341", "net": "#a371f7", "conn": "#00d4ff", "svc": "#58a6ff", "warn": "#d29922",
-    "ok": "#3fb950", "bad": "#f85149", "off": "#6e7681", "accent": "#79c0ff", "pill_fg": "#0b0e14",
+    "bg": "#000000", "panel": "#0c0c0c", "text": "#d0d0d0", "bright": "#ffffff", "dim": "#808080",
+    "faint": "#262626", "line": "#3a3a3a",
+    "cpu": "#00ff5f", "mem": "#ffd000", "net": "#c040ff", "conn": "#00e5ff", "svc": "#2f8fff", "temp": "#ff3cac",
+    "warn": "#ffa000", "ok": "#00ff5f", "bad": "#ff1744", "off": "#5c5c5c", "accent": "#00d0ff", "pill_fg": "#000000",
 }.items()}
 
 GRADIENTS = {k: [rgb(x) for x in v] for k, v in {
-    "cpu": ["#2ea043", "#3fb950", "#d29922", "#f85149"],
-    "mem": ["#bb8009", "#e3b341", "#f0883e", "#f85149"],
-    "temp": ["#388bfd", "#a371f7", "#f778ba", "#f85149"],
-    "down": ["#6e40c9", "#a371f7", "#d2a8ff"],
-    "up": ["#1b7c83", "#39c5cf", "#a5f3fc"],
-    "bat": ["#f85149", "#d29922", "#3fb950"],
-    "disk": ["#1f6feb", "#58a6ff", "#a5d6ff"],
+    "cpu": ["#00c853", "#00ff5f", "#ffd000", "#ff1744"],
+    "mem": ["#ff9800", "#ffd000", "#ff6d00", "#ff1744"],
+    "temp": ["#2f8fff", "#c040ff", "#ff3cac", "#ff1744"],
+    "down": ["#7c1fff", "#c040ff", "#ff6bff"],
+    "up": ["#00a3a3", "#00e5ff", "#7df9ff"],
+    "bat": ["#ff1744", "#ffd000", "#00ff5f"],
+    "disk": ["#0050ff", "#2f8fff", "#66c2ff"],
 }.items()}
 
 STATE_COLOUR = {"ok": C["ok"], "warn": C["warn"], "bad": C["bad"], "off": C["off"]}
 STATE_TEXT = {"ok": "OK", "warn": "WARN", "bad": "DOWN", "off": "OFF"}
-
-
-def _red(colour):
-    """The same brightness, in red: the whole screen turns red during an incident."""
-    lum = 0.3 * colour[0] + 0.59 * colour[1] + 0.11 * colour[2]
-    return min(255, round(35 + lum * 0.95)), round(lum * 0.16), round(lum * 0.2)
-
-
-NORMAL_THEME = (dict(C), {k: list(v) for k, v in GRADIENTS.items()})
-RED_THEME = ({**{k: _red(v) for k, v in C.items()}, "bg": (20, 6, 8), "panel": (36, 9, 12),
-              "bad": (255, 64, 64), "warn": (255, 150, 60), "ok": (150, 60, 60), "pill_fg": (20, 6, 8),
-              "bright": (255, 220, 220), "text": (235, 170, 170)},
-             {k: [(110, 18, 24), (200, 40, 46), (255, 95, 90)] for k in GRADIENTS})
-ALERT_ORANGE = (255, 140, 0)
-
-
-def set_theme(critical):
-    """Switch every colour between the normal and the red theme (per frame)."""
-    global C, GRADIENTS, STATE_COLOUR, EVENT_COLOUR
-    C, GRADIENTS = (RED_THEME if critical else NORMAL_THEME)
-    C, GRADIENTS = dict(C), dict(GRADIENTS)
-    STATE_COLOUR = {"ok": C["ok"], "warn": C["warn"], "bad": C["bad"], "off": C["off"]}
-    EVENT_COLOUR = {"ok": C["ok"], "warn": C["warn"], "bad": C["bad"], "info": C["accent"]}
+ALERT_ORANGE = (255, 160, 0)
 
 
 def ring_colour(level, t):
@@ -300,6 +278,30 @@ def default_iface():
         if len(parts) > 2 and parts[1] == "00000000":
             return parts[0]
     return ""
+
+
+def gateway(iface):
+    """The default gateway's address on this interface (the router), from /proc/net/route."""
+    for line in read(PROC / "net/route").splitlines()[1:]:
+        parts = line.split()
+        if len(parts) > 2 and parts[0] == iface and parts[1] == "00000000":
+            try:
+                raw = int(parts[2], 16)
+            except ValueError:
+                return None
+            return ".".join(str((raw >> s) & 255) for s in (0, 8, 16, 24))
+    return None
+
+
+def lan_neighbours(iface):
+    """Devices the Mac has talked to lately on its own network (the kernel's ARP table): [(ip, mac)], by address.
+    Readable without root; only complete entries on this interface."""
+    out = []
+    for line in read(PROC / "net/arp").splitlines()[1:]:
+        parts = line.split()
+        if len(parts) >= 6 and parts[5] == iface and parts[2] != "0x0" and parts[3] != "00:00:00:00:00:00":
+            out.append((parts[0], parts[3].lower()))
+    return sorted(out, key=lambda e: [int(n) if n.isdigit() else 0 for n in e[0].split(".")])
 
 
 def net_bytes(iface):
@@ -513,6 +515,7 @@ class Sampler:
         self.now["temp"], self.now["core_temps"], self.now["fans"] = sensors()
         self.now["battery"] = battery()
         self.now["signal"] = wifi_signal(iface)
+        self.now["lan"], self.now["gateway"] = lan_neighbours(iface), gateway(iface)
         self.now["uptime"] = uptime_s()
         self.now["load"] = loadavg()
         self.hist["load"].append(self.now["load"][0])
@@ -691,7 +694,7 @@ def box(c, x, y, w, h, title, colour, right=""):
     """Rounded panel with the title and an optional note set into the top border."""
     if w < 6 or h < 2:
         return
-    line = mix(colour, C["bg"], 0.55) if c.rich else colour
+    line = C["line"] if c.rich else colour
     c.put(x, y, "╭" + "─" * (w - 2) + "╮", line)
     for row in range(y + 1, y + h - 1):
         c.put(x, row, "│", line)
@@ -762,10 +765,6 @@ def pill(c, x, y, state, width=6):
     text = STATE_TEXT.get(state, "OFF").center(width)
     fg = C["pill_fg"] if c.rich else C["bright"]      # the console has no dark-on-bright that reads well
     return c.put(x, y, text, fg, STATE_COLOUR.get(state, C["off"]), bold=True)
-
-
-def dot(c, x, y, state):
-    return c.put(x, y, "●", STATE_COLOUR.get(state, C["off"]))
 
 
 # --- assessment ----------------------------------------------------------------------
@@ -1025,14 +1024,6 @@ def fit(y, h, needs, grow=-1):
 def columns(x, w, weights):
     """Split a row of the screen into columns of these relative sizes: [(x, w), ...]."""
     return [(x + a, b) for a, b in stack(0, w, weights)]
-
-
-def bar(c, x, y, w, frac, colour):
-    """A plain meter in one colour."""
-    frac = min(max(frac, 0.0), 1.0)
-    filled = round(frac * w)
-    for i in range(w):
-        c.put(x + i, y, "■" if c.rich or i < filled else "·", colour if i < filled else (C["faint"] if c.rich else C["off"]))
 
 
 # --- what is wrong, with the facts and the way to look ------------------------------------------
@@ -1368,121 +1359,119 @@ def per_cent(part, whole):
 
 
 # --- the screen: one page ----------------------------------------------------------------------------------------
-# One steady page, made to be read from across the room. Nothing turns by itself and there are no keys to learn:
-#   1. anything wrong, at the top: what it is, why, and the first thing to run (all of it: `macserver issues`)
-#   2. five big readings: CPU, memory, disk, temperature, network, each with its recent history
-#   3. every app and service as a dot, grouped by app; then connections and what happened lately
-# A critical issue turns the whole screen red, a notice pulses its edge orange.
+# One page with a fixed place for everything, so the eye learns where to look. Nothing turns by itself and there
+# are no keys to learn (2 logs in). From the top:
+#   needs attention   only when something is wrong: each issue, why, and the first thing to run
+#   five metrics      CPU, memory, disk, network, thermal: the reading, a meter, its history and the key figures
+#   services          every container by app, with state, CPU, memory and uptime
+#   devices           every Tailscale device (address, system, how it connects, last seen, traffic) and every
+#                     device the Mac has talked to on its own network lately (address, hardware address)
+#   connections       Internet, Tailscale, public API, Claude, clock, updates; then the event log
+# Black background, saturated colour for meaning only: green good, amber notice, red broken, and one hue per metric.
 
-FIGURES = {  # 5-row block figures for the big readings; only █, which the console font has too
-    "0": ["███", "█ █", "█ █", "█ █", "███"], "1": [" █ ", "██ ", " █ ", " █ ", "███"],
-    "2": ["███", "  █", "███", "█  ", "███"], "3": ["███", "  █", "███", "  █", "███"],
-    "4": ["█ █", "█ █", "███", "  █", "  █"], "5": ["███", "█  ", "███", "  █", "███"],
-    "6": ["███", "█  ", "███", "█ █", "███"], "7": ["███", "  █", "  █", "  █", "  █"],
-    "8": ["███", "█ █", "███", "█ █", "███"], "9": ["███", "█ █", "███", "  █", "███"],
-    ".": [" ", " ", " ", " ", "█"], "%": ["█ █", "  █", " █ ", "█  ", "█ █"],
-    "°": ["██", "██", "  ", "  ", "  "], "C": ["███", "█  ", "█  ", "█  ", "███"],
-    "-": ["   ", "   ", "███", "   ", "   "], "?": ["███", "  █", " ██", "   ", " █ "],
-}
+def section_title(c, x, y, w, text, note="", colour=None):
+    """A row that names a group inside a panel: bold label, then a thin rule, then an optional note."""
+    end = c.put(x, y, clip(text.upper(), w), colour or C["accent"], bold=True)
+    room = x + w - end - 1
+    if note and room > len(note) + 3:
+        end = c.put(end + 1, y, note, C["dim"])
+        room = x + w - end - 1
+    if room > 1:
+        c.put(end + 1, y, "─" * room, C["faint"])
 
 
-def figures_width(text):
-    return sum(2 * len(FIGURES[ch][0]) + 2 for ch in text if ch in FIGURES) - 2 if text else 0
-
-
-def figures(c, x, y, text, colour):
-    """Draw text (digits and . % ° C - ?) five rows tall, each dot two cells wide so the figures
-    are not thin (a terminal cell is about twice as tall as it is wide). Returns the column after it."""
-    for ch in text:
-        rows = FIGURES.get(ch)
-        if rows is None:
-            continue
-        for r, row in enumerate(rows):
-            for i, cell in enumerate(row):
-                if cell != " ":
-                    c.put(x + 2 * i, y + r, "██", colour)
-        x += 2 * len(rows[0]) + 2
-    return x
+def metric_panel(c, x, y, w, h, m):
+    """One metric: the reading and its context on the first row, a meter, the history graph, the key figures."""
+    box(c, x, y, w, h, m["title"], m["colour"])
+    if w < 14 or h < 3:
+        return
+    ix, iw, bottom = x + 2, w - 4, y + h - 1
+    xx = c.put(ix, y + 1, m["value"], m.get("vcolour") or C["bright"], bold=True)
+    right = clip(m.get("context", ""), max(ix + iw - xx - 2, 0))
+    c.put(ix + iw - len(right), y + 1, right, C["text"])
+    row = y + 2
+    if m.get("frac") is not None and row < bottom:
+        meter(c, ix, row, iw, m["frac"], m.get("grad", "cpu"))
+        row += 1
+    stats = [s for s in m.get("stats", []) if s][: max(bottom - row - 1, 0)]
+    graph_h = bottom - row - len(stats) - (1 if stats else 0)
+    if graph_h >= 1 and m.get("series") is not None:
+        graph(c, ix, row + 1 if graph_h > 2 else row, iw, graph_h - (1 if graph_h > 2 else 0),
+              m["series"], m.get("top") or 100, m.get("grad", "cpu"))
+        if m.get("graph_note") and graph_h > 2:
+            c.put(ix + iw - len(m["graph_note"]), row, m["graph_note"], C["dim"])
+    row = bottom - len(stats)
+    for label, value, *colour in stats:
+        c.put(ix, row, clip(label, iw), C["dim"])
+        text = clip(value, max(iw - len(label) - 1, 0))
+        c.put(ix + iw - len(text), row, text, colour[0] if colour else C["text"])
+        row += 1
 
 
 def backup_text(sampler):
-    """The backup line under the disk reading: when the newest backup was made."""
+    """When the newest backup was made, for the disk panel: (text, colour)."""
     backups = (((sampler.status or {}).get("debug") or {}).get("backups")) or {}
     if backups.get("count") is None:
-        return "", None
+        return "", C["text"]
     if backup_problem(backups):
-        return "backup needs attention", C["warn"]
+        return "needs attention", C["warn"]
     if not backups.get("count"):
-        return "no backup yet", C["warn"]
-    return f"last backup {fmt_ago(backups.get('newest_age_s') or 0)} ago", None
+        return "none yet", C["warn"]
+    return f"{fmt_ago(backups.get('newest_age_s') or 0)} ago", C["text"]
 
 
-def readings(sampler):
-    """The five big readings, most important first (a narrow screen keeps the first ones)."""
-    now, hist = sampler.now, sampler.hist
+def metrics(sampler):
+    """The five metric panels, most important first (a narrow screen keeps the first ones)."""
+    now, hist, s = sampler.now, sampler.hist, sampler.status or {}
     sd = sysdata(sampler)
     la = now.get("load") or [0.0, 0.0, 0.0]
     threads = len(now.get("cores") or []) or (sd.get("cpu") or {}).get("threads") or 0
     ghz = (now.get("mhz") or 0) / 1000
-    cards = [{"title": "cpu", "colour": C["cpu"], "big": f"{now['cpu']:.0f}%", "series": hist["cpu"], "top": 100, "grad": "cpu",
-              "sub": f"{threads} threads" + (f" · {ghz:.1f} GHz" if ghz else ""), "foot": f"load {la[0]:.2f}"}]
+    out = [{"title": "cpu", "colour": C["cpu"], "value": f"{now['cpu']:.0f}%", "frac": now["cpu"] / 100, "grad": "cpu",
+            "context": f"{threads} threads" + (f" · {ghz:.2f} GHz" if ghz else ""), "series": hist["cpu"], "top": 100,
+            "graph_note": "20 min",
+            "stats": [("load 1 · 5 · 15 min", f"{la[0]:.2f}  {la[1]:.2f}  {la[2]:.2f}"),
+                      ("tasks", f"{now.get('running', 0)} running · {now.get('tasks', 0)} total")]}]
     m = now["mem"]
-    cards.append({"title": "memory", "colour": C["mem"], "big": f"{per_cent(m['used'], m['total']):.0f}%", "series": hist["mem"],
-                  "top": 100, "grad": "mem", "sub": f"{fmt_bytes(m['used'])} of {fmt_bytes(m['total'])}",
-                  "vcolour": level_colour(1 - per_cent(m.get("available", m["total"] - m["used"]), m["total"]) / 100, 0.9, 0.95)
-                  if m["total"] else None,
-                  "foot": f"{fmt_bytes(m.get('available', m['total'] - m['used']))} free"})
+    avail = m.get("available", m["total"] - m["used"])
+    out.append({"title": "memory", "colour": C["mem"], "value": f"{per_cent(m['used'], m['total']):.0f}%",
+                "vcolour": level_colour(1 - per_cent(avail, m["total"]) / 100, 0.9, 0.95) if m["total"] else None,
+                "frac": m["used"] / m["total"] if m["total"] else 0, "grad": "mem",
+                "context": f"{fmt_bytes(m['used'])} of {fmt_bytes(m['total'])}", "series": hist["mem"], "top": 100,
+                "stats": [("available", fmt_bytes(avail)), ("swap used", fmt_bytes(m.get("swap_used", 0)))]})
     used, total = now.get("disk", (0, 0))
     btext, bcolour = backup_text(sampler)
-    cards.append({"title": "disk", "colour": C["svc"], "big": f"{per_cent(used, total):.0f}%", "frac": used / total if total else 0,
-                  "bcolour": level_colour(used / total) if total else C["svc"], "vcolour": level_colour(used / total) if total else None,
-                  "sub": f"{fmt_bytes(used)} of {fmt_bytes(total)}", "foot": btext, "fcolour": bcolour})
+    out.append({"title": "disk", "colour": C["svc"], "value": f"{per_cent(used, total):.0f}%",
+                "vcolour": level_colour(used / total) if total else None, "frac": used / total if total else 0, "grad": "disk",
+                "context": f"{fmt_bytes(used)} of {fmt_bytes(total)}", "series": hist["wr"], "graph_note": "writes",
+                "top": nice_top(list(hist["wr"])[-120:], 1_000_000),
+                "stats": [("read · write", f"{fmt_bytes(now['rd'], True)} · {fmt_bytes(now['wr'], True)}"),
+                          ("last backup", btext or "not set up", bcolour)]})
+    ts = s.get("tailscale") or {}
+    sig = now.get("signal")
+    out.append({"title": "network", "colour": C["net"], "value": f"▼ {fmt_bytes(now['rx'], True)}", "grad": "down",
+                "context": f"▲ {fmt_bytes(now['tx'], True)}", "series": hist["rx"], "graph_note": "download",
+                "top": nice_top(list(hist["rx"])[-120:], 100_000),
+                "stats": [("interface", (sampler.iface or "offline") + (f" · {sig} dBm" if sig is not None else "")),
+                          ("tailnet", f"{ts.get('peers_online', 0)} device(s) online" if ts else "-")]})
     temp = now.get("temp")
     fans = now.get("fans") or [f["rpm"] for f in ((sd.get("sensors") or {}).get("fans") or [])]
     stalled = cooling_fault(temp, fans)
-    cards.append({"title": "temperature", "colour": C["accent"], "big": "?" if temp is None else f"{temp:.0f}°C",
-                  "vcolour": C["bad"] if stalled else None if temp is None else grad("temp", temp_pos(temp)),
-                  "series": hist["temp"], "top": 100, "grad": "temp", "sub": f"fan {fans[0]} rpm" if fans else "no fan reading",
-                  "foot": "the fan is not turning!" if stalled else "", "fcolour": C["bad"] if stalled else None})
-    num, _, unit = fmt_bytes(now["rx"], True).partition(" ")
-    cards.append({"title": "network", "colour": C["net"], "big": num, "series": hist["rx"],
-                  "top": nice_top(list(hist["rx"])[-120:], 100_000), "grad": "down",
-                  "sub": f"{unit} down · {fmt_bytes(now['tx'], True)} up", "foot": sampler.iface or "offline"})
-    return cards
+    pct, stat, watts = now.get("battery") or (None, None, None)
+    out.append({"title": "thermal", "colour": C["temp"], "value": "-" if temp is None else f"{temp:.0f}°C",
+                "vcolour": C["bad"] if stalled else None if temp is None else grad("temp", temp_pos(temp)),
+                "frac": None if temp is None else min(temp / 105, 1), "grad": "temp",
+                "context": f"fan {fans[0]} rpm" if fans else "no fan reading", "series": hist["temp"], "top": 100,
+                "stats": [("cooling", "FAN NOT TURNING" if stalled else "normal", C["bad"] if stalled else C["ok"]),
+                          ("battery", f"{pct}% {stat or ''}".strip() + (f" · {watts:.1f} W" if watts else "") if pct is not None else "-")]})
+    return out
 
 
-def reading_card(c, x, y, w, h, card):
-    """One reading: the number in big figures when there is room, its history underneath."""
-    box(c, x, y, w, h, card["title"], card["colour"])
-    if w < 10 or h < 3:
-        return
-    ix, iw, value_colour = x + 2, w - 4, card.get("vcolour") or C["bright"]
-    foot = (card.get("foot", ""), card.get("fcolour") or C["dim"])
-    big_w = figures_width(card["big"])
-    if h >= 12 and big_w <= iw:
-        figures(c, ix, y + 1, card["big"], value_colour)
-        line(c, ix, y + 7, iw, (card["sub"], C["text"]))     # the words under the figures
-        line(c, ix, y + 8, iw, foot)
-        top = y + 10
-    else:
-        xx = c.put(ix, y + 1, card["big"], value_colour, bold=True)
-        line(c, xx + 2, y + 1, x + w - 2 - (xx + 2), (card["sub"], C["text"]))
-        if h >= 4:
-            line(c, ix, y + h - 2, iw, foot)
-        top = y + 2
-    rows = y + h - 1 - top - (0 if h >= 12 else 1)
-    if rows >= 1 and card.get("series") is not None:
-        graph(c, ix, top, iw, rows, card["series"], card.get("top") or 100, card.get("grad", "cpu"))
-    elif rows >= 1 and card.get("frac") is not None:
-        for r in range(min(rows, 3)):                     # the disk: a thick bar, it barely moves
-            bar(c, ix, top + r, iw, card["frac"], card.get("bcolour", C["accent"]))
-
-
-def readings_row(c, sampler, x, y, w, h):
-    cards = readings(sampler)
-    n = max(1, min(len(cards), w // 30 if w >= 60 else w // 26))
-    for card, (cx, cw) in zip(cards[:n], columns(x, w, [1] * n)):
-        reading_card(c, cx, y, cw, h, card)
+def metrics_row(c, sampler, x, y, w, h):
+    panels = metrics(sampler)
+    n = max(1, min(len(panels), w // 34 if w >= 68 else 1))
+    for m, (cx, cw) in zip(panels[:n], columns(x, w, [1] * n)):
+        metric_panel(c, cx, y, cw, h, m)
 
 
 def issue_rows(item):
@@ -1497,8 +1486,7 @@ def issues_need(items):
 
 def issues_panel(c, sampler, x, y, w, h, items):
     bad = sum(1 for i in items if i["level"] == "bad")
-    note = "details and fixes: macserver issues"
-    box(c, x, y, w, h, "needs attention", C["bad"] if bad else C["warn"], note if w >= 60 else "")
+    box(c, x, y, w, h, "needs attention", C["bad"] if bad else C["warn"], "details and fixes: macserver issues" if w >= 60 else "")
     if h < 3 or w < 14:
         return
     row, bottom, inner = y + 1, y + h - 1, w - 4
@@ -1519,6 +1507,13 @@ def issues_panel(c, sampler, x, y, w, h, items):
             row += 1
 
 
+def service_state(item):
+    if item.get("state") != "running":
+        return "bad"
+    health = item.get("health") or ("unhealthy" if "unhealthy" in item.get("status", "") else "")
+    return "warn" if health == "unhealthy" else "ok"
+
+
 def service_groups(sampler):
     """[(app, [containers])] by compose project, the biggest app first; stopped and unhealthy services lead their app."""
     groups = {}
@@ -1531,71 +1526,188 @@ def service_groups(sampler):
     out = []
     for project, members in sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0])):
         members.sort(key=lambda i: (service_state(i) == "ok", i["short"]))
-        name = project[len("macserver-"):] if project.startswith("macserver-") else project
-        out.append((name, members))
+        out.append((project[len("macserver-"):] if project.startswith("macserver-") else project, members))
     return out
 
 
-def service_state(item):
-    if item.get("state") != "running":
-        return "bad"
-    health = item.get("health") or ("unhealthy" if "unhealthy" in item.get("status", "") else "")
-    return "warn" if health == "unhealthy" else "ok"
-
-
-def service_layout(sampler, w):
-    """Rows for the services panel: [[(column, text, state or None)]]: the app's name, then a dot per service, wrapped."""
-    groups = service_groups(sampler)
-    label_w = min(max((len(n) for n, _ in groups), default=4) + 7, 22)
-    rows = []
-    for name, members in groups:
+def service_blocks(sampler):
+    """One block of lines per app: its title, then its containers. ("app", name, "up/total", state) or ("svc", container)."""
+    out = []
+    for name, members in service_groups(sampler):
         up = sum(1 for m in members if service_state(m) == "ok")
-        row, col = [(0, f"{name} {up}/{len(members)}", "app-bad" if up < len(members) else "app")], label_w
-        for m in members:
-            state = service_state(m)
-            text = m["short"] if state == "ok" else f"{m['short']} ({m.get('state') if state == 'bad' else 'unhealthy'})"
-            if col + len(text) + 2 > w and col > label_w:
-                rows.append(row)
-                row, col = [], label_w
-            row.append((col, text, state))
-            col += len(text) + 4
-        rows.append(row)
-    return rows
+        out.append([("app", name, f"{up}/{len(members)}", "ok" if up == len(members) else "bad")] + [("svc", m) for m in members])
+    return out
+
+
+def pack_columns(blocks, ncols, rows):
+    """Lay the apps into columns of `rows` lines, breaking only between apps; an app too long for one column
+    goes on in the next under its title again. None when they do not all fit."""
+    if rows < 2:                                   # no room for a title and one service
+        return None
+    cols, cur = [], []
+    for block in blocks:
+        if cur and len(cur) + len(block) > rows:
+            cols.append(cur)
+            cur = []
+        while len(block) > rows:
+            cols.append(block[:rows])
+            block = [block[0]] + block[rows:]
+        cur += block
+    if cur:
+        cols.append(cur)
+    return cols if len(cols) <= ncols else None
+
+
+SVC_COL_W = 50     # the narrowest column of the services list: dot, name, state, CPU, memory
+
+
+def service_columns(col_w):
+    """The services table's columns for this width: [(title, width, align)]; the name takes what is left."""
+    cols = [("", 2, "l"), ("NAME", None, "l"), ("STATE", 10, "l"), ("CPU", 7, "r"), ("MEM", 9, "r")]
+    for extra in (("UP", 7, "r"), ("RESTARTS", 10, "r"), ("NET IN", 11, "r"), ("NET OUT", 11, "r")):
+        if col_w - sum(wd for _, wd, _ in cols if wd) - extra[1] >= 24:
+            cols.append(extra)
+    name_w = col_w - sum(wd for _, wd, _ in cols if wd)
+    return [(t, wd if wd else name_w, al) for t, wd, al in cols]
+
+
+def service_cells(item):
+    state = service_state(item)
+    running = item.get("state") == "running"
+    cpu, mem, started = item.get("cpu"), item.get("mem"), item.get("started")
+    colour = STATE_COLOUR[state]
+    return {"": ("●", colour),
+            "NAME": (item["short"], C["bright"] if state == "ok" else colour, state != "ok"),
+            "STATE": (item.get("state", "?") if state != "warn" else "unhealthy", C["dim"] if state == "ok" else colour),
+            "CPU": (f"{cpu:.1f}%" if cpu is not None else "-", C["text"]),
+            "MEM": (fmt_bytes(mem) if mem is not None else "-", C["text"]),
+            "UP": (fmt_duration(int(max(time.time() - started, 0))).split()[0] if running and started else "-", C["dim"]),
+            "RESTARTS": (str(item.get("restarts", "-")), C["warn"] if item.get("restarts") else C["dim"]),
+            "NET IN": (fmt_bytes(item.get("net_rx", 0), True) if running else "-", C["net"]),
+            "NET OUT": (fmt_bytes(item.get("net_tx", 0), True) if running else "-", C["conn"])}
+
+
+def table_row(c, x, y, cols, cells, gap=1):
+    """One row of fixed columns; right-aligned columns keep their numbers lined up."""
+    for title, wd, align in cols:
+        text, colour, *bold = cells.get(title, ("", C["text"]))
+        text = clip(str(text), wd - gap) if wd > gap else ""
+        c.put(x, y, text.rjust(wd - gap) if align == "r" else text, colour, bold=bool(bold and bold[0]))
+        x += wd
 
 
 def services_panel(c, sampler, x, y, w, h):
     items = list((sampler.status or {}).get("containers", []) or [])
     up = sum(1 for i in items if service_state(i) == "ok")
-    box(c, x, y, w, h, "apps and services", C["svc"], f"{up}/{len(items)} running" if items else "")
+    box(c, x, y, w, h, "services", C["svc"], f"{up}/{len(items)} running" if items else "")
     if h < 3 or w < 14:
         return
     if not items:
         line(c, x + 2, y + 1, w - 4, ("Supabase is installed by setup. Nothing to show yet.", C["dim"]))
         return
-    rows = service_layout(sampler, w - 4)
-    room = h - 2
-    for n, row in enumerate(rows[:room]):
-        if n == room - 1 and len(rows) > room:
-            line(c, x + 2, y + 1 + n, w - 4, (f"… {len(rows) - n} more rows: sudo macserver status", C["dim"]))
+    blocks = service_blocks(sampler)
+    inner, rows = w - 4, h - 3
+    fit_cols = max(1, (inner + 3) // (SVC_COL_W + 3))
+    layout = None
+    for ncols in range(1, fit_cols + 1):          # as few columns as fit: wide columns carry more detail
+        layout = pack_columns(blocks, ncols, rows)
+        if layout:
             break
-        for col, text, state in row:
-            xx, limit = x + 2 + col, x + w - 2
-            if xx >= limit:
-                break
-            if state in ("app", "app-bad"):
-                name, _, count = text.rpartition(" ")
-                end = c.put(xx, y + 1 + n, clip(name, limit - xx), C["bad"] if state == "app-bad" else C["accent"], bold=True)
-                if end + 1 < limit:
-                    c.put(end + 1, y + 1 + n, clip(count, limit - end - 1), C["bad"] if state == "app-bad" else C["dim"])
-                continue
-            xx = dot(c, xx, y + 1 + n, state)
-            if xx + 1 < limit:
-                c.put(xx + 1, y + 1 + n, clip(text, limit - xx - 1), C["text"] if state == "ok" else STATE_COLOUR[state],
-                      bold=state != "ok")
+    hidden = 0
+    if not layout:                                 # more than the panel holds: fill it, then count the rest
+        layout = (pack_columns(blocks, 10 ** 6, rows) or [])
+        hidden = sum(1 for col in layout[fit_cols:] for e in col if e[0] == "svc")
+        layout = layout[:fit_cols]
+        if hidden and layout:
+            layout[-1] = layout[-1][:rows - 1]
+    ncols = max(len(layout), 1)
+    col_w = (inner - 3 * (ncols - 1)) // ncols
+    cols = service_columns(col_w)
+    for k, entries in enumerate(layout):
+        cx = x + 2 + k * (col_w + 3)
+        table_row(c, cx, y + 1, cols, {t: (t, C["dim"], True) for t, _, _ in cols})
+        for n, entry in enumerate(entries):
+            if entry[0] == "app":
+                _, name, count, state = entry
+                section_title(c, cx, y + 2 + n, col_w, name, count, C["bad"] if state == "bad" else C["accent"])
+            else:
+                table_row(c, cx, y + 2 + n, cols, service_cells(entry[1]))
+    if hidden:
+        line(c, x + 2 + (ncols - 1) * (col_w + 3), y + h - 2, col_w, (f"… {hidden} more: sudo macserver status", C["dim"]))
 
 
 def services_need(sampler, w):
-    return 2 + max(len(service_layout(sampler, w - 4)), 1)
+    """Rows the services panel wants at this width (frame and column titles included)."""
+    blocks = service_blocks(sampler)
+    total = sum(len(b) for b in blocks)
+    fit_cols = max(1, (w - 4 + 3) // (SVC_COL_W + 3))
+    for rows in range(max(-(-total // fit_cols), 1), total + 1):
+        if pack_columns(blocks, fit_cols, rows):
+            return rows + 3
+    return total + 3
+
+
+def os_name(os_):
+    return {"windows": "Windows", "macOS": "macOS", "iOS": "iOS", "android": "Android", "linux": "Linux"}.get(os_, os_ or "-")
+
+
+def device_lines(sampler):
+    """The devices panel's lines: ("head", title, note) or ("dev", cells, state)."""
+    now = time.time()
+    peers = (sysdata(sampler).get("tailscale") or {}).get("peers") or []
+    out = []
+    if peers:
+        online = sum(1 for p in peers if p.get("online"))
+        out.append(("head", "tailnet", f"{online} of {len(peers)} online"))
+        for p in peers:
+            seen = ("now" if p.get("online") else
+                    f"{fmt_duration(int(max(now - p['last_seen'], 0))).split()[0]} ago" if p.get("last_seen") else "-")
+            traffic = f"▼{fmt_bytes(p.get('rx_bytes', 0))} ▲{fmt_bytes(p.get('tx_bytes', 0))}" if p.get("rx_bytes") or p.get("tx_bytes") else ""
+            out.append(("dev", (p.get("name") or "?", p.get("ip") or "-", os_name(p.get("os")), p.get("route") or "-", seen, traffic),
+                        "ok" if p.get("online") else "off"))
+    lan = sampler.now.get("lan") or []
+    if lan:
+        gw = sampler.now.get("gateway")
+        out.append(("head", "local network", f"{len(lan)} seen on {sampler.iface or '?'}"))
+        for ip, mac in lan:
+            kind = "router" if ip == gw else "private MAC" if int(mac[:2], 16) & 2 else "device"
+            out.append(("dev", ("router" if ip == gw else mac, ip, kind, "wi-fi" if (sampler.iface or "").startswith("wl") else "lan",
+                                "recent", ""), "ok"))
+    return out
+
+
+def devices_panel(c, sampler, x, y, w, h):
+    lines = device_lines(sampler)
+    count = sum(1 for e in lines if e[0] == "dev")
+    box(c, x, y, w, h, "devices", C["conn"], f"{count} known" if count else "")
+    if h < 3 or w < 14:
+        return
+    if not lines:
+        line(c, x + 2, y + 1, w - 4, ("No devices yet: Tailscale and the Wi-Fi report them here.", C["dim"]))
+        return
+    ix, right = x + 2, x + w - 2
+    widths = [20, 17, 12, 11, 9, None]
+    if w < 90:
+        widths = [18, 16, 12, None, 0, 0]
+    head = ("DEVICE", "ADDRESS", "TYPE", "LINK", "SEEN", "TRAFFIC")
+    fields(c, ix, y + 1, right, ("", C["dim"], 2), *[(t, C["dim"], wd, True) for t, wd in zip(head, widths) if wd != 0])
+    room = h - 3
+    for n, entry in enumerate(lines[:room]):
+        row = y + 2 + n
+        if n == room - 1 and len(lines) > room:
+            line(c, ix, row, w - 4, (f"… {len(lines) - n} more", C["dim"]))
+            break
+        if entry[0] == "head":
+            section_title(c, ix, row, w - 4, entry[1], entry[2])
+            continue
+        cells, state = entry[1], entry[2]
+        colours = (C["bright"], C["accent"], C["text"], C["ok"] if cells[3] == "direct" else C["text"], C["dim"], C["dim"])
+        fields(c, ix, row, right, ("●", STATE_COLOUR[state], 2),
+               *[(text, colour if state == "ok" else C["dim"], wd) for text, colour, wd in zip(cells, colours, widths) if wd != 0])
+
+
+def devices_need(sampler):
+    return 3 + max(len(device_lines(sampler)), 1)
 
 
 def conn_need(sampler):
@@ -1604,35 +1716,38 @@ def conn_need(sampler):
 
 
 def page(c, sampler, items, x, y, w, h):
-    """The one page: issues, readings, then services beside connections, and events."""
+    """The one page: issues, metrics, services beside devices, then connections beside events."""
     if items:
-        ih = min(issues_need(items), max(h * 45 // 100, 3))
+        ih = min(issues_need(items), max(h * 40 // 100, 3))
         issues_panel(c, sampler, x, y, w, ih, items)
         y, h = y + ih, h - ih
     if h < 3:
         return
     setup = not (sampler.status or {}).get("setup_done")
-    right_w = w * 30 // 100 if w >= 100 else 0
-    left_w = w - right_w
-    svc_need = 5 if setup else services_need(sampler, left_w)
-    lower_need = max(svc_need + (4 if right_w else 0), conn_need(sampler) if right_w else 0, 8)
-    cards_h = min(h - lower_need, round(h * 0.6))
-    if cards_h < 6:
-        cards_h = 6 if h >= 20 else 0
-    if cards_h:
-        readings_row(c, sampler, x, y, w, cards_h)
-    y, h = y + cards_h, h - cards_h
+    metric_h = 14 if h >= 48 else 11 if h >= 36 else 8 if h >= 24 else 0
+    if metric_h == 14 and w >= 120:                # spare rows make the graphs taller, up to 22
+        want = max(5 if setup else services_need(sampler, w * 55 // 100), devices_need(sampler))
+        metric_h = min(max(h - want - max(conn_need(sampler), 12), 14), 22)
+    if metric_h:
+        metrics_row(c, sampler, x, y, w, metric_h)
+        y, h = y + metric_h, h - metric_h
     if h < 3:
         return
     left = setup_panel if setup else services_panel
-    if right_w:
-        conn_panel(c, sampler, x + left_w, y, right_w, h)
-        sv, ev = fit(y, h, [svc_need, 4], grow=1)
-        left(c, sampler, x, sv[0], left_w, sv[1])
-        events_panel(c, sampler, x, ev[0], left_w, ev[1])
+    if w >= 120:
+        svc_w = w * 55 // 100
+        want = max(5 if setup else services_need(sampler, svc_w), devices_need(sampler))
+        mid_h = max(min(want, h - max(conn_need(sampler), 8)), min(h, 8))
+        low_h = h - mid_h
+        left(c, sampler, x, y, svc_w, mid_h)
+        devices_panel(c, sampler, x + svc_w, y, w - svc_w, mid_h)
+        conn_w = w * 40 // 100
+        conn_panel(c, sampler, x, y + mid_h, conn_w, low_h)
+        events_panel(c, sampler, x + conn_w, y + mid_h, w - conn_w, low_h)
     else:
-        sv, cn = fit(y, h, [svc_need, conn_need(sampler)], grow=1)
+        sv, dv, cn = fit(y, h, [5 if setup else services_need(sampler, w), devices_need(sampler), conn_need(sampler)], grow=0)
         left(c, sampler, x, sv[0], w, sv[1])
+        devices_panel(c, sampler, x, dv[0], w, dv[1])
         conn_panel(c, sampler, x, cn[0], w, cn[1])
 
 
@@ -1641,7 +1756,6 @@ def draw(c, sampler, kiosk=True):
     counted = counted_issues(sampler)
     label = [(i["level"], i["title"]) for i in counted]
     level = alert_level(label)
-    set_theme(level == "critical")                  # a critical issue turns the whole screen red
     c.alert = level
     if c.rich:
         c.fill(0, 0, c.w, c.h, C["bg"])
