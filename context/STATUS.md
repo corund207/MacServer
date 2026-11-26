@@ -1262,3 +1262,39 @@ status", ntfy priority 2 (low), tag bar_chart. Reports keep their own clock and 
 [now|on|off]`; `macserver notify status` shows the last report. 24 Actions runs a day (public repository: free).
 
 Verified: unit tests (once an hour, retry, limits untouched, the line). Not verified: a real report on the phone.
+
+## 2026-11-26: devices on the local network get names, kinds and systems
+
+New `admin/lan_devices.py` (stdlib only), run by `macserver-devices.timer` (3 min after boot, then every 10 min)
+as a sandboxed `DynamicUser` service with no capabilities. One look: ping every address of the default route's
+subnet (unprivileged ICMP socket, `IP_RECVTTL` for the reply TTL; subnets over 1024 addresses only re-check known
+neighbours), read the ARP table, then for each device in parallel: PTR at the router's DNS (DHCP name), unicast
+mDNS to ip:5353 (reverse PTR = .local name; `_services._dns-sd._udp` = service list; PTR/TXT for named services
+and `_device-info` = friendly names, `model`/`fn`/`ty`), NetBIOS NBSTAT to ip:137. The maker comes from systemd's
+`20-OUI.hwdb` (longest prefix wins; private MACs have none). `classify()` ranks: router > Apple model code
+(`iPhone15,2`, not "MacSamba") > NAS (SMB + NUT or a NAS maker) > Echo (Amazon + Matter) > Apple companion-link >
+name patterns (iPhone, DESKTOP-, PS4-, android...) > specific services (Cast, Fire TV, Sonos, IPP, HomeKit) >
+NetBIOS = Windows > specific makers (Roku, Ring, Nintendo, Espressif...) > generic services (AirPlay, Spotify, SMB)
+> generic makers (Intel, AzureWave...) > TTL (128 = Windows, 255 = network gear) > private MAC + TTL 64 = phone or
+tablet. Display name: a service's friendly name, then the .local / DHCP / NetBIOS name; serials, UUIDs and "none"
+are skipped; else "Maker …ab:cd" / "private …ab:cd". State is kept per MAC in
+`/var/lib/macserver-devices/devices.json` (a sleeping device keeps its name; 30 days unseen = forgotten).
+
+The collector merges it into `system.network.neighbours` (name, kind, system, maker, seen; a device the scan saw
+in the last 20 min stays listed after ARP forgets it; every string stripped to printable text again). The screen's
+devices panel is now DEVICE / ADDRESS / TYPE / SYSTEM / SEEN / DETAIL (tailnet devices: phone or computer and
+their OS, link and traffic in DETAIL; LAN: maker or "private address"); without collector data it still reads ARP
+itself. The admin page shows the same columns (network page: maker or link, received, sent). `macserver devices`
+lists them (`sudo macserver devices scan` looks now).
+
+Firewall unchanged: every question is unicast from an ephemeral port, so answers are replies (conntrack); no
+multicast, no bind. Tests: `tests/test_lan_devices.py` (route/ARP/OUI parsing, DNS message parsing incl. pointer
+loops and truncation, name cleaning, 16 classification cases from the real network, scan merge/keep/forget,
+the unit's sandboxing, no bind/listen/multicast in the code).
+
+Verified: a dry run as the unprivileged admin user on the Mac (2026-11-26): 22 devices on 192.168.18.0/24 in about
+7 s; named: Roku Streaming Stick, DH4300PLUS-6D77 (NAS), PS4-067CCC, SpotifyConnect #2; kinds for the rest from
+maker/TTL (Ring camera, Aura photo frame, Nintendo, Amazon Echo, Espressif smart-home device); 11 phones on private
+addresses answer nothing and show as "phone or tablet". Unit tests; screen render at 232x64 and 80x40; headless
+Chromium screenshots of the overview and network pages. Not verified yet: the timer running under DynamicUser on
+the Mac (after the self-update installs it).

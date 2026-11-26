@@ -412,6 +412,23 @@ class DebugParserTests(unittest.TestCase):
             {"ip": "192.168.18.20", "mac": "4c:53:fd:4d:40:2e", "kind": "device"},
             {"ip": "192.168.18.34", "mac": "76:da:88:94:ec:c8", "kind": "private MAC"}])   # a phone's randomised address
         self.assertEqual(collector.lan_neighbours("", "wlp2s0"), [])
+        known = {"devices": {"d8:31:34:67:b6:38": {"label": "router (Nokia)", "kind": "router", "maker": "Nokia", "last_seen": 990},
+                             "76:da:88:94:ec:c8": {"label": "Evil[2Jname", "kind": "phone or tablet", "system": "iOS or Android",
+                                                   "last_seen": 900},
+                             "aa:bb:cc:dd:ee:01": {"ip": "192.168.18.50", "label": "Asleep Now", "kind": "printer", "last_seen": 500},
+                             "aa:bb:cc:dd:ee:02": {"ip": "192.168.18.51", "label": "Long Gone", "last_seen": 1000 - 3 * 3600}}}
+        named = {e["ip"]: e for e in collector.lan_neighbours(arp, "wlp2s0", "192.168.18.1", known, now=1000)}
+        self.assertEqual(named["192.168.18.1"]["name"], "router (Nokia)")
+        self.assertEqual(named["192.168.18.34"]["name"], "Evil [2Jname")          # no escape codes reach the screen
+        self.assertEqual(named["192.168.18.34"]["system"], "iOS or Android")
+        self.assertEqual(named["192.168.18.50"]["kind"], "printer")                # the scan saw it; the ARP table forgot it
+        self.assertNotIn("192.168.18.51", named)
+        self.assertEqual(named["192.168.18.20"]["kind"], "device")                 # not scanned yet
+        # one device holding three addresses (old leases) is one row, at the address the scan chose
+        extra = arp + "".join(f"192.168.18.{n}  0x1  0x2  76:da:88:94:ec:c8  *  wlp2s0\n" for n in (21, 250))
+        known["devices"]["76:da:88:94:ec:c8"]["ip"] = "192.168.18.250"
+        rows = [e for e in collector.lan_neighbours(extra, "wlp2s0", "192.168.18.1", known, now=1000) if e["mac"] == "76:da:88:94:ec:c8"]
+        self.assertEqual([e["ip"] for e in rows], ["192.168.18.250"])
         status = json.dumps({"Peer": {"k": {"HostName": "jonahs-iphone", "TailscaleIPs": ["100.127.159.27", "fd7a::1"]}}})
         self.assertEqual(collector.tailscale_peers(status), {"100.127.159.27": "jonahs-iphone", "fd7a::1": "jonahs-iphone"})
         self.assertEqual(collector.tailscale_peers("nope"), {})

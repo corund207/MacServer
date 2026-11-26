@@ -36,6 +36,7 @@ Usage: sudo macserver COMMAND
   doomsday ...        lockdown on attack: status|isolate|unlock|restore|on|off|test|allow|setup-totp|setup-gh
   notify [status|test|on|off]   push an alert to the owner's phone (ntfy) when the dashboard shows an issue (needs setup-gh once)
   notify report [now|on|off]    the hourly status report to the phone: send one now, or turn it on or off
+  devices [scan]                every device on the local network: name, kind, system, maker (scan: look again now)
   rustdesk setup|on|off|key|update   self-hosted RustDesk server (hbbs + hbbr)
   wifi              set up or change the built-in Wi-Fi
   doctor            check network, DNS and T2 drivers
@@ -142,6 +143,14 @@ cmd_notify() {
   esac
 }
 
+cmd_devices() {
+  case ${1:-show} in
+    show) exec python3 "$LIB/lan_devices.py" show ;;
+    scan) need_root devices scan; systemctl start macserver-devices.service && STATE_DIRECTORY=/var/lib/macserver-devices exec python3 "$LIB/lan_devices.py" show ;;
+    *) usage; exit 2 ;;
+  esac
+}
+
 cmd_doctor() {
   if can_resolve; then ok "Internet and DNS"
   elif can_reach_ip; then warn "Internet works, DNS does not: sudo ./install.sh --redo network"
@@ -217,6 +226,7 @@ main() {
     idle) cmd_idle "$@" ;;
     doomsday) cmd_doomsday "$@" ;;
     notify) cmd_notify "$@" ;;
+    devices) cmd_devices "$@" ;;
     doctor) cmd_doctor ;;
     reboot) cmd_reboot ;;
     ''|-h|--help|help) usage ;;

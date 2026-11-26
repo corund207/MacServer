@@ -921,10 +921,23 @@ def default_gateway(route_text):
     return None
 
 
-def lan_neighbours(arp_text, iface, gateway=None):
-    """Devices the Mac has talked to lately on its own network (the kernel's ARP table), by address.
-    The router is marked; a locally administered MAC (bit 0x02) is a phone or laptop's private address."""
-    out = []
+LAN_DEVICES = Path("/var/lib/macserver-devices/devices.json")   # admin/lan_devices.py, every 10 minutes
+LAN_RECENT_S = 1200       # a device the last scan found stays listed this long after the ARP table drops it
+
+
+def shown(text, limit=40):
+    """A device names itself: keep printable text of a sane length (the screen is a terminal)."""
+    return " ".join("".join(ch if ch.isprintable() else " " for ch in str(text or "")).split())[:limit]
+
+
+def lan_neighbours(arp_text, iface, gateway=None, known=None, now=None):
+    """Devices on the Mac's own network, by address: the kernel's ARP table, plus what the device scan
+    (admin/lan_devices.py) learned about each: a name, a kind, a system, a maker, when it was last seen.
+    Without a scan the router is marked and a locally administered MAC (bit 0x02) is a private address."""
+    now = time.time() if now is None else now
+    devices = (known or {}).get("devices") if isinstance(known, dict) else None
+    devices = devices if isinstance(devices, dict) else {}
+    out = {}
     for line in (arp_text or "").splitlines()[1:]:
         f = line.split()
         if len(f) < 6 or f[5] != iface or f[2] == "0x0" or f[3] == "00:00:00:00:00:00":
@@ -934,8 +947,31 @@ def lan_neighbours(arp_text, iface, gateway=None):
             private = bool(int(mac[:2], 16) & 2)
         except ValueError:
             private = False
-        out.append({"ip": f[0], "mac": mac, "kind": "router" if f[0] == gateway else "private MAC" if private else "device"})
-    return sorted(out, key=lambda e: [int(n) if n.isdigit() else 0 for n in e["ip"].split(".")])
+        out[f[0]] = {"ip": f[0], "mac": mac, "kind": "router" if f[0] == gateway else "private MAC" if private else "device"}
+    for mac, d in devices.items():
+        if isinstance(d, dict) and d.get("ip") and d["ip"] not in out and 0 <= now - (d.get("last_seen") or 0) < LAN_RECENT_S:
+            out[d["ip"]] = {"ip": shown(d["ip"], 15), "mac": shown(mac, 17), "kind": "device"}
+    order = lambda e: [int(n) if n.isdigit() else 0 for n in e["ip"].split(".")]
+    one = {}                                  # one row per device: a MAC holding several addresses is one device
+    for entry in sorted(out.values(), key=order):
+        d = devices.get(entry["mac"])
+        main = isinstance(d, dict) and d.get("ip") == entry["ip"]
+        if entry["mac"] not in one or main or entry["kind"] == "router":
+            one[entry["mac"]] = entry
+    for entry in one.values():
+        d = devices.get(entry["mac"])
+        if isinstance(d, dict):
+            entry.update(name=shown(d.get("label") or d.get("name")), kind=shown(d.get("kind"), 24) or entry["kind"],
+                         system=shown(d.get("system"), 16), maker=shown(d.get("maker")), seen=d.get("last_seen"))
+    return sorted(one.values(), key=order)
+
+
+def read_json_file(path):
+    try:
+        data = json.loads(Path(path).read_text())
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def ping_ms(host):
@@ -1833,7 +1869,8 @@ def system_info(state, now, containers_now, ids, ts_text, proc_root="/proc", sys
                     "tcp": part(tcp_stats, read(p / "net/snmp", ""), read(p / "net/sockstat", "")),
                     "neighbours": part(lan_neighbours, read(p / "net/arp", ""), wifi_iface or next(
                         (i["name"] for i in interfaces or [] if i["kind"] == "ethernet" and i.get("state") == "up"), ""),
-                        default_gateway(read(p / "net/route", "")))},
+                        default_gateway(read(p / "net/route", "")),
+                        read_json_file(LAN_DEVICES), now)},
         "sensors": {"temps": part(sensor_list, f"{sys_root}/class/hwmon"), "fans": part(fan_list, f"{sys_root}/bus/acpi/devices/APP0001:00", f"{sys_root}/class/hwmon")},
         "power": part(battery_detail, f"{sys_root}/class/power_supply"),
         "docker": {"projects": project_rollup(containers_now)},

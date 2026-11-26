@@ -1,0 +1,36 @@
+[Unit]
+Description=MacServer device names (who is on the local network: name, kind, system, maker)
+Documentation=file:///usr/local/lib/macserver/lan_devices.py
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/macserver/lan_devices.py scan
+# Devices name themselves, so their answers are untrusted: the scan runs as a throwaway user with no
+# capabilities, sees only its own state directory (/var/lib/macserver-devices) and sends only IPv4.
+# Unprivileged ping needs no capability (net.ipv4.ping_group_range, systemd's default allows it).
+DynamicUser=yes
+StateDirectory=macserver-devices
+CapabilityBoundingSet=
+AmbientCapabilities=
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+Nice=10
+TimeoutStartSec=120

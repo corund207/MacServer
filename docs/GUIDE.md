@@ -213,12 +213,13 @@ Mac's screen, plus a terminal and tools; press **1** to **6** to switch:
   wrong and the command to look at it when not), a strip of the key numbers (CPU, memory,
   network, disk, temperature, services, power, load) each with its last five minutes, live
   graphs of CPU, memory, network and storage, every service grouped by project beside the
-  **Devices** panel (your Tailscale devices and everything the Mac has talked to on its
-  own network), then status, the **Start Claude session** button and the **API URL** and
+  **Devices** panel (your Tailscale devices and every device on the Mac's own network, by
+  name: "Living Room Roku", "PS4-067CCC", what kind of device it is and its system), then status, the **Start Claude session** button and the **API URL** and
   **app key** (with Copy buttons).
 - **Hardware**: CPU in full, every temperature with its limit, the fan, the battery
   (health, cycles, time left), processes you can sort, memory, storage and the machine's facts.
-- **Network**: every device (Tailscale and the local network, with traffic), listening
+- **Network**: every device (Tailscale and the local network, with its maker or link and
+  traffic), listening
   ports, connections, reachability, the Wi-Fi network, API traffic and every interface.
 - **Services**: every container (click one for its status and last log lines), the
   database (connections, transactions per second, cache hit, size, app users) and Docker's
@@ -299,7 +300,20 @@ Logging in shows a summary; `macserver dashboard` opens the full dashboard (q qu
 | `sudo macserver public off` | Takes the public API off the Internet immediately |
 | `sudo macserver idle off` | Stays at full power (by default it uses less power after 15 minutes with no connections) |
 | `sudo macserver doctor` | Checks network, DNS and the Mac's drivers |
+| `macserver devices` | Every device on the local network: name, kind, system, maker, last seen (`sudo macserver devices scan` looks again now) |
 | `sudo macserver upgrade` | Installs the newest tested MacServer version now (it also updates itself) |
+
+**How the Mac names the devices on your network.** Every ten minutes it pings each address
+of its own network, then asks each device that answered what it is, the way network tools
+such as nmap and Bonjour browsers do: the router's DNS (the name a device gave when it
+joined the Wi-Fi), Bonjour/mDNS (an iPhone's or a speaker's name, its services and model),
+NetBIOS (a Windows PC's name), and the maker registered for the first half of its hardware
+address. A phone that uses a private Wi-Fi address and answers nothing shows as "private
+…ab:cd, phone or tablet": give it a name in the phone's own settings, or turn off its private
+address for your home network, and the next look picks the name up. Names are kept for a
+month while a device is away. The look runs as a throwaway user with no privileges, and the
+Mac still listens on nothing: each question is a single packet to one device and only its
+reply comes back.
 
 ### Backups on a USB drive
 

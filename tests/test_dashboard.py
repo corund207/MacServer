@@ -135,7 +135,7 @@ class DashboardTests(unittest.TestCase):
                          "up to date · 6bc4f51", "BAT ▲  80%", "3.2W",
                          "SERVICES", "NAME", "STATE", "SUPABASE", "13/13", "GATEWAY", "realtime", "cloudflared", "3d",
                          "DEVICES", "TAILNET", "jonahs-iphone", "100.1.1.2", "iOS", "direct", "relay nyc", "30d ago",
-                         "LOCAL NETWORK", "router", "192.168.18.1", "4c:53:fd:4d:40:2e", "private MAC",
+                         "LOCAL NETWORK", "router (Nokia)", "192.168.18.1", "Living Room Roku", "phone or tablet",
                          "CONNECTIONS", "EVENTS", "press 2 to log in"):
             self.assertIn(expected, text)
         self.assertNotIn("NEEDS ATTENTION", text)        # nothing wrong: no issues panel
@@ -164,9 +164,19 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual([e[1] for e in lines if e[0] == "head"], ["tailnet", "local network"])
         devices = {e[1][0]: e for e in lines if e[0] == "dev"}
         self.assertEqual(devices["desktop-nlhe9il"][2], "off")            # an offline device is greyed
-        self.assertEqual(devices["router"][1][2], "router")
-        self.assertEqual(devices["76:da:88:94:ec:c8"][1][2], "private MAC")   # a phone's randomised address
+        self.assertEqual(devices["router (Nokia)"][1][2], "router")
+        self.assertEqual(devices["Living Room Roku"][1][2:4], ("Roku", "Roku OS"))      # named by the device scan
+        self.assertEqual(devices["Living Room Roku"][1][5], "Roku")
+        self.assertEqual(devices["private …ec:c8"][1][2:5], ("phone or tablet", "iOS or Android", "2h ago"))
+        self.assertEqual(devices["private …ec:c8"][1][5], "private address")
+        text = tui_fixture.screen("healthy", 232, 64).text()
+        for expected in ("Living Room Roku", "Amazon Echo", "Fire OS", "SYSTEM", "DETAIL"):
+            self.assertIn(expected, text)
+        s.status["system"]["network"].pop("neighbours")                   # no scan yet: the ARP table alone
+        bare = {e[1][0]: e for e in tui.device_lines(s) if e[0] == "dev"}
+        self.assertEqual(bare["76:da:88:94:ec:c8"][1][2], "private MAC")
         s.status["system"].pop("tailscale")
+        s.status["system"]["network"]["neighbours"] = []
         s.now["lan"] = []
         c = tui.Canvas(80, 6)
         tui.devices_panel(c, s, 0, 0, 80, 6)

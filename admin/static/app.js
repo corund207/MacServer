@@ -693,24 +693,29 @@ function deviceRows(s, detailed) {
   if (peers.length) {
     rows.push({ group: ['Tailnet', span(`  ${peers.filter((p) => p.online).length} of ${peers.length} online`)] });
     for (const p of [...peers].sort((a, b) => (b.online - a.online) || a.name.localeCompare(b.name))) {
-      const cells = [stateCell(p.name, p.online ? 'ok' : ''), span(p.ip, 'mono'), p.os || '', p.online ? p.route || 'direct' : 'offline',
+      const cells = [stateCell(p.name, p.online ? 'ok' : ''), span(p.ip, 'mono'), ['iOS', 'android'].includes(p.os) ? 'phone' : 'computer', OS_NAMES[p.os] || p.os || '',
         p.online ? 'now' : p.last_seen ? `${since(p.last_seen)} ago` : '-'];
-      if (detailed) cells.push(bytes(p.rx_bytes || 0), bytes(p.tx_bytes || 0));
+      if (detailed) cells.splice(4, 0, p.online ? p.route || 'direct' : 'offline'), cells.push(bytes(p.rx_bytes || 0), bytes(p.tx_bytes || 0));
       rows.push({ cells, className: p.online ? '' : 'off' });
     }
   }
   if (lan.length) {
     rows.push({ group: ['Local network', span(`  ${lan.length} seen${iface ? ` on ${iface}` : ''}`)] });
     for (const d of lan) {
-      const cells = [stateCell(d.kind === 'router' ? 'router' : d.mac, d.kind === 'router' ? 'info' : 'ok'), span(d.ip, 'mono'), d.kind, net.wifi ? 'Wi-Fi' : 'wired', 'recent'];
-      if (detailed) cells.push('', '');
+      const age = d.seen ? Date.now() / 1000 - d.seen : null;
+      const cells = [stateCell(d.name || d.mac, d.kind === 'router' ? 'info' : 'ok'), span(d.ip, 'mono'), d.kind || 'device', d.system || '',
+        age === null ? 'recent' : age < 900 ? 'now' : `${since(d.seen)} ago`];
+      if (detailed) cells.splice(4, 0, d.maker ? shortMaker(d.maker) : d.kind === 'private MAC' || parseInt(d.mac.slice(0, 2), 16) & 2 ? 'private address' : ''), cells.push('', '');
       rows.push({ cells });
     }
   }
   return rows;
 }
 
-const DEVICE_COLUMNS = [{ label: 'Device' }, { label: 'Address' }, { label: 'Type' }, { label: 'Link' }, { label: 'Seen', align: 'r' }];
+// "Nokia Solutions and Networks GmbH & Co. KG" -> "Nokia Solutions", "Intel Corporate" -> "Intel"
+const shortMaker = (maker) => maker.split(',')[0].split(/\s+/).filter((w) => !/^(inc|llc|ltd|limited|corp|corporate|corporation|co|gmbh)\.?$/i.test(w)).slice(0, 2).join(' ');
+const OS_NAMES = { windows: 'Windows', macOS: 'macOS', iOS: 'iOS', android: 'Android', linux: 'Linux' };
+const DEVICE_COLUMNS = [{ label: 'Device' }, { label: 'Address' }, { label: 'Type' }, { label: 'System' }, { label: 'Seen', align: 'r' }];
 
 function renderDevices(s) {
   const y = sys(s), peers = (y.tailscale || {}).peers || [], lan = (y.network || {}).neighbours || [];
@@ -816,7 +821,8 @@ function renderNetworkPage(s) {
   const ts = y.tailscale || {};
   const peers = ts.peers || [];
   $('tailnet-meta').textContent = peers.length ? `${peers.filter((p) => p.online).length} of ${peers.length} online${ts.version ? ` · Tailscale ${ts.version}` : ''}` : '';
-  renderTable($('tailnet-table'), [...DEVICE_COLUMNS, { label: 'Received', align: 'r' }, { label: 'Sent', align: 'r' }], deviceRows(s, true), {});
+  renderTable($('tailnet-table'), [...DEVICE_COLUMNS.slice(0, 4), { label: 'Maker or link', wrap: true }, DEVICE_COLUMNS[4], { label: 'Received', align: 'r' }, { label: 'Sent', align: 'r' }],
+    deviceRows(s, true), {});
   const notes = el('ul', null, 'list plain');
   for (const hn of ts.health || []) notes.append(el('li', hn, 'warn'));
   if (ts.key_expiry) notes.append(el('li', `This Mac's Tailscale key expires in ${duration(ts.key_expiry - Date.now() / 1000)}.`));

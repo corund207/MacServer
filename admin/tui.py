@@ -1675,16 +1675,25 @@ def device_lines(sampler):
             seen = ("now" if p.get("online") else
                     f"{fmt_duration(int(max(now - p['last_seen'], 0))).split()[0]} ago" if p.get("last_seen") else "-")
             traffic = f"▼{fmt_bytes(p.get('rx_bytes', 0))} ▲{fmt_bytes(p.get('tx_bytes', 0))}" if p.get("rx_bytes") or p.get("tx_bytes") else ""
-            out.append(("dev", (p.get("name") or "?", p.get("ip") or "-", os_name(p.get("os")), p.get("route") or "-", seen, traffic),
+            kind = "phone" if p.get("os") in ("iOS", "android") else "computer"
+            route = p.get("route") or "-"
+            out.append(("dev", (p.get("name") or "?", p.get("ip") or "-", kind, os_name(p.get("os")), seen,
+                                f"{route} {traffic}".strip() if p.get("online") else ""),
                         "ok" if p.get("online") else "off"))
-    lan = sampler.now.get("lan") or []
-    if lan:
+    known = (sysdata(sampler).get("network") or {}).get("neighbours")
+    if known is None:                                   # no collector data: the screen's own look at the ARP table
         gw = sampler.now.get("gateway")
-        out.append(("head", "local network", f"{len(lan)} seen on {sampler.iface or '?'}"))
-        for ip, mac in lan:
-            kind = "router" if ip == gw else "private MAC" if int(mac[:2], 16) & 2 else "device"
-            out.append(("dev", ("router" if ip == gw else mac, ip, kind, "wi-fi" if (sampler.iface or "").startswith("wl") else "lan",
-                                "recent", ""), "ok"))
+        known = [{"ip": ip, "mac": mac, "kind": "router" if ip == gw else "private MAC" if int(mac[:2], 16) & 2 else "device"}
+                 for ip, mac in sampler.now.get("lan") or []]
+    if known:
+        out.append(("head", "local network", f"{len(known)} seen on {sampler.iface or '?'}"))
+        for d in known:
+            seen = d.get("seen")
+            age = now - seen if seen else None
+            when = "recent" if age is None else "now" if age < 900 else f"{fmt_duration(int(age)).split()[0]} ago"
+            detail = d.get("maker") or ("private address" if d.get("kind") == "private MAC" or int(d["mac"][:2], 16) & 2 else "")
+            out.append(("dev", (d.get("name") or d["mac"], d["ip"], d.get("kind") or "device", d.get("system") or "-", when,
+                                detail.split(",")[0]), "ok"))
     return out
 
 
@@ -1698,10 +1707,10 @@ def devices_panel(c, sampler, x, y, w, h):
         line(c, x + 2, y + 1, w - 4, ("No devices yet: Tailscale and the Wi-Fi report them here.", C["dim"]))
         return
     ix, right = x + 2, x + w - 2
-    widths = [20, 17, 12, 11, 9, None]
+    widths = [22, 16, 17, 15, 9, None]
     if w < 90:
-        widths = [18, 16, 12, None, 0, 0]
-    head = ("DEVICE", "ADDRESS", "TYPE", "LINK", "SEEN", "TRAFFIC")
+        widths = [18, 16, 17, None, 0, 0]
+    head = ("DEVICE", "ADDRESS", "TYPE", "SYSTEM", "SEEN", "DETAIL")
     fields(c, ix, y + 1, right, ("", C["dim"], 2), *[(t, C["dim"], wd, True) for t, wd in zip(head, widths) if wd != 0])
     room = h - 3
     for n, entry in enumerate(lines[:room]):
@@ -1713,7 +1722,7 @@ def devices_panel(c, sampler, x, y, w, h):
             section_title(c, ix, row, w - 4, entry[1], entry[2])
             continue
         cells, state = entry[1], entry[2]
-        colours = (C["bright"], C["accent"], C["text"], C["ok"] if cells[3] == "direct" else C["text"], C["dim"], C["dim"])
+        colours = (C["bright"], C["accent"], C["text"], C["text"], C["dim"], C["ok"] if cells[5].startswith("direct") else C["dim"])
         fields(c, ix, row, right, ("●", STATE_COLOUR[state], 2),
                *[(text, colour if state == "ok" else C["dim"], wd) for text, colour, wd in zip(cells, colours, widths) if wd != 0])
 

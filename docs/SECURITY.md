@@ -28,6 +28,21 @@
   Cloudflare side by side, over TLS when a server offers it (opportunistic: this
   encrypts but does not authenticate). Tailscale does not manage the Mac's DNS
   (`--accept-dns=false`): tailscaled's own lookups cannot reach Tailscale's resolver.
+- **Device names** (`admin/lan_devices.py`, `macserver-devices.timer`, every 10 min): a
+  ping sweep of the Mac's own subnet (at most 1024 addresses; bigger networks are only
+  looked up, not swept), then unicast questions to each device that answered: a reverse
+  DNS lookup at the router, mDNS sent straight to the device's port 5353 (its name, its
+  service list, friendly names and model), NetBIOS node status to port 137. No socket is
+  bound to a fixed port and nothing joins a multicast group, so nothing new listens on
+  the LAN and the firewall is unchanged: each answer is a reply to the Mac's own packet.
+  Device answers are untrusted: the parsers are bounds-checked (compressed-name loops
+  capped, records capped), names are cut to 40 printable characters before they are
+  stored, and the collector strips them again before the screen draws them. The scan runs
+  under systemd `DynamicUser` with no capabilities (unprivileged ICMP via
+  `net.ipv4.ping_group_range`), `ProtectSystem=strict`, IPv4 and Unix sockets only, and
+  writes only `/var/lib/macserver-devices/devices.json`. Makers come from systemd's
+  offline copy of the IEEE registry (`/usr/lib/udev/hwdb.d/20-OUI.hwdb`): nothing is
+  looked up on the Internet.
 - **Kernel network settings** (`host/sysctl.conf`): no ICMP redirects or source
   routing accepted or sent, SYN cookies, loose reverse-path filtering (strict mode
   breaks Tailscale).
