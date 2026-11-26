@@ -1204,3 +1204,22 @@ edge flashes. Spare rows make the metric graphs taller.
 Verified: `tests/run.sh` on the Mac (same single root-only failure as before), previews at 232x64 for healthy,
 warning, trouble and with the Mac's real 27 containers (two service columns, apps unsplit), and every size from 40x12
 up in both looks. Not verified yet: the live screen after the self-update installs it.
+
+## 2026-11-25: phone alerts move to ntfy; the Debian row stops looking like a failed update
+
+Verizon shut down its email-to-text gateway (`<number>@vtext.com`), so the `alert-sms` workflow could no longer
+reach the owner. It is replaced by `.github/workflows/alert-push.yml`: the same dispatch from `admin/notify.py`
+(same token, same rules for when to alert, same 160-character line), but the workflow POSTs to the owner's ntfy
+topic (`NTFY_TOPIC` secret; optional `NTFY_SERVER`, `NTFY_TOKEN`) with a title, priority 5 for critical / 4 for
+an issue / 3 for a test, and a Click link to the admin page. The conf key stays `NOTIFY_SMS` (on/off) so existing
+installs keep their setting. `SMS_GATEWAY_ADDRESS` is no longer used.
+
+The screen's "Updates 6 pending" (WARN) right after MacServer updated itself read as a failed update. It counted
+Debian packages (`apt-get -s upgrade`), not MacServer. The collector now also reports `updates_security` (packages
+from Debian-Security, which unattended-upgrades installs each morning); the row is "Debian" with an INFO tag:
+"6 package(s) waiting (3 security, automatic) · sudo macserver update". `macserver status` says the same.
+On 2026-11-25 the 6 were docker-ce, docker-ce-cli, docker-ce-rootless-extras (not in the unattended origins) and
+libzstd1, login.defs, passwd (security).
+
+Verified: unit tests (workflow keeps the text and topic out of the log, dispatch URL, Debian row). Not verified:
+a real ntfy delivery (needs the owner's `NTFY_TOPIC` secret), `sudo macserver notify test` after it is set.

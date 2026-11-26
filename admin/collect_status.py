@@ -1124,8 +1124,15 @@ def debug_info(state, now, ps, ids, containers_now, peers, direct=None, conf=Non
 
 
 def count_updates():
+    """Debian packages waiting: {"total", "security"}. Security ones (Debian-Security) are the ones
+    unattended-upgrades installs by itself each morning; the rest (Docker, ...) wait for `macserver update`."""
     upgradable = run("apt-get", "-s", "-o", "Debug::NoLocking=1", "upgrade", timeout=60)
-    return sum(1 for l in (upgradable or "").splitlines() if l.startswith("Inst "))
+    lines = [l for l in (upgradable or "").splitlines() if l.startswith("Inst ")]
+    return {"total": len(lines), "security": sum(1 for l in lines if "-security" in l.lower())}
+
+
+def updates_fields(counts):
+    return {"updates_pending": counts.get("total", 0), "updates_security": counts.get("security", 0)}
 
 
 def doomsday_state():
@@ -1849,7 +1856,7 @@ def collect(state=None):
             "disk": {"total": disk.total, "used": disk.used},
             "sensors": hwmon(),
             "battery": battery(),
-            "updates_pending": cached(state, "updates", UPDATES_TTL_S, now, count_updates),
+            **updates_fields(cached(state, "updates2", UPDATES_TTL_S, now, count_updates)),
             "reboot_required": Path("/run/reboot-required").exists(),
         },
         "tailscale": tailscale(ts_text),

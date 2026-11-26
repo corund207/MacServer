@@ -233,13 +233,13 @@ class DispatchTests(unittest.TestCase):
     def test_it_asks_the_alert_workflow_to_send_the_text(self):
         (ok, detail), request = self.call(204)
         self.assertEqual((ok, detail), (True, "HTTP 204"))
-        self.assertEqual(request.full_url, "https://api.github.com/repos/corund207/MacServer/actions/workflows/alert-sms.yml/dispatches")
+        self.assertEqual(request.full_url, "https://api.github.com/repos/corund207/MacServer/actions/workflows/alert-push.yml/dispatches")
         self.assertEqual(request.get_method(), "POST")
         self.assertEqual(json.loads(request.data), {"ref": "main", "inputs": {"message": "hello " + URL, "level": "critical"}})
         self.assertEqual(request.get_header("Authorization"), "Bearer ghp_secret")
 
     def test_failures_say_what_to_do(self):
-        for code, words in ((401, "setup-gh"), (403, "Actions"), (404, "alert-sms.yml")):
+        for code, words in ((401, "setup-gh"), (403, "Actions"), (404, "alert-push.yml")):
             error = urllib.error.HTTPError("u", code, "x", {}, None)
             (ok, detail), _ = self.call(error)
             self.assertFalse(ok)
@@ -252,13 +252,15 @@ class DispatchTests(unittest.TestCase):
 
 
 class FilesTests(unittest.TestCase):
-    def test_the_workflow_keeps_the_text_and_the_phone_number_out_of_the_public_log(self):
-        text = (ROOT / ".github/workflows/alert-sms.yml").read_text(encoding="utf-8")
+    def test_the_workflow_keeps_the_text_and_the_topic_out_of_the_public_log(self):
+        text = (ROOT / ".github/workflows/alert-push.yml").read_text(encoding="utf-8")
         self.assertNotRegex(text, r"\$\{\{\s*(github\.event\.)?inputs", "an expression would print the text in the run log")
         self.assertIn("GITHUB_EVENT_PATH", text)
-        self.assertIn("secrets.SMS_GATEWAY_ADDRESS", text)
-        self.assertNotRegex(text, r"\d{3}[-. ]?\d{3}[-. ]?\d{4}", "a phone number must live in a secret, not in the repository")
-        self.assertNotRegex(text, r"@(vtext|tmomail|txt\.att|messaging)\.", "the gateway address belongs in the secret")
+        self.assertIn("secrets.NTFY_TOPIC", text)
+        self.assertNotRegex(text, r"ntfy\.sh/[A-Za-z0-9_-]+", "the topic is the key: it belongs in the secret")
+        self.assertNotRegex(text, r"print\([^)]*topic", "the topic must never be printed")
+        self.assertIn('"Priority"', text)                     # critical alerts are urgent
+        self.assertFalse((ROOT / ".github/workflows/alert-sms.yml").exists(), "the carrier gateway route is gone")
 
     def test_it_is_installed_and_runs_every_half_minute(self):
         installer = (ROOT / "installer/steps/40-access.sh").read_text(encoding="utf-8")

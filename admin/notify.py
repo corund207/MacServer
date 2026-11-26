@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Text the owner when MacServer has an issue.
+"""Alert the owner's phone (a push notification through ntfy) when MacServer has an issue.
 
 Runs as root from macserver-notify.timer (every 30 s):
 
@@ -11,9 +11,10 @@ Runs as root from macserver-notify.timer (every 30 s):
 tui.incidents(), minus the notices the screen itself mutes (heat is never one). Only the level
 warn and bad count; "bad" is the critical kind.
 
-The text is sent through the `alert-sms` GitHub workflow (the same route as the doomsday email),
-so the owner's phone number and the SMTP login live in GitHub secrets, never on the Mac. The Mac
-needs one thing: the GitHub token of `sudo macserver doomsday setup-gh`.
+The alert is sent through the `alert-push` GitHub workflow (the same route as the doomsday email),
+which pushes it to the owner's private ntfy topic; the topic name lives in a GitHub secret, never on
+the Mac. (Carrier email-to-text gateways were the first route; Verizon shut its gateway down.) The
+Mac needs one thing: the GitHub token of `sudo macserver doomsday setup-gh`.
 
 To keep it to a few useful texts instead of a stream:
   - an issue must last a while before it is texted (a minute if critical, three if not);
@@ -38,10 +39,10 @@ CONF = Path("/etc/macserver/macserver.conf")
 TOKEN = Path("/etc/macserver/doomsday-gh-token")     # shared with the doomsday alert (setup-gh)
 STATUS = Path("/run/macserver/status.json")
 STATE = Path("/var/lib/macserver/notify.json")
-WORKFLOW = "alert-sms.yml"
+WORKFLOW = "alert-push.yml"
 DEFAULT_REPO = "corund207/MacServer"
 
-SMS_LIMIT = 160           # one SMS in the GSM alphabet; anything longer is split or dropped by gateways
+SMS_LIMIT = 160           # one line that a phone's lock screen shows whole
 CONFIRM_S = {"bad": 60, "warn": 180}      # how long an issue must last before it is texted
 GONE_S = 120              # an issue absent this long is over; a shorter gap does not restart its clock
 REMIND_S = 4 * 3600       # a critical issue that stays open is texted again after this
@@ -222,7 +223,7 @@ def admin_url(status, conf):
 
 
 def dispatch(repo, token, text, level):
-    """Ask the alert-sms workflow to send `text`. Returns (accepted, what happened)."""
+    """Ask the alert-push workflow to send `text`. Returns (accepted, what happened)."""
     if not re.fullmatch(r"[\w.-]+/[\w.-]+", repo or ""):
         return False, f"bad repository name {repo!r} (DOOMSDAY_GH_REPO)"
     request = urllib.request.Request(
@@ -277,7 +278,7 @@ def run_check(now=None):
     problem = setup_problem()
     if problem:
         if now - state.get("warned", 0) > 6 * 3600:         # say it now and then, not every 30 s
-            print(f"text alerts are on but cannot send: {problem}", flush=True)
+            print(f"phone alerts are on but cannot send: {problem}", flush=True)
             state["warned"] = now
             write_state(state)
         return 0
@@ -303,14 +304,14 @@ def run_test():
     status = load_status()
     text = compose_test(admin_url(status, conf))
     sent, detail = dispatch(conf.get("DOOMSDAY_GH_REPO", DEFAULT_REPO), read_token(), text, "test")
-    print(f"{'asked GitHub to text' if sent else 'FAILED'} ({detail}): {text}")
+    print(f"{'asked GitHub to send the alert' if sent else 'FAILED'} ({detail}): {text}")
     if sent:
-        print("it arrives within about a minute (GitHub starts the job, then the carrier relays it)")
+        print("it arrives within about a minute in the ntfy app (GitHub starts the job, then ntfy pushes it)")
     return 0 if sent else 1
 
 
 def compose_test(url):
-    return ascii_line("MacServer test: text alerts work. This is what an alert looks like.") + " " + url
+    return ascii_line("MacServer test: phone alerts work. This is what an alert looks like.") + " " + url
 
 
 def run_status():
@@ -318,9 +319,9 @@ def run_status():
     state = read_json(STATE, {})
     now = time.time()
     problem = setup_problem()
-    print(f"text alerts:  {conf.get('NOTIFY_SMS', 'on')}" + (f"   (cannot send: {problem})" if problem else "   (ready)"))
+    print(f"phone alerts: {conf.get('NOTIFY_SMS', 'on')}" + (f"   (cannot send: {problem})" if problem else "   (ready)"))
     last = state.get("last_text")
-    print("last text:    " + (f"{int((now - last['at']) // 60)} min ago: {last['text']}" if last else "none yet"))
+    print("last alert:   " + (f"{int((now - last['at']) // 60)} min ago: {last['text']}" if last else "none yet"))
     print(f"sent today:   {sum(now - t < 86400 for t in state.get('texts', []))} of {MAX_PER_DAY}")
     seen = state.get("seen", {})
     print("open issues:  " + ("none" if not seen else ""))

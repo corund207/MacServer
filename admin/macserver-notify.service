@@ -1,5 +1,5 @@
 [Unit]
-Description=MacServer text alerts (text the owner when the dashboard shows an issue)
+Description=MacServer phone alerts (push to the owner's phone when the dashboard shows an issue)
 After=macserver-status.service network-online.target
 
 [Service]

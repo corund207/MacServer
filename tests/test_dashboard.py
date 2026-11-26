@@ -390,6 +390,18 @@ class DashboardTests(unittest.TestCase):
         finally:
             tui.VT_REQUEST = original
 
+    def test_debian_packages_waiting_are_information_not_a_failed_update(self):
+        """The owner saw "Updates 6 pending" as a warning right after MacServer updated itself: the row is
+        about Debian's packages, says which install by themselves, and is not a warning."""
+        self.assertEqual(tui.debian_row({}), ("ok", "Debian", "packages up to date"))
+        self.assertEqual(tui.debian_row({"updates_pending": 3, "updates_security": 3}),
+                         ("info", "Debian", "3 security fix(es) waiting · installed automatically each morning"))
+        self.assertEqual(tui.debian_row({"updates_pending": 6, "updates_security": 3}),
+                         ("info", "Debian", "6 package(s) waiting (3 security, automatic) · sudo macserver update"))
+        text = tui_fixture.screen("warning", 232, 64).text()
+        self.assertIn("INFO", text)
+        self.assertNotIn("Updates", text)
+
     def test_public_api_row_follows_the_gateway_containers(self):
         """The row said "off · tailnet only" while a Cloudflare gateway served traffic, because the
         hostname was never written to the config. Without PUBLIC_DOMAIN it follows the containers."""
@@ -437,7 +449,7 @@ class DashboardTests(unittest.TestCase):
         texts = [t for _, _, t in ev.items]
         for expected in ("service auth: running → exited", "3 device(s) online on the tailnet",
                          "public API not answering", "MacServer: now running b", "Claude session started",
-                         "2 Debian update(s) waiting"):
+                         "2 Debian package update(s) waiting"):
             self.assertIn(expected, texts)
         self.assertEqual(dict((t, lvl) for _, lvl, t in ev.items)["service auth: running → exited"], "bad")
         tui.status_events(ev, new, new)                      # nothing changed: nothing logged

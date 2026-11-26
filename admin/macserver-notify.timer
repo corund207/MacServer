@@ -1,5 +1,5 @@
 [Unit]
-Description=MacServer text alerts, every 30 seconds
+Description=MacServer phone alerts, every 30 seconds
 
 [Timer]
 OnBootSec=4min

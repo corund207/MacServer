@@ -10,7 +10,7 @@ install_tools() {
   install -m 0644 "$SRC/admin/units.py" /usr/local/lib/macserver/units.py
   install -m 0755 "$SRC/admin/collect_status.py" /usr/local/lib/macserver/collect_status.py
   install -m 0755 "$SRC/admin/idle.py" /usr/local/lib/macserver/idle
-  install -m 0755 "$SRC/admin/notify.py" /usr/local/lib/macserver/notify.py   # text alerts; loads the dashboard file above
+  install -m 0755 "$SRC/admin/notify.py" /usr/local/lib/macserver/notify.py   # phone alerts; loads the dashboard file above
   install -m 0755 "$SRC/admin/backupdrive.py" /usr/local/lib/macserver/backupdrive.py   # which disk may be erased for backups
   install -m 0755 "$SRC/admin/tui.py" /usr/local/lib/macserver/dashboard
   install -m 0755 "$SRC/host/macserver-console" /usr/local/lib/macserver/console

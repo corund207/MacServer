@@ -110,13 +110,15 @@ disables detection only).
   which emails the owner. The workflow holds the SMTP secrets; the Mac holds
   only a dispatch token in `/etc/macserver/doomsday-gh-token` (0600, set up
   with `sudo macserver doomsday setup-gh`). The alert never blocks isolation.
-- **Text alerts** (`admin/notify.py`, every 30 s) use the same route: the Mac asks the
-  `alert-sms` workflow (same dispatch token) to text the owner when the dashboard shows an
-  issue. The workflow emails the carrier's email-to-text gateway with the SMTP secrets; the
-  phone number exists only as the `SMS_GATEWAY_ADDRESS` secret. The repository is public, so
-  the workflow reads the message from the event file instead of putting it in an expression
-  or a log line (a test pins that), and the text carries only an issue title, the reason and
-  the admin page link, which opens over Tailscale only.
+- **Phone alerts** (`admin/notify.py`, every 30 s) use the same route: the Mac asks the
+  `alert-push` workflow (same dispatch token) to alert the owner when the dashboard shows an
+  issue. The workflow POSTs the one-line alert to the owner's ntfy topic over HTTPS; the topic
+  name is the only key to it and exists only as the `NTFY_TOPIC` secret (optional
+  `NTFY_TOKEN` for a protected topic, `NTFY_SERVER` for a self-hosted ntfy). The alert passes
+  through the ntfy server, so it carries only an issue title, the reason and the admin page
+  link, which opens over Tailscale only. The repository is public, so the workflow reads the
+  message from the event file instead of putting it in an expression or a log line, and never
+  prints the topic (tests pin both).
 - **Isolation**: stops the public tunnel, Supabase, the admin page and
   Tailscale; kills remaining containers; applies `host/nftables-doomsday.conf`
   (drop on input, forward AND output; only loopback, DHCP and, if an SSH server

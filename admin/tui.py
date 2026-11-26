@@ -105,8 +105,8 @@ GRADIENTS = {k: [rgb(x) for x in v] for k, v in {
     "disk": ["#0050ff", "#2f8fff", "#66c2ff"],
 }.items()}
 
-STATE_COLOUR = {"ok": C["ok"], "warn": C["warn"], "bad": C["bad"], "off": C["off"]}
-STATE_TEXT = {"ok": "OK", "warn": "WARN", "bad": "DOWN", "off": "OFF"}
+STATE_COLOUR = {"ok": C["ok"], "warn": C["warn"], "bad": C["bad"], "off": C["off"], "info": C["accent"]}
+STATE_TEXT = {"ok": "OK", "warn": "WARN", "bad": "DOWN", "off": "OFF", "info": "INFO"}
 ALERT_ORANGE = (255, 160, 0)
 
 
@@ -426,7 +426,7 @@ def status_events(events, old, new):
     u_old = (old.get("host") or {}).get("updates_pending", 0)
     u_new = (new.get("host") or {}).get("updates_pending", 0)
     if u_new > u_old:
-        events.add("warn", f"{u_new} Debian update(s) waiting")
+        events.add("info", f"{u_new} Debian package update(s) waiting")
 
 
 class Sampler:
@@ -779,6 +779,19 @@ def public_route_text(route):
     return f"down · tunnel {route.get('tunnel', '?')}, Caddy {route.get('caddy', '?')}"
 
 
+def debian_row(host):
+    """The Debian packages row. Not MacServer's own version (that is the MacServer row): packages waiting are
+    information, not a fault. Security fixes install by themselves each morning; the rest wait for an update."""
+    total, security = host.get("updates_pending", 0) or 0, host.get("updates_security", 0) or 0
+    if not total:
+        return ("ok", "Debian", "packages up to date")
+    other = total - security
+    if not other:
+        return ("info", "Debian", f"{security} security fix(es) waiting · installed automatically each morning")
+    sec = f" ({security} security, automatic)" if security else ""
+    return ("info", "Debian", f"{total} package(s) waiting{sec} · sudo macserver update")
+
+
 def connections(sampler):
     s, now = sampler.status or {}, sampler.now
     ts = s.get("tailscale", {}) if s else {}
@@ -815,8 +828,7 @@ def connections(sampler):
     synced = s.get("clock_synced") if s else None
     rows.append(("ok" if synced else "warn" if synced is False else "off", "Clock",
                  "synced" if synced else "not synced" if synced is False else "unknown"))
-    upd = s.get("host", {}).get("updates_pending", 0) if s else 0
-    rows.append(("warn" if upd else "ok", "Updates", f"{upd} pending · sudo macserver update" if upd else "up to date"))
+    rows.append(debian_row(s.get("host", {}) if s else {}))
     mu = s.get("macserver_update") if s else None
     if mu:
         state, version = mu.get("state", ""), (mu.get("current") or "")[:7]

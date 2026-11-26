@@ -140,7 +140,11 @@ the battery, the time and uptime. Below it, from top to bottom:
   talked to on its own network lately (address and hardware address; the router is marked,
   and "private MAC" means a phone or laptop using a randomised address).
 - **Connections**: Internet, Tailscale, the public API, Claude, clock, updates, each with
-  an **OK / WARN / DOWN / OFF** tag, the admin and Studio addresses, and the **Events** log.
+  an **OK / WARN / DOWN / OFF / INFO** tag, the admin and Studio addresses, and the **Events** log.
+  Two rows are about updates, and they are different things: **MacServer** is this project's
+  own software, which updates itself from GitHub; **Debian** counts the system's packages
+  waiting. Security fixes install by themselves each morning; the rest (Docker, for example)
+  wait for `sudo macserver update`. Packages waiting are shown as INFO, not as a problem.
 
 **Heat is not a warning.** A MacBook Air under load runs in the 90s and touches the CPU's
 own 100 °C limit many times a minute with the fans at full speed; that is how it works.
@@ -160,52 +164,31 @@ files to open, log in (press **2**) and run `macserver issues`.
 
 The screen returns to normal by itself once everything works again.
 
-**Text alerts.** The Mac can also text your phone when the screen shows an issue, with a
-one-line summary and the link to your admin page (the link opens over Tailscale, so keep
-the Tailscale app on). It texts what the screen calls an issue and nothing else: never
-heat, and never the notices the screen itself mutes.
+**Phone alerts.** The Mac can push an alert to your phone when the screen shows an issue,
+with a one-line summary; tapping it opens your admin page (over Tailscale, so keep the
+Tailscale app on). It alerts on what the screen calls an issue and nothing else: never heat,
+and never the notices the screen itself mutes.
 
 - A **critical** issue (a service stopped, the public API down, Tailscale or the Internet
-  gone) is texted after it lasts a minute, and again every 4 hours while it stays open.
-- Any other issue is texted once, after three minutes, and not within 15 minutes of the
-  last text. One text lists everything that is open, worst first.
-- At most 4 texts an hour and 12 a day. A text that could not be sent is retried every
+  gone) is sent after it lasts a minute, at urgent priority, and again every 4 hours while it
+  stays open.
+- Any other issue is sent once, after three minutes, and not within 15 minutes of the last
+  alert. One alert lists everything that is open, worst first.
+- At most 4 alerts an hour and 12 a day. An alert that could not be sent is retried every
   5 minutes.
 
-Set it up once. The text is sent by GitHub (the same route as the doomsday email), so
-your phone number and the email login stay in GitHub, never on the Mac:
+The alert goes out through GitHub and the free **ntfy** push service, so nothing about your
+phone is stored on the Mac. (It used to be a text through your carrier's email-to-text
+gateway; Verizon shut that down.) Set it up once:
 
-1. In the repository's **Settings → Secrets and variables → Actions**, add the secret
-   `SMS_GATEWAY_ADDRESS`: your number at your carrier's email-to-text gateway, for example
-   `5551234567@vtext.com` for a Verizon number. (`SMTP_USERNAME` and `SMTP_PASSWORD`, the Gmail
-   login the other alert emails use, must exist too.)
-2. On the Mac, give it the GitHub token: `sudo macserver doomsday setup-gh`.
-3. Check it: `sudo macserver notify test` sends a test text.
-
-`sudo macserver notify status` shows what is open and what was texted, and
-`sudo macserver notify off` / `on` switches it. It cannot text you that the Mac itself is
-off or offline (nothing on the Mac can); for that you need a monitor outside it.
-
-**Fans.** The fans never run below 60% of full speed, and speed up as CPU load or
-temperature rises (full speed above 95 °C). The Hardware page shows the fan speed and
-target. Change the floor with `FAN_MIN_PCT=70` in `/etc/macserver/macserver.conf`, or
-give the fans back to the Mac with `FAN_MODE=auto`; it applies within seconds.
-
-If the Mac's graphics ever fail, the screen falls back to a simpler text version of
-the same dashboard by itself.
-
-The dashboard ignores typing, so it's safe to leave on. To use the Mac's own screen
-for commands:
-
-- On the dashboard, press **2**. The login screen appears; log in with your
-  username and password.
-- To go back, press **Ctrl + ⌥ Option + 1** (on the number row). Typing `exit`
-  first logs you out.
-
-(Ctrl + ⌥ Option + 1 to 6 switch between screens anywhere. The Mac's F-keys work
-too if you hold fn, but the number row is easier.)
-
-You can close the lid; the server keeps running. Leave it on the charger.
+1. Install the **ntfy** app on your phone, tap **+** and subscribe to a topic with a long
+   random name, for example `macserver-` followed by 20 random letters and digits. The name is
+   the only key to your alerts: keep it secret. (In the app's settings, allow critical alerts
+   if you want urgent ones to come through Focus / Do Not Disturb.)
+2. In the repository's **Settings → Secrets and variables → Actions**, add the secret
+   `NTFY_TOPIC` with that topic name. (Optional: `NTFY_SERVER` for your own ntfy server,
+   `NTFY_TOKEN` for a protected topic.)
+3. On the Mac, run `sudo macserver notify test`. The alert arrives within about a minute.
 
 ## 7. Open your admin page
 
@@ -323,7 +306,7 @@ run `sudo macserver backup`. Each one holds the database, the files uploaded to 
 the Supabase and MacServer settings (not the doomsday authenticator or any token). The newest 30
 database backups, 7 Storage copies and 30 settings copies are kept. The drive is open only for the
 few seconds a backup takes. If the drive is unplugged or a backup fails, the dashboard shows an
-issue (and the text alerts tell you) once a backup is missed.
+issue (and the phone alerts tell you) once a backup is missed.
 
 To bring a backup back, open the drive by hand, then restore. On the same Mac:
 

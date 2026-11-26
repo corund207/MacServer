@@ -1,0 +1,78 @@
+name: alert-push
+
+# Sent by the Mac itself THROUGH this workflow: admin/notify.py triggers it (workflow_dispatch)
+# when the dashboards show an issue, and this workflow pushes a notification to the owner's phone
+# through ntfy (https://ntfy.sh): the owner subscribes to a private topic in the ntfy app. The
+# topic name is the only key to it, so it exists only as the NTFY_TOPIC secret, never in the
+# repository and never on the Mac. Optional secrets: NTFY_SERVER (a self-hosted ntfy, https only;
+# default https://ntfy.sh) and NTFY_TOKEN (an access token for a protected topic).
+#
+# The repository is public, so the text must not land in the run log: it is read from the event
+# file by the script (no expression ever puts an input into a step), the topic is never printed,
+# and the secrets are masked by GitHub.
+on:
+  workflow_dispatch:
+    inputs:
+      message:
+        description: "The alert: one line, 160 characters at most, with the admin link in it"
+        required: true
+      level:
+        description: "critical, issue or test"
+        required: false
+        default: "issue"
+
+permissions:
+  contents: read
+
+jobs:
+  push-owner:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Send the push notification through ntfy
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          NTFY_SERVER: ${{ secrets.NTFY_SERVER }}
+          NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import sys
+          import urllib.error
+          import urllib.request
+
+          topic = os.environ.get("NTFY_TOPIC", "").strip()
+          if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", topic):
+              sys.exit("the NTFY_TOPIC secret is not set (or has characters a topic cannot have)")
+          server = (os.environ.get("NTFY_SERVER") or "https://ntfy.sh").strip().rstrip("/")
+          if not server.startswith("https://"):
+              sys.exit("NTFY_SERVER must be an https:// address")
+          with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as f:
+              inputs = json.load(f).get("inputs") or {}
+          text = " ".join(str(inputs.get("message", "")).split())[:300]
+          if not text:
+              sys.exit("the message is empty")
+          level = str(inputs.get("level", "issue"))
+          headers = {
+              # critical alerts are "urgent" (5): the ntfy app can let them through Focus / Do Not Disturb
+              "Title": {"critical": "MacServer: CRITICAL", "test": "MacServer: test alert"}.get(level, "MacServer: needs attention"),
+              "Priority": {"critical": "5", "test": "3"}.get(level, "4"),
+              "Tags": {"critical": "rotating_light", "test": "white_check_mark"}.get(level, "warning"),
+          }
+          link = re.search(r"https://[A-Za-z0-9.-]+/", text)
+          if link:
+              headers["Click"] = link.group(0)          # tapping the alert opens the admin page (over Tailscale)
+          if os.environ.get("NTFY_TOKEN"):
+              headers["Authorization"] = "Bearer " + os.environ["NTFY_TOKEN"].strip()
+          request = urllib.request.Request(f"{server}/{topic}", data=text.encode("utf-8"), method="POST", headers=headers)
+          try:
+              with urllib.request.urlopen(request, timeout=30) as reply:
+                  code = reply.status
+          except urllib.error.HTTPError as err:
+              sys.exit(f"ntfy refused the alert (HTTP {err.code}); check NTFY_TOPIC / NTFY_TOKEN")
+          except (urllib.error.URLError, OSError) as err:
+              sys.exit(f"no connection to the ntfy server ({err.__class__.__name__})")
+          print(f"alert handed to ntfy (HTTP {code}, {len(text)} characters, level {level})")
+          PY
