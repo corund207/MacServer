@@ -921,6 +921,23 @@ def default_gateway(route_text):
     return None
 
 
+def lan_neighbours(arp_text, iface, gateway=None):
+    """Devices the Mac has talked to lately on its own network (the kernel's ARP table), by address.
+    The router is marked; a locally administered MAC (bit 0x02) is a phone or laptop's private address."""
+    out = []
+    for line in (arp_text or "").splitlines()[1:]:
+        f = line.split()
+        if len(f) < 6 or f[5] != iface or f[2] == "0x0" or f[3] == "00:00:00:00:00:00":
+            continue
+        mac = f[3].lower()
+        try:
+            private = bool(int(mac[:2], 16) & 2)
+        except ValueError:
+            private = False
+        out.append({"ip": f[0], "mac": mac, "kind": "router" if f[0] == gateway else "private MAC" if private else "device"})
+    return sorted(out, key=lambda e: [int(n) if n.isdigit() else 0 for n in e["ip"].split(".")])
+
+
 def ping_ms(host):
     m = re.search(r"time=([\d.]+) ms", run("ping", "-c", "1", "-W", "1", host, timeout=3) or "")
     return float(m.group(1)) if m else None
@@ -1813,7 +1830,10 @@ def system_info(state, now, containers_now, ids, ts_text, proc_root="/proc", sys
                     "wifi": cached(state, "wifi", 30, now, lambda: wifi_info(run(
                         "nmcli", "-t", "-f", "IN-USE,SSID,SIGNAL,RATE,FREQ,CHAN,SECURITY", "dev", "wifi", "list", "--rescan", "no"),
                         read(p / "net/wireless", ""), wifi_iface)) if wifi_iface else None,
-                    "tcp": part(tcp_stats, read(p / "net/snmp", ""), read(p / "net/sockstat", ""))},
+                    "tcp": part(tcp_stats, read(p / "net/snmp", ""), read(p / "net/sockstat", "")),
+                    "neighbours": part(lan_neighbours, read(p / "net/arp", ""), wifi_iface or next(
+                        (i["name"] for i in interfaces or [] if i["kind"] == "ethernet" and i.get("state") == "up"), ""),
+                        default_gateway(read(p / "net/route", "")))},
         "sensors": {"temps": part(sensor_list, f"{sys_root}/class/hwmon"), "fans": part(fan_list, f"{sys_root}/bus/acpi/devices/APP0001:00", f"{sys_root}/class/hwmon")},
         "power": part(battery_detail, f"{sys_root}/class/power_supply"),
         "docker": {"projects": project_rollup(containers_now)},

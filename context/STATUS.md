@@ -1223,3 +1223,29 @@ libzstd1, login.defs, passwd (security).
 
 Verified: unit tests (workflow keeps the text and topic out of the log, dispatch URL, Debian row). Not verified:
 a real ntfy delivery (needs the owner's `NTFY_TOPIC` secret), `sudo macserver notify test` after it is set.
+
+## 2026-11-25: the admin page in the screen's style, with devices
+
+`admin/static` redone to match the Mac's screen: one dark theme (pure black `--bg`, near-black panels, thin
+neutral borders, saturated per-metric colours `--s1`..`--s6`, uppercase monospace titles coloured per panel via
+`t-*` classes, solid status pill). The light theme is gone; `tests/test_web_page.py` checks every text colour
+against all three surfaces at 4.5:1 and that every animation sits behind `prefers-reduced-motion`.
+
+Layouts: Overview = attention (collapses to one line when clear; `.attention.bad` glows) > KPI tiles (coloured
+top edge) > four graph panels (s3) > Services (s7) beside Devices (s5) > Status / Claude / Connect.
+Hardware = CPU (s8) + temperatures/power > memory / storage / machine (s4 each) > processes. Network = devices,
+ports, connections (col s8) beside reachability / API / busiest (col s4) > interfaces. Tools = eight action cards
+(s3) > Supabase logs > every command.
+
+Motion: panels rise in staggered on page change; the tab underline (`#tab-ink`) slides; charts keep their last
+inputs (`charts` Map) and glide one column left over 650 ms when a reading arrives (`slideFrom`, rAF), with a
+glowing newest point and a gradient fill; the brand dot pulses per reading; a container that changes state
+flashes its row; critical = red edge (`body.critical::after`) and a glowing badge. `calm` (reduced motion) stops
+the glide.
+
+Devices: the collector now writes `system.network.neighbours` (`lan_neighbours`, from /proc/net/arp on the Wi-Fi
+or wired interface; router marked from the default route; locally administered MACs are "private MAC"). Debian
+packages waiting are `info` on the page too (same wording as the screen).
+
+Verified: unit tests; headless Chromium screenshots of every page (healthy and trouble, 1600 px and 420 px).
+Not verified: the live page on the Mac.

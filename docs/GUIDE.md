@@ -202,22 +202,30 @@ Replace `macserver` with your server name. `<your-tailnet>` is shown at the bott
 of the dashboard and in the Tailscale app. It has the same pages as the dashboard on the
 Mac's screen, plus a terminal and tools; press **1** to **6** to switch:
 
-- **Overview**: a strip of the key numbers (CPU, memory, network, disk, temperature,
-  services, power, load) each with its last five minutes, **Needs attention** (what is
-  wrong, and the command to look at it), CPU, memory, storage, network, status, every
-  service grouped by project, the **API URL** and **app key** (with Copy buttons), and the
-  **Start Claude session** button.
+- **Overview**: **Needs attention** on top (one quiet line when all is well; what is
+  wrong and the command to look at it when not), a strip of the key numbers (CPU, memory,
+  network, disk, temperature, services, power, load) each with its last five minutes, live
+  graphs of CPU, memory, network and storage, every service grouped by project beside the
+  **Devices** panel (your Tailscale devices and everything the Mac has talked to on its
+  own network), then status, the **Start Claude session** button and the **API URL** and
+  **app key** (with Copy buttons).
 - **Hardware**: CPU in full, every temperature with its limit, the fan, the battery
   (health, cycles, time left), processes you can sort, memory, storage and the machine's facts.
-- **Network**: every interface, reachability, the Wi-Fi network, every Tailscale device and
-  how it connects, listening ports, connections, and API traffic.
+- **Network**: every device (Tailscale and the local network, with traffic), listening
+  ports, connections, reachability, the Wi-Fi network, API traffic and every interface.
 - **Services**: every container (click one for its status and last log lines), the
   database (connections, transactions per second, cache hit, size, app users) and Docker's
   disk use.
-- **Terminal** and **Tools**: a shell in the browser, and buttons for the `macserver` commands.
+- **Terminal** and **Tools**: a shell in the browser, a card for each everyday action
+  (status, doctor, backup, keys, idle mode, public route, update, restart), the Supabase
+  log reader, and every `macserver` command with a Run button.
 
-The page follows your device's light or dark setting. Like the screen, it never turns heat
-into a warning: only a fan that has stopped.
+It looks like the Mac's screen: a black page with bright colour only where it means
+something, one colour per metric. The graphs glide as each reading arrives every two
+seconds, and pages slide in panel by panel; if your device asks for reduced motion, all
+of that is switched off. A critical issue turns the status badge red and flashes the
+page's edge. Like the screen, it never turns heat into a warning: only a fan that has
+stopped.
 
 **Supabase Studio** (tables, users, files, SQL editor) is at the same address with
 `:8443` at the end. It asks for a username and password: get them from the server

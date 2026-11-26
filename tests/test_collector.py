@@ -401,6 +401,17 @@ class DebugParserTests(unittest.TestCase):
         self.assertEqual(collector.client_label("8.8.4.4", NAMES, PEERS), "8.8.4.4")
         self.assertEqual(collector.default_gateway("Iface\tDestination\tGateway\nwlp2s0\t00000000\t0112A8C0\n"), "192.168.18.1")
         self.assertIsNone(collector.default_gateway("Iface\tDestination\tGateway\n"))
+        arp = ("IP address  HW type  Flags  HW address  Mask  Device\n"
+               "192.168.18.20 0x1 0x2 4c:53:fd:4d:40:2e * wlp2s0\n"
+               "192.168.18.1 0x1 0x2 D8:31:34:67:B6:38 * wlp2s0\n"
+               "192.168.18.34 0x1 0x2 76:da:88:94:ec:c8 * wlp2s0\n"
+               "192.168.18.77 0x1 0x0 00:00:00:00:00:00 * wlp2s0\n"          # never answered: not a device
+               "172.18.0.8 0x1 0x2 46:f9:62:08:92:a8 * br-0e5b61fc7fe6\n")    # a container, not the local network
+        self.assertEqual(collector.lan_neighbours(arp, "wlp2s0", "192.168.18.1"), [
+            {"ip": "192.168.18.1", "mac": "d8:31:34:67:b6:38", "kind": "router"},
+            {"ip": "192.168.18.20", "mac": "4c:53:fd:4d:40:2e", "kind": "device"},
+            {"ip": "192.168.18.34", "mac": "76:da:88:94:ec:c8", "kind": "private MAC"}])   # a phone's randomised address
+        self.assertEqual(collector.lan_neighbours("", "wlp2s0"), [])
         status = json.dumps({"Peer": {"k": {"HostName": "jonahs-iphone", "TailscaleIPs": ["100.127.159.27", "fd7a::1"]}}})
         self.assertEqual(collector.tailscale_peers(status), {"100.127.159.27": "jonahs-iphone", "fd7a::1": "jonahs-iphone"})
         self.assertEqual(collector.tailscale_peers("nope"), {})

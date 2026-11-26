@@ -57,6 +57,7 @@ let latest = null;
 let lastSample = 0;
 const sorts = { procs: { key: 'cpu', dir: -1 }, svc: { key: 'mem', dir: -1 } };
 let openService = null;
+const lastStates = {};             // each container's state at the last render, to light up a change
 
 function push(name, value) {
   const series = hist[name];
@@ -88,8 +89,33 @@ function niceMax(v) {
   return v;
 }
 
-// One or more series as lines over a soft fill; the scale label sits top-left. `list` = [{values, color}].
-function chart(canvas, list, { max = null, fmt = String, bars = false, labels = true } = {}) {
+// Charts remember what they last drew, so a new reading can glide in from the right instead of jumping.
+const charts = new Map();                 // canvas -> [list, options]
+const SLIDE_MS = 650;
+let slideFrom = 0;                        // when the newest reading arrived
+const calm = window.matchMedia('(prefers-reduced-motion: reduce)');
+const easeOut = (t) => 1 - (1 - t) ** 3;
+function slideOffset() {
+  if (calm.matches) return 0;
+  const t = (performance.now() - slideFrom) / SLIDE_MS;
+  return t >= 1 || t < 0 ? 0 : 1 - easeOut(t);
+}
+function animateCharts() {
+  const off = slideOffset();
+  for (const [canvas, [list, opts]] of charts) {
+    if (!canvas.isConnected) { charts.delete(canvas); continue; }
+    if (canvas.offsetParent) draw(canvas, list, opts, off);
+  }
+  if (off > 0) requestAnimationFrame(animateCharts);
+}
+
+// One or more series as lines over a fading fill; the scale label sits top-left. `list` = [{values, color}].
+function chart(canvas, list, opts = {}) {
+  charts.set(canvas, [list, opts]);
+  draw(canvas, list, opts, slideOffset());
+}
+
+function draw(canvas, list, { max = null, fmt = String, bars = false, labels = true } = {}, off = 0) {
   const area = fit(canvas);
   if (!area) return;
   const { ctx, w, h } = area;
@@ -97,22 +123,26 @@ function chart(canvas, list, { max = null, fmt = String, bars = false, labels = 
   const padT = labels ? 15 : 3, padB = 2, plot = h - padT - padB;
   ctx.strokeStyle = cssVar('--line-soft');
   ctx.lineWidth = 1;
+  ctx.setLineDash([2, 4]);
   for (let i = 0; i < 4; i++) {
     const y = Math.round(padT + (plot * i) / 3) + 0.5;
     ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
   }
+  ctx.setLineDash([]);
   if (labels) {
     ctx.fillStyle = cssVar('--muted');
-    ctx.font = '11px system-ui, sans-serif';
+    ctx.font = `11px ${cssVar('--mono')}`;
     ctx.textBaseline = 'top';
     ctx.fillText(fmt(top), 0, 0);
   }
   const step = w / (HISTORY - 1);
   const yOf = (v) => padT + plot - Math.min(Math.max(v / top, 0), 1) * plot;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(0, 0, w, h); ctx.clip();
   for (const { values, color } of list) {
     if (!values.length) continue;
     const c = cssVar(color);
-    const xOf = (i) => w - (values.length - 1 - i) * step;
+    const xOf = (i) => w - (values.length - 1 - i - off) * step;
     if (bars) {
       ctx.fillStyle = c;
       values.forEach((v, i) => { const y = yOf(v); ctx.fillRect(xOf(i) - step * 0.8, y, Math.max(step * 0.8, 1), padT + plot - y); });
@@ -123,15 +153,23 @@ function chart(canvas, list, { max = null, fmt = String, bars = false, labels = 
     ctx.strokeStyle = c;
     ctx.lineWidth = 1.6;
     ctx.lineJoin = 'round';
+    ctx.shadowColor = c;
+    ctx.shadowBlur = 6;
     ctx.stroke();
+    ctx.shadowBlur = 0;
     ctx.lineTo(xOf(values.length - 1), padT + plot);
     ctx.lineTo(xOf(0), padT + plot);
     ctx.closePath();
-    ctx.globalAlpha = list.length > 1 ? 0.1 : 0.16;
-    ctx.fillStyle = c;
+    const fill = ctx.createLinearGradient(0, padT, 0, padT + plot);
+    fill.addColorStop(0, `${c}${list.length > 1 ? '30' : '48'}`);
+    fill.addColorStop(1, `${c}00`);
+    ctx.fillStyle = fill;
     ctx.fill();
-    ctx.globalAlpha = 1;
+    const last = values.length - 1, x = xOf(last), y = yOf(values[last]);   // the newest reading, lit
+    ctx.beginPath(); ctx.arc(Math.min(x, w - 3), y, 2.6, 0, Math.PI * 2);
+    ctx.fillStyle = c; ctx.shadowColor = c; ctx.shadowBlur = 10; ctx.fill(); ctx.shadowBlur = 0;
   }
+  ctx.restore();
 }
 
 // ---- small building blocks ----------------------------------------------------------------------------------
@@ -292,7 +330,11 @@ function notices(s) {
   if (s.clock_synced === false) add('warn', 'The clock is not synchronised', 'timedatectl');
   const failed = ((d.system || {}).failed_units || []).filter((u) => !(u === 'macserver-claude.service' && s.claude && ['login', 'consent'].includes(s.claude.problem)));
   for (const u of failed) add('warn', `Service ${u} failed`, `systemctl status ${u}`);
-  if (h.updates_pending) add('warn', `${h.updates_pending} Debian update(s) waiting`, 'sudo macserver update');
+  if (h.updates_pending) {
+    const security = h.updates_security || 0, onlySecurity = security === h.updates_pending;
+    add('info', onlySecurity ? `${security} Debian security fix(es) waiting: they install by themselves each morning`
+      : `${h.updates_pending} Debian package update(s) waiting${security ? ` (${security} security, automatic)` : ''}`, onlySecurity ? null : 'sudo macserver update');
+  }
   if (h.reboot_required) add('warn', 'A restart is needed to finish updates', 'sudo reboot');
   const mu = s.macserver_update;
   if (mu && ['skipped', 'refused', 'rolled-back', 'error'].includes(mu.state)) add('warn', `MacServer update: ${mu.message}`, 'sudo macserver upgrade');
@@ -328,17 +370,19 @@ function renderAttention(s) {
   const ul = el('ul', null, 'list');
   if (!list.length) ul.append(el('li', 'Nothing needs attention.', 'ok'));
   for (const n of list) {
-    const li = el('li', null, n.lvl === 'info' ? '' : n.lvl);
+    const li = el('li', null, n.lvl);
     const box = el('div', n.text);
-    if (n.hint) box.append(el('small', n.hint, 'mono'));
+    if (n.hint) box.append(el('small', n.hint, 'mono hint'));
     li.append(box);
     ul.append(li);
   }
   put($('attention'), ul);
   const bad = list.some((n) => n.lvl === 'bad'), warn = list.some((n) => n.lvl === 'warn');
   const chip = $('summary');
-  chip.textContent = bad ? `${list.filter((n) => n.lvl === 'bad')[0].text}` : warn ? `${real.length} thing(s) to look at` : 'Everything is running';
+  chip.textContent = bad ? `Critical · ${list.filter((n) => n.lvl === 'bad')[0].text}` : warn ? `${real.length} to look at` : 'All systems normal';
   chip.className = `chip ${bad ? 'bad' : warn ? 'warn' : 'good'}`;
+  $('attention-panel').className = `panel attention ${bad ? 'bad' : warn ? 'warn' : list.length ? 'info' : 'clear'}`;
+  document.body.classList.toggle('critical', bad);
 }
 
 // ---- the key numbers ----------------------------------------------------------------------------------------
@@ -372,7 +416,7 @@ function renderKpis(s) {
     mem: { label: 'Memory', value: pct(share(mem.used, mem.total)), series: [hist.mem, '--s4', 100], foot: `${bytes(mem.used)} of ${bytes(mem.total)}${swap.used ? ` · swap ${bytes(swap.used)}` : ''}` },
     net: { label: 'Network', value: l ? rate(l.net.rx) : '?', unit: 'in', series: [hist.rx, '--s2', null, hist.tx, '--s3'], foot: l ? `${rate(l.net.tx)} out` : '' },
     disk: { label: 'Disk /', value: pct(diskFrac * 100), series: [hist.wr, '--s5', null], foot: `${bytes(h.disk.used)} of ${bytes(h.disk.total)}${l ? ` · writes ${rate(l.disk_io.write)}` : ''}` },
-    temp: { label: 'Temperature', value: h.sensors.cpu_temp_c === null ? '?' : `${h.sensors.cpu_temp_c.toFixed(0)}°C`, series: [hist.temp, '--s5', 110],
+    temp: { label: 'Temperature', value: h.sensors.cpu_temp_c === null ? '?' : `${h.sensors.cpu_temp_c.toFixed(0)}°C`, series: [hist.temp, '--s6', 110],
             foot: fan ? `fan ${fan} rpm` : 'no fan reading' },
     svc: { label: 'Services', value: containers.length ? `${up}/${containers.length}` : '-', unit: 'running', series: [hist.svc, '--s3', null],
            foot: db && db.connections !== undefined ? `database ${db.connections}/${db.max_connections} · ${db.tps.toFixed(1)}/s` : `${containers.reduce((a, c) => a + (c.cpu || 0), 0).toFixed(0)}% cpu` },
@@ -449,7 +493,7 @@ function renderCpu(s) {
   });
   chart(m.canvas, [{ values: hist.cpu, color: '--s1' }], { max: 100, fmt: (v) => `${v}%` });
   const p = cpuParts(s);
-  put(m.rest, p.cores, ...p.parts, p.stall, group(null, p.facts), p.note);
+  put(m.rest, ...p.parts, group(null, p.facts));
 }
 
 function renderMem(s) {
@@ -584,7 +628,9 @@ function renderServicesTable(table, s, detailed) {
       ? [...base, c.health || '-', cpu, c.mem ? bytes(c.mem) : '', c.state === 'running' ? rate(c.net_rx || 0) : '', c.state === 'running' ? rate(c.net_tx || 0) : '',
          c.state === 'running' ? rate(c.blk_write || 0) : '', c.pids ?? '', c.state === 'running' && c.started ? since(c.started) : '', c.restarts ?? '', span(c.image || '', 'mono muted')]
       : [...base, cpu, c.mem ? bytes(c.mem) : '', c.state === 'running' && c.started ? since(c.started) : ''];
-    rows.push({ cells, detail, onClick: () => { openService = openService === c.name ? null : c.name; if (latest) render(latest); } });
+    const was = lastStates[c.name];
+    lastStates[c.name] = c.state;
+    rows.push({ cells, detail, className: was && was !== c.state ? 'changed' : '', onClick: () => { openService = openService === c.name ? null : c.name; if (latest) render(latest); } });
   }
   renderTable(table, cols, rows, { sort, onSort });
 }
@@ -607,7 +653,8 @@ function statusRows(s) {
   else if (route) row(route.up ? 'ok' : 'bad', 'Public API', route.up ? 'on · Caddy and Cloudflare tunnel running' : `down · tunnel ${route.tunnel}, Caddy ${route.caddy}`);
   else row('', 'Public API', 'off, tailnet only');
   row(s.clock_synced ? 'ok' : 'warn', 'Clock', s.clock_synced ? 'synchronised' : 'not synchronised');
-  row(s.host.updates_pending ? 'warn' : 'ok', 'Updates', s.host.updates_pending ? `${s.host.updates_pending} Debian update(s) waiting` : 'up to date');
+  const sec = s.host.updates_security || 0;
+  row(s.host.updates_pending ? 'info' : 'ok', 'Debian', s.host.updates_pending ? `${s.host.updates_pending} package(s) waiting${sec ? ` · ${sec} security, automatic` : ''}` : 'packages up to date');
   if (s.macserver_update) row(['skipped', 'refused', 'rolled-back', 'error'].includes(s.macserver_update.state) ? 'warn' : 'ok', 'MacServer', `${s.macserver_update.message}${s.macserver_update.auto === 'off' ? ' (auto-update off)' : ''}`);
   const idle = s.idle || {};
   row('', 'Idle mode', idle.mode === 'off' ? 'off' : idle.idle ? `low-power since ${new Date(idle.since * 1000).toLocaleString()}` : `active (low-power after ${Math.max(Math.round((idle.after_s || 900) / 60), 1)} min quiet)`);
@@ -637,6 +684,40 @@ function renderConnect(s) {
   put($('connect'), ...kv(pairs).childNodes);
 }
 
+// ---- devices ----------------------------------------------------------------------------------------------
+
+function deviceRows(s, detailed) {
+  const y = sys(s), ts = y.tailscale || {}, peers = ts.peers || [], net = y.network || {}, lan = net.neighbours || [];
+  const iface = ((net.interfaces || []).find((i) => i.kind === 'wifi') || {}).name || '';
+  const rows = [];
+  if (peers.length) {
+    rows.push({ group: ['Tailnet', span(`  ${peers.filter((p) => p.online).length} of ${peers.length} online`)] });
+    for (const p of [...peers].sort((a, b) => (b.online - a.online) || a.name.localeCompare(b.name))) {
+      const cells = [stateCell(p.name, p.online ? 'ok' : ''), span(p.ip, 'mono'), p.os || '', p.online ? p.route || 'direct' : 'offline',
+        p.online ? 'now' : p.last_seen ? `${since(p.last_seen)} ago` : '-'];
+      if (detailed) cells.push(bytes(p.rx_bytes || 0), bytes(p.tx_bytes || 0));
+      rows.push({ cells, className: p.online ? '' : 'off' });
+    }
+  }
+  if (lan.length) {
+    rows.push({ group: ['Local network', span(`  ${lan.length} seen${iface ? ` on ${iface}` : ''}`)] });
+    for (const d of lan) {
+      const cells = [stateCell(d.kind === 'router' ? 'router' : d.mac, d.kind === 'router' ? 'info' : 'ok'), span(d.ip, 'mono'), d.kind, net.wifi ? 'Wi-Fi' : 'wired', 'recent'];
+      if (detailed) cells.push('', '');
+      rows.push({ cells });
+    }
+  }
+  return rows;
+}
+
+const DEVICE_COLUMNS = [{ label: 'Device' }, { label: 'Address' }, { label: 'Type' }, { label: 'Link' }, { label: 'Seen', align: 'r' }];
+
+function renderDevices(s) {
+  const y = sys(s), peers = (y.tailscale || {}).peers || [], lan = (y.network || {}).neighbours || [];
+  $('devices-meta').textContent = `${peers.filter((p) => p.online).length} on the tailnet · ${lan.length} on the local network`;
+  renderTable($('devices-table'), DEVICE_COLUMNS, deviceRows(s, false), {});
+}
+
 // ---- hardware -----------------------------------------------------------------------------------------------
 
 function renderHardware(s) {
@@ -653,7 +734,7 @@ function renderHardware(s) {
   const th = el('div');
   for (const t of [...temps].sort((a, b) => b.temp_c - a.temp_c)) {
     const limit = t.crit_c || t.max_c || 100;
-    th.append(meter(`${t.chip} ${t.label === 'temp' ? '' : t.label}`.trim(), t.temp_c / limit, `${t.temp_c.toFixed(0)}°C of ${limit.toFixed(0)}°C`, 's5', '150px'));
+    th.append(meter(`${t.chip} ${t.label === 'temp' ? '' : t.label}`.trim(), t.temp_c / limit, `${t.temp_c.toFixed(0)}°C of ${limit.toFixed(0)}°C`, 's6', '150px'));
   }
   for (const f of (y.sensors || {}).fans || (s.host.sensors.fans_rpm || []).map((rpm) => ({ rpm }))) {
     th.append(meter('Fan', f.rpm / (f.max || 8000), `${f.rpm} rpm${f.max ? ` of ${f.max}` : ''}`, 's3', '150px'));
@@ -735,8 +816,7 @@ function renderNetworkPage(s) {
   const ts = y.tailscale || {};
   const peers = ts.peers || [];
   $('tailnet-meta').textContent = peers.length ? `${peers.filter((p) => p.online).length} of ${peers.length} online${ts.version ? ` · Tailscale ${ts.version}` : ''}` : '';
-  renderTable($('tailnet-table'), [{ label: 'Device' }, { label: 'System' }, { label: 'Address' }, { label: 'Route' }, { label: 'Received', align: 'r' }, { label: 'Sent', align: 'r' }, { label: 'Last seen', align: 'r' }],
-    peers.map((p) => ({ cells: [stateCell(p.name, p.online ? 'ok' : ''), p.os, span(p.ip, 'mono'), p.route, bytes(p.rx_bytes), bytes(p.tx_bytes), p.online ? 'now' : `${since(p.last_seen)} ago`] })), {});
+  renderTable($('tailnet-table'), [...DEVICE_COLUMNS, { label: 'Received', align: 'r' }, { label: 'Sent', align: 'r' }], deviceRows(s, true), {});
   const notes = el('ul', null, 'list plain');
   for (const hn of ts.health || []) notes.append(el('li', hn, 'warn'));
   if (ts.key_expiry) notes.append(el('li', `This Mac's Tailscale key expires in ${duration(ts.key_expiry - Date.now() / 1000)}.`));
@@ -831,6 +911,7 @@ function ingest(s) {
 
 function render(s) {
   latest = s;
+  document.body.classList.remove('loading');
   $('viewer').textContent = `signed in through Tailscale as ${s.viewer}`;
   const name = (s.tailscale.name || 'macserver').split('.')[0];
   $('host-name').textContent = `${name} · up ${duration(s.host.uptime_s)}`;
@@ -838,7 +919,7 @@ function render(s) {
   const run = (fn) => { try { fn(s); } catch (e) { console.error(fn.name, e); } };   // one broken panel never blanks the page
   const page = currentTab;
   run(renderAttention); run(renderKpis);
-  if (page === 'overview') { run(renderCpu); run(renderMem); run(renderNet); run(renderStorage); run(renderOverviewServices); run(renderStatus); run(renderConnect); }
+  if (page === 'overview') { run(renderCpu); run(renderMem); run(renderNet); run(renderStorage); run(renderOverviewServices); run(renderDevices); run(renderStatus); run(renderConnect); }
   if (page === 'hardware') run(renderHardware);
   if (page === 'network') run(renderNetworkPage);
   if (page === 'services') run(renderServicesPage);
@@ -963,8 +1044,10 @@ async function refresh() {
     const res = await fetch('/api/status', { cache: 'no-store' });
     const data = await res.json();
     if (data.error) { const chip = $('summary'); chip.textContent = data.error; chip.className = 'chip warn'; return; }
-    if (data.generated_at !== lastSample) { lastSample = data.generated_at; ingest(data); }   // one chart column per reading
+    const fresh = data.generated_at !== lastSample;
+    if (fresh) { lastSample = data.generated_at; ingest(data); slideFrom = performance.now(); }   // one chart column per reading
     render(data);
+    if (fresh) { requestAnimationFrame(animateCharts); pulse(); }
   } catch {
     const chip = $('summary');
     chip.textContent = 'Cannot reach the server';
@@ -972,10 +1055,24 @@ async function refresh() {
   }
 }
 
+function pulse() {
+  const b = $('brand');
+  b.classList.remove('beat');
+  void b.offsetWidth;                  // restart the animation
+  b.classList.add('beat');
+}
+
 // ---- pages --------------------------------------------------------------------------------------------------
 
 const TABS = ['overview', 'hardware', 'network', 'services', 'terminal', 'dev'];
 let currentTab = 'overview';
+
+function moveInk() {
+  const on = document.querySelector('#tabs button[aria-selected="true"]'), ink = $('tab-ink');
+  if (!on) return;
+  ink.style.left = `${on.offsetLeft}px`;
+  ink.style.width = `${on.offsetWidth}px`;
+}
 
 function showTab(name, focus = false) {
   if (!TABS.includes(name)) name = 'overview';
@@ -987,6 +1084,7 @@ function showTab(name, focus = false) {
     b.tabIndex = on ? 0 : -1;
     if (on && focus) b.focus();
   }
+  moveInk();
   try { history.replaceState(null, '', `#${name}`); } catch { /* not fatal */ }
   const frame = $('term-frame');
   if (name === 'terminal') {
@@ -1009,7 +1107,7 @@ document.addEventListener('keydown', (e) => {
   if (i >= 0) showTab(TABS[i]);
 });
 $('term-frame').addEventListener('load', () => { $('term-frame').contentWindow.postMessage('focus', location.origin); });
-window.addEventListener('resize', () => { if (latest) render(latest); });
+window.addEventListener('resize', () => { moveInk(); if (latest) render(latest); });
 
 function tick() { $('clock').textContent = new Date().toLocaleTimeString([], { hour12: false }); }
 tick();

@@ -63,22 +63,25 @@ class PageRulesTests(unittest.TestCase):
         for tag in ("div", "section", "table", "header", "nav", "main", "select", "pre"):
             self.assertEqual(len(re.findall(rf"<{tag}\b", HTML)), len(re.findall(rf"</{tag}>", HTML)), tag)
 
-    def test_text_stays_readable_in_both_themes(self):
-        """WCAG AA, 4.5:1, for the text colours on the surfaces they sit on."""
-        dark = tokens(CSS[CSS.index(":root"):CSS.index("@media (prefers-color-scheme: light)")])
-        light = tokens(CSS[CSS.index("@media (prefers-color-scheme: light)"):CSS.index("* { box-sizing")])
-        for name, t in (("dark", dark), ("light", {**dark, **light})):
-            for fg in ("text", "muted", "accent", "ok", "warn", "bad"):
-                for bg in ("surface", "bg", "surface-2"):
-                    if fg in ("ok", "warn", "bad", "accent") and bg != "surface":
-                        continue
-                    self.assertGreaterEqual(contrast(t[fg], t[bg]), 4.5, f"{name}: {fg} on {bg}")
-            self.assertGreaterEqual(contrast(t["accent-ink"], t["accent"]), 4.5, f"{name}: primary button")
+    def test_text_stays_readable_on_the_black_theme(self):
+        """WCAG AA, 4.5:1, for the text colours on the surfaces they sit on. One theme, like the Mac's screen:
+        a pure black page with saturated colour only for meaning."""
+        t = tokens(CSS[CSS.index(":root"):CSS.index("* { box-sizing")])
+        self.assertEqual(t["bg"].lower(), "#000000")
+        self.assertNotIn("prefers-color-scheme: light", CSS)
+        for fg in ("text", "muted", "accent", "ok", "warn", "bad", "info", "s1", "s2", "s3", "s4", "s5", "s6"):
+            for bg in ("surface", "bg", "surface-2"):
+                self.assertGreaterEqual(contrast(t[fg], t[bg]), 4.5, f"{fg} on {bg}")
+        self.assertGreaterEqual(contrast(t["accent-ink"], t["accent"]), 4.5, "primary button")
 
     def test_it_is_a_real_tab_list_and_honours_reduced_motion(self):
         self.assertIn('role="tablist"', HTML)
         self.assertEqual(HTML.count('role="tab"'), HTML.count('role="tabpanel"'))
         self.assertIn("prefers-reduced-motion", CSS)
+        motion = CSS[CSS.index("/* ---- motion"):]
+        self.assertNotRegex(CSS[:CSS.index("/* ---- motion")], r"animation:", "every animation sits behind prefers-reduced-motion")
+        self.assertIn("animation:", motion)
+        self.assertIn("calm.matches", JS)                                   # the charts' glide honours it too
         self.assertIn(":focus-visible", CSS)
 
     @unittest.skipUnless(shutil.which("node"), "node not installed")
