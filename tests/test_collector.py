@@ -408,27 +408,57 @@ class DebugParserTests(unittest.TestCase):
                "192.168.18.77 0x1 0x0 00:00:00:00:00:00 * wlp2s0\n"          # never answered: not a device
                "172.18.0.8 0x1 0x2 46:f9:62:08:92:a8 * br-0e5b61fc7fe6\n")    # a container, not the local network
         self.assertEqual(collector.lan_neighbours(arp, "wlp2s0", "192.168.18.1"), [
-            {"ip": "192.168.18.1", "mac": "d8:31:34:67:b6:38", "kind": "router"},
-            {"ip": "192.168.18.20", "mac": "4c:53:fd:4d:40:2e", "kind": "device"},
-            {"ip": "192.168.18.34", "mac": "76:da:88:94:ec:c8", "kind": "private MAC"}])   # a phone's randomised address
+            {"key": "d8:31:34:67:b6:38", "ip": "192.168.18.1", "mac": "d8:31:34:67:b6:38", "kind": "router"},
+            {"key": "4c:53:fd:4d:40:2e", "ip": "192.168.18.20", "mac": "4c:53:fd:4d:40:2e", "kind": "device"},
+            {"key": "76:da:88:94:ec:c8", "ip": "192.168.18.34", "mac": "76:da:88:94:ec:c8", "kind": "private MAC"}])   # a randomised address
         self.assertEqual(collector.lan_neighbours("", "wlp2s0"), [])
-        known = {"devices": {"d8:31:34:67:b6:38": {"label": "router (Nokia)", "kind": "router", "maker": "Nokia", "last_seen": 990},
-                             "76:da:88:94:ec:c8": {"label": "Evil[2Jname", "kind": "phone or tablet", "system": "iOS or Android",
-                                                   "last_seen": 900},
+        long_name = "Roku Streaming Stick+ in the upstairs living room by the window"
+        known = {"devices": {"d8:31:34:67:b6:38": {"label": "router (Nokia)", "kind": "router", "maker": "Nokia",
+                                                   "last_seen": 990, "confidence": "exact", "risks": [{"level": "info", "what": "open", "text": "SSH"}]},
+                             "76:da:88:94:ec:c8": {"label": "Evil\x1b[2Jname", "kind": "phone or tablet", "system": "iOS or Android",
+                                                   "last_seen": 900, "names": [{"name": "Evil\x1b[2Jname", "source": "DHCP"}, "junk"],
+                                                   "evidence": ["x" * 500] * 30, "ports": [22, "80", 443], "new_at": 950},
+                             "4c:53:fd:4d:40:2e": {"label": long_name, "kind": "TV streamer", "last_seen": 990, "trusted": True},
                              "aa:bb:cc:dd:ee:01": {"ip": "192.168.18.50", "label": "Asleep Now", "kind": "printer", "last_seen": 500},
                              "aa:bb:cc:dd:ee:02": {"ip": "192.168.18.51", "label": "Long Gone", "last_seen": 1000 - 3 * 3600}}}
         named = {e["ip"]: e for e in collector.lan_neighbours(arp, "wlp2s0", "192.168.18.1", known, now=1000)}
         self.assertEqual(named["192.168.18.1"]["name"], "router (Nokia)")
-        self.assertEqual(named["192.168.18.34"]["name"], "Evil [2Jname")          # no escape codes reach the screen
-        self.assertEqual(named["192.168.18.34"]["system"], "iOS or Android")
-        self.assertEqual(named["192.168.18.50"]["kind"], "printer")                # the scan saw it; the ARP table forgot it
+        self.assertEqual(named["192.168.18.20"]["name"], long_name)                 # the full name, not a short label
+        self.assertTrue(named["192.168.18.20"]["trusted"])
+        phone = named["192.168.18.34"]
+        self.assertEqual(phone["name"], "Evil [2Jname")                             # no escape codes reach the screen
+        self.assertEqual(phone["names"], [{"name": "Evil [2Jname", "source": "DHCP"}])
+        self.assertEqual((phone["system"], phone["ports"], phone["new"]), ("iOS or Android", [22, 443], True))
+        self.assertEqual((len(phone["evidence"]), len(phone["evidence"][0])), (10, 160))
+        self.assertEqual(named["192.168.18.50"]["kind"], "printer")                # the watch saw it; the ARP table forgot it
         self.assertNotIn("192.168.18.51", named)
-        self.assertEqual(named["192.168.18.20"]["kind"], "device")                 # not scanned yet
-        # one device holding three addresses (old leases) is one row, at the address the scan chose
+        # one device holding three addresses (old leases) is one row, at the address the watch chose
         extra = arp + "".join(f"192.168.18.{n}  0x1  0x2  76:da:88:94:ec:c8  *  wlp2s0\n" for n in (21, 250))
         known["devices"]["76:da:88:94:ec:c8"]["ip"] = "192.168.18.250"
         rows = [e for e in collector.lan_neighbours(extra, "wlp2s0", "192.168.18.1", known, now=1000) if e["mac"] == "76:da:88:94:ec:c8"]
         self.assertEqual([e["ip"] for e in rows], ["192.168.18.250"])
+        # behind an extender that gives every client its own address, one address is several devices
+        known["shared_macs"] = {"76:da:88:94:ec:c8": {"ips": ["192.168.18.21", "192.168.18.34", "192.168.18.250"]}}
+        known["devices"] = {f"76:da:88:94:ec:c8@192.168.18.{n}": {"ip": f"192.168.18.{n}", "mac": "76:da:88:94:ec:c8", "label": label,
+                                                                  "via": "76:da:88:94:ec:c8", "last_seen": 990}
+                            for n, label in ((21, "Kitchen Echo"), (34, "Andrews-iPhone"), (250, "Wi-Fi extender"))}
+        rows = [e for e in collector.lan_neighbours(extra, "wlp2s0", "192.168.18.1", known, now=1000) if e["mac"] == "76:da:88:94:ec:c8"]
+        self.assertEqual([(e["ip"], e["name"], e["via"]) for e in rows], [("192.168.18.21", "Kitchen Echo", "76:da:88:94:ec:c8"),
+                                                                          ("192.168.18.34", "Andrews-iPhone", "76:da:88:94:ec:c8"),
+                                                                          ("192.168.18.250", "Wi-Fi extender", "76:da:88:94:ec:c8")])
+
+    def test_the_network_watch_summary(self):
+        self.assertIsNone(collector.lan_watch({}))
+        watch = collector.lan_watch({"alerts": [{"level": "bad", "title": "another device is answering as your router", "why": "w" * 900,
+                                                 "fix": ["macserver devices", 7]}, {"level": "weird", "title": "t"}, "junk", {"why": "no title"}],
+                                     "counts": {"devices": 25, "new": 1, "bad": "x"}, "capture": True, "updated": 990, "iface": "wlp2s0",
+                                     "events": [{"at": 1, "level": "warn", "text": "new device joined"}] * 20}, now=1000)
+        self.assertEqual([(a["level"], a["title"]) for a in watch["alerts"]], [("bad", "another device is answering as your router"), ("warn", "t")])
+        self.assertEqual((len(watch["alerts"][0]["why"]), watch["alerts"][0]["fix"]), (400, ["macserver devices", "7"]))
+        self.assertEqual((watch["counts"], watch["capture"], watch["stale"], len(watch["events"])), ({"devices": 25, "new": 1}, True, False, 12))
+        self.assertTrue(collector.lan_watch({"updated": 0}, now=5000)["stale"])
+
+    def test_tailscale_peer_names(self):
         status = json.dumps({"Peer": {"k": {"HostName": "jonahs-iphone", "TailscaleIPs": ["100.127.159.27", "fd7a::1"]}}})
         self.assertEqual(collector.tailscale_peers(status), {"100.127.159.27": "jonahs-iphone", "fd7a::1": "jonahs-iphone"})
         self.assertEqual(collector.tailscale_peers("nope"), {})

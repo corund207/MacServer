@@ -1237,6 +1237,17 @@ def incidents(sampler):
             ["sudo macserver backup-drive status", "sudo macserver backup   (plug the drive in first)"],
             facts=["drive: " + ("plugged in" if drive.get("present") else "NOT plugged in")],
             files=["/var/lib/macserver/backup.json  (what the last backup did)", "/etc/macserver/backup-drive.key  (opens the drive)"])
+    watch = (sysdata(sampler).get("network") or {}).get("lan_watch")
+    if watch:                                            # admin/lan_devices.py: strangers and spoofing on the LAN
+        for a in watch.get("alerts") or []:
+            add(a.get("level", "warn"), a.get("title", "network watch"), a.get("why", ""), a.get("fix") or [],
+                ["journalctl -u macserver-devices -n 50"],
+                files=["/etc/macserver/devices-known.json  (your names and trust list)"])
+        if watch.get("stale"):
+            add("warn", "the network watch is not running", "no update from macserver-devices for over half an hour: "
+                "new devices on the network are not being noticed",
+                ["systemctl status macserver-devices", "sudo systemctl restart macserver-devices"],
+                ["journalctl -u macserver-devices -n 50"])
     out.sort(key=lambda i: i["level"] != "bad")
     return out
 
@@ -1686,14 +1697,23 @@ def device_lines(sampler):
         known = [{"ip": ip, "mac": mac, "kind": "router" if ip == gw else "private MAC" if int(mac[:2], 16) & 2 else "device"}
                  for ip, mac in sampler.now.get("lan") or []]
     if known:
-        out.append(("head", "local network", f"{len(known)} seen on {sampler.iface or '?'}"))
+        watch = (sysdata(sampler).get("network") or {}).get("lan_watch") or {}
+        new = sum(1 for d in known if d.get("new"))
+        note = f"{len(known)} on {sampler.iface or watch.get('iface') or '?'}" + (f" · {new} new" if new else "")
+        if watch and not watch.get("capture"):
+            note += " · not listening"
+        out.append(("head", "local network", note))
         for d in known:
             seen = d.get("seen")
             age = now - seen if seen else None
             when = "recent" if age is None else "now" if age < 900 else f"{fmt_duration(int(age)).split()[0]} ago"
-            detail = d.get("maker") or ("private address" if d.get("kind") == "private MAC" or int(d["mac"][:2], 16) & 2 else "")
+            private = d.get("kind") == "private MAC" or int(d["mac"][:2], 16) & 2
+            what = d.get("model") if d.get("model") and d.get("model") != d.get("name") else ""
+            detail = " · ".join(x for x in (what, (d.get("maker") or ("private address" if private else "")).split(",")[0]) if x)
+            risky = any(r.get("level") == "bad" and r.get("what") == "open" for r in d.get("risks") or [])
+            flag = "NEW " if d.get("new") else ""
             out.append(("dev", (d.get("name") or d["mac"], d["ip"], d.get("kind") or "device", d.get("system") or "-", when,
-                                detail.split(",")[0]), "ok"))
+                                flag + detail), "bad" if risky else "warn" if d.get("new") else "ok"))
     return out
 
 
@@ -1707,9 +1727,21 @@ def devices_panel(c, sampler, x, y, w, h):
         line(c, x + 2, y + 1, w - 4, ("No devices yet: Tailscale and the Wi-Fi report them here.", C["dim"]))
         return
     ix, right = x + 2, x + w - 2
-    widths = [22, 16, 17, 15, 9, None]
-    if w < 90:
-        widths = [18, 16, 17, None, 0, 0]
+    # The DEVICE column is as wide as the longest name (the full name is the point); the other columns
+    # narrow first, then DETAIL and SEEN go, before a name is cut.
+    inner = w - 6
+    longest = max([len(e[1][0]) for e in lines if e[0] == "dev"] + [12])
+    name_w = min(longest + 1, max(22, inner * 2 // 5))
+    if inner >= name_w + 16 + 22 + 20 + 9 + 16:
+        widths = [name_w, 16, 22, 20, 9, None]
+    elif inner >= name_w + 16 + 16 + 14 + 9 + 8:
+        widths = [name_w, 16, 16, 14, 9, None]
+    elif inner >= name_w + 16 + 16 + 14 + 9:
+        widths = [name_w, 16, 16, 14, 9, 0]
+    elif inner >= name_w + 16 + 18 + 10:
+        widths = [name_w, 16, 18, None, 0, 0]
+    else:
+        widths = [max(min(longest + 1, inner - 16 - 10), 12), 16, None, 0, 0, 0]
     head = ("DEVICE", "ADDRESS", "TYPE", "SYSTEM", "SEEN", "DETAIL")
     fields(c, ix, y + 1, right, ("", C["dim"], 2), *[(t, C["dim"], wd, True) for t, wd in zip(head, widths) if wd != 0])
     room = h - 3
@@ -1722,9 +1754,10 @@ def devices_panel(c, sampler, x, y, w, h):
             section_title(c, ix, row, w - 4, entry[1], entry[2])
             continue
         cells, state = entry[1], entry[2]
-        colours = (C["bright"], C["accent"], C["text"], C["text"], C["dim"], C["ok"] if cells[5].startswith("direct") else C["dim"])
+        last = C["ok"] if cells[5].startswith("direct") else C["warn"] if cells[5].startswith("NEW") else C["dim"]
+        colours = (C["bright"], C["accent"], C["text"], C["text"], C["dim"], last)
         fields(c, ix, row, right, ("●", STATE_COLOUR[state], 2),
-               *[(text, colour if state == "ok" else C["dim"], wd) for text, colour, wd in zip(cells, colours, widths) if wd != 0])
+               *[(text, colour if state != "off" else C["dim"], wd) for text, colour, wd in zip(cells, colours, widths) if wd != 0])
 
 
 def devices_need(sampler):

@@ -28,21 +28,32 @@
   Cloudflare side by side, over TLS when a server offers it (opportunistic: this
   encrypts but does not authenticate). Tailscale does not manage the Mac's DNS
   (`--accept-dns=false`): tailscaled's own lookups cannot reach Tailscale's resolver.
-- **Device names** (`admin/lan_devices.py`, `macserver-devices.timer`, every 10 min): a
-  ping sweep of the Mac's own subnet (at most 1024 addresses; bigger networks are only
-  looked up, not swept), then unicast questions to each device that answered: a reverse
-  DNS lookup at the router, mDNS sent straight to the device's port 5353 (its name, its
-  service list, friendly names and model), NetBIOS node status to port 137. No socket is
-  bound to a fixed port and nothing joins a multicast group, so nothing new listens on
-  the LAN and the firewall is unchanged: each answer is a reply to the Mac's own packet.
-  Device answers are untrusted: the parsers are bounds-checked (compressed-name loops
-  capped, records capped), names are cut to 40 printable characters before they are
-  stored, and the collector strips them again before the screen draws them. The scan runs
-  under systemd `DynamicUser` with no capabilities (unprivileged ICMP via
-  `net.ipv4.ping_group_range`), `ProtectSystem=strict`, IPv4 and Unix sockets only, and
-  writes only `/var/lib/macserver-devices/devices.json`. Makers come from systemd's
-  offline copy of the IEEE registry (`/usr/lib/udev/hwdb.d/20-OUI.hwdb`): nothing is
-  looked up on the Internet.
+- **Network watch** (`admin/lan_devices.py`, `macserver-devices.service`): names every device on
+  the Mac's own network and raises alerts about strangers (a device first seen after the watch's
+  first half hour and not marked as yours), ARP spoofing of the router, a second DHCP server, MAC
+  flooding, and Telnet or adb open on a device. **Listening**: a packet socket (AF_PACKET) with a
+  kernel BPF filter that passes only ARP and IPv4 UDP to or from the discovery ports (67/68 DHCP,
+  137/138 NetBIOS, 1900/2021 SSDP, 5353 mDNS, 5355 LLMNR), unfragmented, never the Mac's own
+  outgoing traffic. It is bound to the interface, not to a port: it opens no socket that the LAN
+  can reach, answers nothing, and the firewall is unchanged. It also sees the unicast answers to
+  the Mac's own multicast questions before the firewall drops them. **Asking**: a ping sweep of the
+  Mac's subnet (at most 1024 addresses), mDNS and SSDP questions to the multicast groups and to each
+  device, PTR at the router, NetBIOS node status, a TCP connect to telltale ports, the UPnP
+  description (http only, only from the device's own private address, no redirects, no proxy,
+  64 KB), and every three days per device Debian's nmap: `-sT -sV --version-light --unprivileged`
+  with the safe scripts `ssl-cert, http-title, http-server-header, upnp-info, nbstat,
+  smb-os-discovery, rdp-ntlm-info` (no OS fingerprinting, no intrusive or brute-force scripts).
+  Everything a device says is untrusted: every parser is bounds-checked (frames, DHCP options,
+  compressed DNS names, SSDP headers, nmap XML), strings are cut to printable text before they are
+  stored and again by the collector, and malformed packets are dropped. The watch runs under
+  systemd `DynamicUser` with `CAP_NET_RAW` as its only capability, `NoNewPrivileges`,
+  `ProtectSystem=strict`, `MemoryDenyWriteExecute`, IPv4/IPv6/Unix/packet/netlink sockets only,
+  300 MB of memory; it writes only `/var/lib/macserver-devices/devices.json` and reads your names
+  and trust list from `/etc/macserver/devices-known.json` (written by `sudo macserver devices`).
+  Makers come from systemd's offline copy of the IEEE registry: nothing is looked up on the
+  Internet. Limits: a spoofer who poisons only other devices (unicast ARP replies) is seen only
+  if it also touches the Mac or broadcasts; a device that never joins or announces while the
+  Mac listens is seen only by the sweep.
 - **Kernel network settings** (`host/sysctl.conf`): no ICMP redirects or source
   routing accepted or sent, SYN cookies, loose reverse-path filtering (strict mode
   breaks Tailscale).

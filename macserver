@@ -36,7 +36,9 @@ Usage: sudo macserver COMMAND
   doomsday ...        lockdown on attack: status|isolate|unlock|restore|on|off|test|allow|setup-totp|setup-gh
   notify [status|test|on|off]   push an alert to the owner's phone (ntfy) when the dashboard shows an issue (needs setup-gh once)
   notify report [now|on|off]    the hourly status report to the phone: send one now, or turn it on or off
-  devices [scan]                every device on the local network: name, kind, system, maker (scan: look again now)
+  devices [who]                 every device on the local network (who: an address, hardware address or name: all it knows)
+  devices scan|trust <who|all>|untrust <who>|name <who> "<name>"|accept-router
+                                look now; mark devices as yours (stops "new device"); name one; accept a new router
   rustdesk setup|on|off|key|update   self-hosted RustDesk server (hbbs + hbbr)
   wifi              set up or change the built-in Wi-Fi
   doctor            check network, DNS and T2 drivers
@@ -143,11 +145,20 @@ cmd_notify() {
   esac
 }
 
-cmd_devices() {
+cmd_devices() {  # the network watch, macserver-devices.service (admin/lan_devices.py)
   case ${1:-show} in
-    show) exec python3 "$LIB/lan_devices.py" show ;;
-    scan) need_root devices scan; systemctl start macserver-devices.service && STATE_DIRECTORY=/var/lib/macserver-devices exec python3 "$LIB/lan_devices.py" show ;;
-    *) usage; exit 2 ;;
+    show) shift || true; exec python3 "$LIB/lan_devices.py" show "$@" ;;
+    scan)
+      need_root devices scan
+      systemctl kill -s USR1 macserver-devices.service 2>/dev/null ||
+        die "the network watch is not running: sudo systemctl start macserver-devices"
+      ok "looking now; the list updates within a few minutes: macserver devices" ;;
+    name|trust|untrust|accept-router)
+      need_root devices "$@"
+      python3 "$LIB/lan_devices.py" "$@" || exit $?
+      systemctl reload macserver-devices.service 2>/dev/null || true ;;
+    help|-h|--help) usage ;;
+    *) exec python3 "$LIB/lan_devices.py" show "$@" ;;
   esac
 }
 

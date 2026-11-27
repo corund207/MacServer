@@ -1298,3 +1298,57 @@ maker/TTL (Ring camera, Aura photo frame, Nintendo, Amazon Echo, Espressif smart
 addresses answer nothing and show as "phone or tablet". Unit tests; screen render at 232x64 and 80x40; headless
 Chromium screenshots of the overview and network pages. Not verified yet: the timer running under DynamicUser on
 the Mac (after the self-update installs it).
+
+## 2026-11-26: the network watch (devices by their exact name, and alerts about strangers)
+
+The first version (above, the same day) named devices from what they answered to unicast questions every
+ten minutes: most showed a maker and a guess. It is replaced by a long-running watch,
+`macserver-devices.service` (`admin/lan_devices.py watch`; the timer is removed by the installer):
+
+- **Listening**: an AF_PACKET socket with a classic BPF filter (ARP; unfragmented IPv4 UDP on 67/68, 137/138,
+  1900/2021, 5353, 5355), `PACKET_MR_ALLMULTI`, outgoing frames skipped. Parsed: DHCP requests (option 12 host
+  name, 60 vendor class, 55 request list, 81 FQDN, 50 requested address), DHCP server replies (option 54), mDNS
+  answers (PTR/SRV/TXT/A, attributed by A record or SRV target, so a Bonjour sleep proxy's answers land on the
+  sleeping Mac), SSDP NOTIFY/200 headers (incl. Bambu's `DevName/DevModel/DevVersion.bambu.com` on 2021) and
+  M-SEARCH user agents, NetBIOS registrations and browser announcements, LLMNR, ARP.
+- **Asking** every 10 min (SIGUSR1: now): ping sweep, multicast mDNS (legacy unicast: the answers come back
+  unicast and the listener reads them before the firewall drops them) and SSDP M-SEARCH, the earlier unicast
+  probes, a TCP connect to telltale ports (6 h; an empty answer is retried after 30 min), the UPnP description
+  (daily), and nmap (`-sT -sV --version-light --unprivileged`, safe scripts only) on 3 devices per look, each
+  device every 3 days, at most 5 min per look.
+- **Identity**: every source makes claims with a strength (yours 100; UPnP/Apple model/Bambu model/DHCP
+  vendor 90-95; port 62078/Roku server/Cast 75-88; names 65; makers 25-70; TTL and private MAC last). The
+  strongest per field wins; `names` keeps every name with its source; `confidence` exact/likely/guess/unknown;
+  `evidence` lists why, strongest first. Apple model codes map to marketing names (`Mac14,2` = MacBook Air (M2,
+  2022)), `osxvers` to the macOS name, Bambu codes to models (N2S = A1). A Samba NAS's browser announcement
+  ("OS 6.1") is no longer taken for Windows; Matter + Spotify Connect is an Echo.
+- **Extenders that translate MAC addresses**: a MAC that answers from two live IPs in one sweep, or sends as
+  A/B/A within 15 min, is split into one device per IP (`mac@ip`), keeping first-seen and household status;
+  a device moving between the router and the extender keeps its standing (same IP, within 6 h).
+- **Alerts** (stable titles; the screen raises them as incidents, notify.py sends them to the phone): new
+  device (not seen in the first 30 min and not trusted; 24 h), another MAC answering for the router's IP
+  (`accept-router` or 24 h consistent = a new router; not when it is the extender's MAC), a second DHCP
+  server, more than 512 MACs, Telnet/adb open; plus "the network watch is not running" when the file is over
+  30 min old.
+- **Your names and trust**: `/etc/macserver/devices-known.json`, written by `sudo macserver devices
+  name|trust|untrust|accept-router` (then a reload); `macserver devices [who]` shows the list or one device.
+- **Screen**: the DEVICE column is as wide as the longest name; new devices amber, exposed ones red.
+  **Admin page**: a Devices tab (key 4; Services, Terminal, Tools move to 5-7) with the watch's alerts and
+  counts, recent changes, and every device; a click shows every name, source, port, note and the evidence.
+- Sandbox: DynamicUser, `CAP_NET_RAW` only (bounding and ambient), AF_INET/INET6/UNIX/PACKET/NETLINK,
+  ProtectSystem=strict, MemoryDenyWriteExecute, 300 MB, 96 tasks. The installer installs Debian's `nmap`.
+
+Verified on the Mac (2026-11-26), as root and then as a temporary copy of the unit
+(`macserver-devices-test.service`, removed afterwards) under the real sandbox: the packet socket and
+ALLMULTI work with only CAP_NET_RAW, nmap runs inside it, 27 devices on 192.168.18.0/24. Named in full: Roku
+Streaming Stick+ (Roku OS 16.0.4, model 3810RW, from its UPnP description), JC printer (Bambu Lab A1, firmware
+01.08.01.00, cloud-connected), DH4300PLUS-6D77 (UGREEN NAS, Samba), PS4-067CCC, HS-DJH2LMVT4M and
+HS-HXJKD3S0265D (MacBook Air M2 and M1, macOS 26 Tahoe, real hardware addresses from Bonjour), Amazon Echo, the
+Windows PC behind the extender (its browser's UPnP search), the extender itself (.250), iPhones by port 62078.
+A 20-minute capture beforehand showed no DHCP joins (none happened), the Bambu announcements, an Echo behind
+the extender and Andrews-iPhone over Bonjour. Tests: `tests/test_lan_devices.py` (frames and the BPF program
+run through an interpreter, fuzzed frames, DHCP/SSDP/mDNS/NetBIOS parsing, nmap XML, UPnP fetch rules,
+identification from the real devices, baseline/new/trust, spoofing, rogue DHCP, extender split, sleep proxy,
+flooding, migration, CLI, unit sandboxing, no listening socket); collector merge and `lan_watch`; screen
+incidents and widths. Not verified: a real join alert on the phone; Fingerbank (optional, not built: it needs
+an account key and keeps what is sent).

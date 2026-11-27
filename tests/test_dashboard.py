@@ -135,7 +135,7 @@ class DashboardTests(unittest.TestCase):
                          "up to date · 6bc4f51", "BAT ▲  80%", "3.2W",
                          "SERVICES", "NAME", "STATE", "SUPABASE", "13/13", "GATEWAY", "realtime", "cloudflared", "3d",
                          "DEVICES", "TAILNET", "jonahs-iphone", "100.1.1.2", "iOS", "direct", "relay nyc", "30d ago",
-                         "LOCAL NETWORK", "router (Nokia)", "192.168.18.1", "Living Room Roku", "phone or tablet",
+                         "LOCAL NETWORK", "router (Nokia)", "192.168.18.1", "Living Room Roku Streaming Stick+",
                          "CONNECTIONS", "EVENTS", "press 2 to log in"):
             self.assertIn(expected, text)
         self.assertNotIn("NEEDS ATTENTION", text)        # nothing wrong: no issues panel
@@ -165,13 +165,19 @@ class DashboardTests(unittest.TestCase):
         devices = {e[1][0]: e for e in lines if e[0] == "dev"}
         self.assertEqual(devices["desktop-nlhe9il"][2], "off")            # an offline device is greyed
         self.assertEqual(devices["router (Nokia)"][1][2], "router")
-        self.assertEqual(devices["Living Room Roku"][1][2:4], ("Roku", "Roku OS"))      # named by the device scan
-        self.assertEqual(devices["Living Room Roku"][1][5], "Roku")
-        self.assertEqual(devices["private …ec:c8"][1][2:5], ("phone or tablet", "iOS or Android", "2h ago"))
-        self.assertEqual(devices["private …ec:c8"][1][5], "private address")
+        roku = devices["Living Room Roku Streaming Stick+"]                          # the full name the device gave
+        self.assertEqual(roku[1][2:4], ("TV streamer", "Roku OS 16.0.4"))
+        self.assertEqual((roku[1][5], roku[2]), ("Roku 3810RW · Roku", "ok"))
+        phone = devices["phone, tablet or laptop · ec:c8"]
+        self.assertEqual(phone[1][2:5], ("phone, tablet or laptop", "iOS or Android", "2h ago"))
+        self.assertEqual((phone[1][5], phone[2]), ("NEW private address", "warn"))   # new and not marked yours: amber
+        self.assertIn("1 new", [e[2] for e in lines if e[0] == "head"][1])
         text = tui_fixture.screen("healthy", 232, 64).text()
-        for expected in ("Living Room Roku", "Amazon Echo", "Fire OS", "SYSTEM", "DETAIL"):
+        for expected in ("Living Room Roku Streaming Stick+", "Amazon Echo", "Fire OS", "SYSTEM", "SEEN"):
             self.assertIn(expected, text)
+        wide = tui_fixture.screen("healthy", 300, 64).text()                 # room for the model and maker too
+        for expected in ("DETAIL", "Roku 3810RW · Roku", "NEW private address"):
+            self.assertIn(expected, wide)
         s.status["system"]["network"].pop("neighbours")                   # no scan yet: the ARP table alone
         bare = {e[1][0]: e for e in tui.device_lines(s) if e[0] == "dev"}
         self.assertEqual(bare["76:da:88:94:ec:c8"][1][2], "private MAC")
@@ -181,6 +187,19 @@ class DashboardTests(unittest.TestCase):
         c = tui.Canvas(80, 6)
         tui.devices_panel(c, s, 0, 0, 80, 6)
         self.assertIn("No devices yet", c.text())
+
+    def test_network_watch_alerts_are_incidents(self):
+        s = tui_fixture.make_sampler("healthy")
+        watch = s.status["system"]["network"]["lan_watch"]
+        watch["alerts"] = [{"level": "bad", "title": "another device is answering as your router", "why": "spoofing",
+                            "fix": ["macserver devices", "sudo macserver devices accept-router"]},
+                           {"level": "warn", "title": "new device on your network: aa:bb:cc:00:00:01", "why": "Galaxy-S24",
+                            "fix": ["sudo macserver devices trust 192.168.18.77"]}]
+        found = {i["title"]: i for i in tui.incidents(s)}
+        self.assertEqual(found["another device is answering as your router"]["level"], "bad")
+        self.assertEqual(found["new device on your network: aa:bb:cc:00:00:01"]["fix"], ["sudo macserver devices trust 192.168.18.77"])
+        watch["alerts"], watch["stale"] = [], True
+        self.assertIn("the network watch is not running", [i["title"] for i in tui.incidents(s)])
 
     def test_idle_row_and_badge(self):
         text = tui_fixture.screen("healthy", 232, 64).text()

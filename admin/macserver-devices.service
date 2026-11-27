@@ -1,19 +1,25 @@
 [Unit]
-Description=MacServer device names (who is on the local network: name, kind, system, maker)
+Description=MacServer network watch (who is on the local network, exactly, and alerts about strangers)
 Documentation=file:///usr/local/lib/macserver/lan_devices.py
 After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=oneshot
-ExecStart=/usr/bin/python3 /usr/local/lib/macserver/lan_devices.py scan
-# Devices name themselves, so their answers are untrusted: the scan runs as a throwaway user with no
-# capabilities, sees only its own state directory (/var/lib/macserver-devices) and sends only IPv4.
-# Unprivileged ping needs no capability (net.ipv4.ping_group_range, systemd's default allows it).
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/lib/macserver/lan_devices.py watch
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=30
+# Devices name themselves, so everything they send is untrusted. The watch runs as a throwaway user
+# whose only privilege is CAP_NET_RAW: a packet socket that reads discovery broadcasts (DHCP, mDNS,
+# UPnP, NetBIOS, ARP) through a kernel filter. It opens no port and answers nothing; the firewall is
+# unchanged. It sees only its own state directory, and reads (never writes) your names and trust list
+# in /etc/macserver/devices-known.json. nmap runs unprivileged inside the same sandbox.
 DynamicUser=yes
 StateDirectory=macserver-devices
-CapabilityBoundingSet=
-AmbientCapabilities=
+Environment=HOME=/var/lib/macserver-devices
+CapabilityBoundingSet=CAP_NET_RAW
+AmbientCapabilities=CAP_NET_RAW
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
@@ -25,12 +31,18 @@ ProtectKernelLogs=yes
 ProtectControlGroups=yes
 ProtectClock=yes
 ProtectHostname=yes
-RestrictAddressFamilies=AF_INET AF_UNIX
+ProtectProc=invisible
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_PACKET AF_NETLINK
 RestrictNamespaces=yes
 RestrictRealtime=yes
 RestrictSUIDSGID=yes
 LockPersonality=yes
 MemoryDenyWriteExecute=yes
 SystemCallArchitectures=native
+MemoryMax=300M
+TasksMax=96
 Nice=10
-TimeoutStartSec=120
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target

@@ -921,8 +921,8 @@ def default_gateway(route_text):
     return None
 
 
-LAN_DEVICES = Path("/var/lib/macserver-devices/devices.json")   # admin/lan_devices.py, every 10 minutes
-LAN_RECENT_S = 1200       # a device the last scan found stays listed this long after the ARP table drops it
+LAN_DEVICES = Path("/var/lib/macserver-devices/devices.json")   # admin/lan_devices.py, the network watch
+LAN_RECENT_S = 1200       # a device the watch saw stays listed this long after the ARP table drops it
 
 
 def shown(text, limit=40):
@@ -930,13 +930,40 @@ def shown(text, limit=40):
     return " ".join("".join(ch if ch.isprintable() else " " for ch in str(text or "")).split())[:limit]
 
 
+def _texts(values, limit, size):
+    return [shown(v, size) for v in (values if isinstance(values, list) else [])[:limit] if shown(v, size)]
+
+
+def device_entry(d, now):
+    """What the screen and the admin page show of one device from the watch (all of it re-cut: a
+    device chose its own name, and the file is the watch's)."""
+    names = [{"name": shown(n.get("name"), 80), "source": shown(n.get("source"), 60)}
+             for n in (d.get("names") if isinstance(d.get("names"), list) else [])[:10] if isinstance(n, dict) and n.get("name")]
+    risks = [{"level": r.get("level") if r.get("level") in ("bad", "warn", "info") else "info", "what": shown(r.get("what"), 12),
+              "text": shown(r.get("text"), 160)}
+             for r in (d.get("risks") if isinstance(d.get("risks"), list) else [])[:10] if isinstance(r, dict)]
+    ports = [p for p in (d.get("ports") if isinstance(d.get("ports"), list) else [])[:40] if isinstance(p, int)]
+    new_at = d.get("new_at") if isinstance(d.get("new_at"), (int, float)) else None
+    return {"name": shown(d.get("label") or d.get("name"), 80), "names": names, "kind": shown(d.get("kind"), 48),
+            "system": shown(d.get("system"), 48), "model": shown(d.get("model"), 80),
+            "maker": shown(d.get("real_maker") or d.get("maker"), 64), "confidence": shown(d.get("confidence"), 8),
+            "evidence": _texts(d.get("evidence"), 10, 160), "risks": risks, "ports": ports,
+            "services": _texts(d.get("services"), 16, 120), "trusted": bool(d.get("trusted")),
+            "new": bool(new_at) and not d.get("trusted") and 0 <= now - new_at < 86400, "via": shown(d.get("via"), 17),
+            "real_mac": shown(d.get("real_mac"), 17), "ips": _texts(d.get("ips"), 8, 15),
+            "seen": d.get("last_seen"), "first_seen": d.get("first_seen")}
+
+
 def lan_neighbours(arp_text, iface, gateway=None, known=None, now=None):
-    """Devices on the Mac's own network, by address: the kernel's ARP table, plus what the device scan
-    (admin/lan_devices.py) learned about each: a name, a kind, a system, a maker, when it was last seen.
-    Without a scan the router is marked and a locally administered MAC (bit 0x02) is a private address."""
+    """Devices on the Mac's own network: the kernel's ARP table, plus everything the network watch
+    (admin/lan_devices.py) knows about each one. One row per device: behind a Wi-Fi extender that
+    gives all its clients its own hardware address, one address is several devices, told apart by IP.
+    Without the watch, the router is marked and a locally administered MAC (bit 0x02) is a private address."""
     now = time.time() if now is None else now
     devices = (known or {}).get("devices") if isinstance(known, dict) else None
-    devices = devices if isinstance(devices, dict) else {}
+    devices = {k: d for k, d in devices.items() if isinstance(d, dict)} if isinstance(devices, dict) else {}
+    shared = (known or {}).get("shared_macs") if isinstance(known, dict) else None
+    shared = shared if isinstance(shared, dict) else {}
     out = {}
     for line in (arp_text or "").splitlines()[1:]:
         f = line.split()
@@ -947,23 +974,47 @@ def lan_neighbours(arp_text, iface, gateway=None, known=None, now=None):
             private = bool(int(mac[:2], 16) & 2)
         except ValueError:
             private = False
-        out[f[0]] = {"ip": f[0], "mac": mac, "kind": "router" if f[0] == gateway else "private MAC" if private else "device"}
-    for mac, d in devices.items():
-        if isinstance(d, dict) and d.get("ip") and d["ip"] not in out and 0 <= now - (d.get("last_seen") or 0) < LAN_RECENT_S:
-            out[d["ip"]] = {"ip": shown(d["ip"], 15), "mac": shown(mac, 17), "kind": "device"}
+        key = f"{mac}@{f[0]}" if mac in shared else mac
+        out[f[0]] = {"key": key, "ip": f[0], "mac": mac,
+                     "kind": "router" if f[0] == gateway else "private MAC" if private else "device"}
+    for key, d in devices.items():
+        ip = d.get("ip")
+        if isinstance(ip, str) and ip not in out and 0 <= now - (d.get("last_seen") or 0) < LAN_RECENT_S:
+            out[ip] = {"key": shown(key, 40), "ip": shown(ip, 15), "mac": shown(d.get("mac"), 17), "kind": "device"}
     order = lambda e: [int(n) if n.isdigit() else 0 for n in e["ip"].split(".")]
     one = {}                                  # one row per device: a MAC holding several addresses is one device
     for entry in sorted(out.values(), key=order):
-        d = devices.get(entry["mac"])
+        d = devices.get(entry["key"])
         main = isinstance(d, dict) and d.get("ip") == entry["ip"]
-        if entry["mac"] not in one or main or entry["kind"] == "router":
-            one[entry["mac"]] = entry
+        if entry["key"] not in one or main or entry["kind"] == "router":
+            one[entry["key"]] = entry
     for entry in one.values():
-        d = devices.get(entry["mac"])
-        if isinstance(d, dict):
-            entry.update(name=shown(d.get("label") or d.get("name")), kind=shown(d.get("kind"), 24) or entry["kind"],
-                         system=shown(d.get("system"), 16), maker=shown(d.get("maker")), seen=d.get("last_seen"))
+        d = devices.get(entry["key"])
+        if d:
+            fallback = entry["kind"]
+            entry.update(device_entry(d, now))
+            entry["kind"] = entry["kind"] or fallback
     return sorted(one.values(), key=order)
+
+
+def lan_watch(known, now=None):
+    """The network watch itself: is it running, what it found, and its security alerts."""
+    now = time.time() if now is None else now
+    if not isinstance(known, dict) or not known:
+        return None
+    alerts = []
+    for a in (known.get("alerts") if isinstance(known.get("alerts"), list) else [])[:16]:
+        if isinstance(a, dict) and a.get("title"):
+            alerts.append({"level": "bad" if a.get("level") == "bad" else "warn", "title": shown(a.get("title"), 90),
+                           "why": shown(a.get("why"), 400), "fix": _texts(a.get("fix"), 4, 160)})
+    events = [{"at": e.get("at"), "level": shown(e.get("level"), 8), "text": shown(e.get("text"), 160)}
+              for e in (known.get("events") if isinstance(known.get("events"), list) else [])[-12:] if isinstance(e, dict)]
+    counts = known.get("counts") if isinstance(known.get("counts"), dict) else {}
+    updated = known.get("updated") if isinstance(known.get("updated"), (int, float)) else None
+    return {"alerts": alerts, "events": events, "counts": {k: v for k, v in counts.items() if isinstance(v, int)},
+            "capture": bool(known.get("capture")), "looked": known.get("looked"), "updated": updated,
+            "stale": updated is None or now - updated > 1800, "iface": shown(known.get("iface"), 16),
+            "network": shown(known.get("network"), 20), "gateway_mac": shown(known.get("gateway_mac"), 17)}
 
 
 def read_json_file(path):
@@ -1823,6 +1874,7 @@ def system_info(state, now, containers_now, ids, ts_text, proc_root="/proc", sys
     addresses = cached(state, "ip_addr", 30, now, lambda: ip_addresses(run("ip", "-j", "addr")))
     interfaces = part(interface_stats, read(p / "net/dev", ""), sys_root, addresses)
     wifi_iface = next((i["name"] for i in interfaces or [] if i["kind"] == "wifi"), "")
+    lan_state = read_json_file(LAN_DEVICES)
     uname = os.uname() if hasattr(os, "uname") else None
     inspected = cached(state, "docker_inspect", 10, now, lambda: docker_inspect_lines(run(
         "docker", "inspect", "--format",
@@ -1869,8 +1921,8 @@ def system_info(state, now, containers_now, ids, ts_text, proc_root="/proc", sys
                     "tcp": part(tcp_stats, read(p / "net/snmp", ""), read(p / "net/sockstat", "")),
                     "neighbours": part(lan_neighbours, read(p / "net/arp", ""), wifi_iface or next(
                         (i["name"] for i in interfaces or [] if i["kind"] == "ethernet" and i.get("state") == "up"), ""),
-                        default_gateway(read(p / "net/route", "")),
-                        read_json_file(LAN_DEVICES), now)},
+                        default_gateway(read(p / "net/route", "")), lan_state, now),
+                    "lan_watch": part(lan_watch, lan_state, now)},
         "sensors": {"temps": part(sensor_list, f"{sys_root}/class/hwmon"), "fans": part(fan_list, f"{sys_root}/bus/acpi/devices/APP0001:00", f"{sys_root}/class/hwmon")},
         "power": part(battery_detail, f"{sys_root}/class/power_supply"),
         "docker": {"projects": project_rollup(containers_now)},

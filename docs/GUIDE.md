@@ -207,7 +207,7 @@ https://macserver.<your-tailnet>.ts.net/
 
 Replace `macserver` with your server name. `<your-tailnet>` is shown at the bottom
 of the dashboard and in the Tailscale app. It has the same pages as the dashboard on the
-Mac's screen, plus a terminal and tools; press **1** to **6** to switch:
+Mac's screen, plus a terminal and tools; press **1** to **7** to switch:
 
 - **Overview**: **Needs attention** on top (one quiet line when all is well; what is
   wrong and the command to look at it when not), a strip of the key numbers (CPU, memory,
@@ -221,6 +221,13 @@ Mac's screen, plus a terminal and tools; press **1** to **6** to switch:
 - **Network**: every device (Tailscale and the local network, with its maker or link and
   traffic), listening
   ports, connections, reachability, the Wi-Fi network, API traffic and every interface.
+- **Devices**: the network watch. Its alerts (a new device, another device answering as the
+  router, a second DHCP server, a device with Telnet or Android debugging open), what changed
+  lately, and every device on the Mac's own network by its full name ("JC printer",
+  "Roku Streaming Stick+", "HS-DJH2LMVT4M"), with its type, system, model and maker, address,
+  open ports and status (new, yours, exposed). Click a device for everything known about it:
+  every name it gave and where it came from, its real hardware address, its open services and
+  how it was identified.
 - **Services**: every container (click one for its status and last log lines), the
   database (connections, transactions per second, cache hit, size, app users) and Docker's
   disk use.
@@ -300,20 +307,49 @@ Logging in shows a summary; `macserver dashboard` opens the full dashboard (q qu
 | `sudo macserver public off` | Takes the public API off the Internet immediately |
 | `sudo macserver idle off` | Stays at full power (by default it uses less power after 15 minutes with no connections) |
 | `sudo macserver doctor` | Checks network, DNS and the Mac's drivers |
-| `macserver devices` | Every device on the local network: name, kind, system, maker, last seen (`sudo macserver devices scan` looks again now) |
+| `macserver devices` | Every device on the local network by its full name: type, system, model, maker, last seen, and the watch's alerts |
+| `macserver devices 192.168.18.4` | Everything known about one device (an address, a hardware address or part of a name) |
+| `sudo macserver devices trust all` | Marks every device on the network now as yours; after that only new ones raise an alert (`trust <who>` for one) |
+| `sudo macserver devices name 192.168.18.4 "Den TV"` | Gives a device your own name (and marks it yours) |
+| `sudo macserver devices accept-router` | You replaced the router: accept its new hardware address |
 | `sudo macserver upgrade` | Installs the newest tested MacServer version now (it also updates itself) |
 
-**How the Mac names the devices on your network.** Every ten minutes it pings each address
-of its own network, then asks each device that answered what it is, the way network tools
-such as nmap and Bonjour browsers do: the router's DNS (the name a device gave when it
-joined the Wi-Fi), Bonjour/mDNS (an iPhone's or a speaker's name, its services and model),
-NetBIOS (a Windows PC's name), and the maker registered for the first half of its hardware
-address. A phone that uses a private Wi-Fi address and answers nothing shows as "private
-…ab:cd, phone or tablet": give it a name in the phone's own settings, or turn off its private
-address for your home network, and the next look picks the name up. Names are kept for a
-month while a device is away. The look runs as a throwaway user with no privileges, and the
-Mac still listens on nothing: each question is a single packet to one device and only its
-reply comes back.
+**The network watch: who is on your network.** The Mac keeps a list of every device on its
+own network and says exactly what each one is, so a stranger stands out. It works the way
+dedicated network-inventory tools (Fing, NetAlertX, nmap) do, and combines what every source says:
+
+- **It listens.** When a phone or laptop joins the Wi-Fi it asks the router for an address and
+  names itself ("iPhone", "Galaxy-S24", "DESKTOP-JQVC05U") and its system ("android-dhcp-14",
+  "MSFT 5.0"). Apple devices, speakers, TVs, printers and NASes announce themselves over Bonjour
+  and UPnP with their own names and exact model codes ("Mac14,2" is a MacBook Air M2; a Bambu
+  printer says "JC printer, model N2S", an A1). Windows PCs announce their names over NetBIOS.
+- **It asks**, every ten minutes: it pings every address, asks everyone (and each device in turn)
+  for its Bonjour services and UPnP description, and asks the router's DNS.
+- **It checks** ports that give a device away (an open 62078 is an iPhone or iPad, 8060 a Roku),
+  and every few days runs nmap's service scan on each device: open services and their versions,
+  certificate owners, Windows computer names.
+- **The maker** comes from the hardware address (the IEEE registry, kept offline).
+
+The strongest statement wins (a device's own model code beats a guess from its maker) and every
+device shows how sure the watch is (exact, likely, guess) and why. Phones and laptops that use a
+private Wi-Fi address and announce nothing can only be told apart by what they do; give one a name
+with `sudo macserver devices name <address> "<name>"`.
+
+**Its alerts** appear on the screen and the admin page, and as phone alerts:
+
+- **New device on your network**: something joined that was not there in the watch's first half
+  hour and that you have not marked as yours. Look at it (`macserver devices <address>`); if it is
+  yours, `sudo macserver devices trust <address>`. If not, change the Wi-Fi password and check the
+  router's list of clients.
+- **Another device is answering as your router**: a second hardware address claims the router's
+  address. That is how a man-in-the-middle (ARP spoofing) attack starts; it is also what a new
+  router looks like (`sudo macserver devices accept-router`).
+- **A second DHCP server**: only the router should hand out addresses.
+- **Telnet or Android debugging open** on a device, and **hundreds of new hardware addresses**
+  (someone flooding the network).
+
+Run `sudo macserver devices trust all` once, when you know everything on the list is yours.
+The watch only listens and asks: it opens no port, answers nothing and the firewall is unchanged.
 
 ### Backups on a USB drive
 

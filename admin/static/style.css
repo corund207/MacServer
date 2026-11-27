@@ -79,7 +79,7 @@ footer { padding: 10px 20px; border-top: 1px solid var(--line); color: var(--mut
 .panel .body { padding: 12px 14px 14px; }
 .panel .body.flush { padding: 0 0 4px; }
 .t-cpu { --t: var(--s1); } .t-mem { --t: var(--s4); } .t-net { --t: var(--s2); } .t-disk { --t: var(--s5); } .t-temp { --t: var(--s6); }
-.t-svc { --t: var(--s5); } .t-conn { --t: var(--s3); } .t-ok { --t: var(--ok); } .t-warn { --t: var(--warn); } .t-accent { --t: var(--accent); }
+.t-svc { --t: var(--s5); } .t-conn { --t: var(--s3); } .t-ok { --t: var(--ok); } .t-warn { --t: var(--warn); } .t-bad { --t: var(--bad); } .t-accent { --t: var(--accent); }
 .sub { color: var(--muted); font-size: 12.5px; margin-top: 10px; }
 @media (min-width: 760px) { .s6, .s5, .s4, .s3, .col.s4, .col.s6 { grid-column: span 6; } }
 @media (min-width: 1180px) {
@@ -143,6 +143,7 @@ tr.off td { color: var(--muted); }
 .state.bad { color: var(--bad); }
 .cellbar { display: inline-flex; align-items: center; gap: 8px; min-width: 120px; }
 .cellbar .track { width: 56px; flex: none; }
+.tag + .tag { margin-left: 4px; }
 .tag { display: inline-block; font: 700 11px/1.5 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; padding: 0 6px; border-radius: 2px;
   background: var(--surface-2); border: 1px solid var(--line); color: var(--muted); }
 .tag.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }

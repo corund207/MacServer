@@ -57,6 +57,7 @@ let latest = null;
 let lastSample = 0;
 const sorts = { procs: { key: 'cpu', dir: -1 }, svc: { key: 'mem', dir: -1 } };
 let openService = null;
+let openDevice = null;             // the device whose details are open on the Devices page
 const lastStates = {};             // each container's state at the last render, to light up a change
 
 function push(name, value) {
@@ -358,6 +359,11 @@ function notices(s) {
   const cool = coolingFault(h.sensors.cpu_temp_c, fans.length ? fans : h.sensors.fans_rpm);
   if (cool) add('bad', cool, 'sudo systemctl status macserver-fans');
   if (d.system && d.system.oom_kills) add('info', `${d.system.oom_kills} process(es) were killed for lack of memory since boot`, null);
+  const watch = (y.network || {}).lan_watch;
+  if (watch) {
+    for (const a of watch.alerts || []) add(a.level === 'bad' ? 'bad' : 'warn', a.title.charAt(0).toUpperCase() + a.title.slice(1), (a.fix || [])[0] || 'macserver devices');
+    if (watch.stale) add('warn', 'The network watch is not running: new devices are not being noticed', 'sudo systemctl restart macserver-devices');
+  }
   const exposed = (d.listeners || []).filter((p) => ['all', 'public', 'lan'].includes(p.scope));
   if (exposed.length) add('info', `${exposed.length} port(s) answer on the local network: ${exposed.map((p) => p.port).join(', ')}`, 'sudo ss -tlnp');
   return out;
@@ -700,27 +706,112 @@ function deviceRows(s, detailed) {
     }
   }
   if (lan.length) {
-    rows.push({ group: ['Local network', span(`  ${lan.length} seen${iface ? ` on ${iface}` : ''}`)] });
+    const fresh = lan.filter((d) => d.new).length;
+    rows.push({ group: ['Local network', span(`  ${lan.length} seen${iface ? ` on ${iface}` : ''}${fresh ? ` · ${fresh} new` : ''}`)] });
     for (const d of lan) {
-      const age = d.seen ? Date.now() / 1000 - d.seen : null;
-      const cells = [stateCell(d.name || d.mac, d.kind === 'router' ? 'info' : 'ok'), span(d.ip, 'mono'), d.kind || 'device', d.system || '',
-        age === null ? 'recent' : age < 900 ? 'now' : `${since(d.seen)} ago`];
-      if (detailed) cells.splice(4, 0, d.maker ? shortMaker(d.maker) : d.kind === 'private MAC' || parseInt(d.mac.slice(0, 2), 16) & 2 ? 'private address' : ''), cells.push('', '');
+      const cells = [stateCell(d.name || d.mac, deviceLevel(d)), span(d.ip, 'mono'), d.kind || 'device', d.system || '', seenText(d.seen)];
+      if (detailed) cells.splice(4, 0, modelMaker(d)), cells.push('', '');
       rows.push({ cells });
     }
   }
   return rows;
 }
 
+// A device's dot: red when it exposes something dangerous, amber while it is new and not marked yours.
+const deviceLevel = (d) => ((d.risks || []).some((r) => r.what === 'open' && r.level === 'bad') ? 'bad' : d.new ? 'warn' : d.kind === 'router' ? 'info' : 'ok');
+const seenText = (seen) => { const age = seen ? Date.now() / 1000 - seen : null; return age === null ? 'recent' : age < 900 ? 'now' : `${since(seen)} ago`; };
+const isPrivate = (d) => d.kind === 'private MAC' || (parseInt((d.mac || '00').slice(0, 2), 16) & 2) === 2;
+const modelMaker = (d) => [d.model && d.model !== d.name ? d.model : '', d.maker ? shortMaker(d.maker) : isPrivate(d) && !d.via ? 'private address' : ''].filter(Boolean).join(' · ');
+
 // "Nokia Solutions and Networks GmbH & Co. KG" -> "Nokia Solutions", "Intel Corporate" -> "Intel"
 const shortMaker = (maker) => maker.split(',')[0].split(/\s+/).filter((w) => !/^(inc|llc|ltd|limited|corp|corporate|corporation|co|gmbh)\.?$/i.test(w)).slice(0, 2).join(' ');
 const OS_NAMES = { windows: 'Windows', macOS: 'macOS', iOS: 'iOS', android: 'Android', linux: 'Linux' };
-const DEVICE_COLUMNS = [{ label: 'Device' }, { label: 'Address' }, { label: 'Type' }, { label: 'System' }, { label: 'Seen', align: 'r' }];
+const DEVICE_COLUMNS = [{ label: 'Device', wrap: true }, { label: 'Address' }, { label: 'Type' }, { label: 'System' }, { label: 'Seen', align: 'r' }];
 
 function renderDevices(s) {
   const y = sys(s), peers = (y.tailscale || {}).peers || [], lan = (y.network || {}).neighbours || [];
   $('devices-meta').textContent = `${peers.filter((p) => p.online).length} on the tailnet · ${lan.length} on the local network`;
   renderTable($('devices-table'), DEVICE_COLUMNS, deviceRows(s, false), {});
+}
+
+// ---- the network watch (admin/lan_devices.py): every device on the local network, exactly ---------------------
+
+const capital = (text) => text.charAt(0).toUpperCase() + text.slice(1);
+
+function deviceDetail(d) {
+  const who = d.ip || d.mac;
+  const when = (t) => (t ? new Date(t * 1000).toLocaleString() : '?');
+  const lines = [d.name || d.mac, `${d.kind || 'device'} (${d.confidence || 'unknown'})${d.system ? ` · ${d.system}` : ''}${d.model ? ` · ${d.model}` : ''}`,
+    `address ${(d.ips && d.ips.length ? d.ips : [d.ip]).join(', ')} · hardware ${d.mac}${d.maker ? ` (${d.maker})` : isPrivate(d) && !d.via ? ' (private, randomised)' : ''}`];
+  if (d.real_mac) lines.push(`real hardware address ${d.real_mac} (from its own Bonjour data)`);
+  if (d.via) lines.push(`reaches the network through an extender that gives its clients the address ${d.via}`);
+  lines.push(`first seen ${when(d.first_seen)} · last seen ${seenText(d.seen)} · ${d.trusted ? 'marked yours' : 'not marked yours'}`);
+  const part = (title, items) => { if (items.length) lines.push('', title, ...items.map((x) => `  ${x}`)); };
+  part('Names it gave', (d.names || []).map((n) => `${n.name}   (${n.source})`));
+  part('Open services', d.services && d.services.length ? d.services : (d.ports || []).length ? [(d.ports || []).join(', ')] : []);
+  part('Notes', (d.risks || []).map((r) => `[${r.level}] ${r.text}`));
+  part('How it was identified (strongest first)', (d.evidence || []).map((e) => `- ${e}`));
+  part('Commands (over SSH)', [`macserver devices ${who}`, `sudo macserver devices name ${who} "Kitchen speaker"`,
+    d.trusted ? `sudo macserver devices untrust ${who}` : `sudo macserver devices trust ${who}   (it is yours)`]);
+  return lines.join('\n');
+}
+
+function deviceStatus(d) {
+  const box = span(null);
+  if (d.new) box.append(tag('new', 'warn'));
+  if ((d.risks || []).some((r) => r.what === 'open' && r.level === 'bad')) box.append(tag('exposed', 'bad'));
+  else if ((d.risks || []).some((r) => r.what === 'open' && r.level === 'warn')) box.append(tag('check', 'warn'));
+  if (d.trusted) box.append(tag('yours', 'ok'));
+  if (['guess', 'unknown'].includes(d.confidence)) box.append(tag(d.confidence, 'info'));
+  return box;
+}
+
+function renderDevicesPage(s) {
+  const y = sys(s), net = y.network || {}, lan = net.neighbours || [], w = net.lan_watch;
+  const c = (w && w.counts) || {};
+  $('watch-meta').textContent = !w ? 'not running' : w.stale ? 'stopped' : w.capture ? 'listening' : 'asking only';
+  $('watch-panel').className = `panel s5 ${w && w.alerts.some((a) => a.level === 'bad') ? 't-bad' : w && w.alerts.length ? 't-warn' : 't-ok'}`;
+  const alerts = el('ul', null, 'list');
+  if (!w) alerts.append(el('li', 'The network watch has not reported yet (macserver-devices.service).', 'warn'));
+  else if (!w.alerts.length) alerts.append(el('li', 'No strangers, no spoofing: nothing on the network needs a look.', 'ok'));
+  for (const a of (w && w.alerts) || []) {
+    const li = el('li', null, a.level), box = el('div', capital(a.title));
+    box.append(el('small', a.why, 'hint'));
+    for (const f of a.fix || []) box.append(el('small', f, 'mono hint'));
+    li.append(box);
+    alerts.append(li);
+  }
+  put($('watch-body'), alerts, w ? kv([['On the network now', c.devices !== undefined ? `${c.devices} devices` : null], ['Identified', c.devices ? `${c.identified} of ${c.devices}` : null],
+    ['Marked yours', c.devices ? `${c.yours} of ${c.devices}` : null], ['New today', c.new ? `${c.new} (not yet marked yours)` : 'none', c.new ? 'warn' : ''],
+    ['Exposing a risky service', c.exposed ? String(c.exposed) : 'none', c.exposed ? 'warn' : ''],
+    ['Listening', w.capture ? `yes, on ${w.iface || '?'}` : 'no: asking only, joins can be missed', w.capture ? '' : 'warn'],
+    ['Last look', w.looked ? `${since(w.looked)} ago` : 'not yet'], ['Network', w.network], ['Router hardware', w.gateway_mac, 'mono']]) : null,
+    el('p', 'Mark your own devices once: sudo macserver devices trust all. After that, anything new raises an alert here, on the screen and on your phone.', 'sub'));
+
+  const events = (w && w.events) || [];
+  $('watch-events-meta').textContent = events.length ? `last ${events.length}` : '';
+  const ev = [];
+  for (const e of [...events].reverse()) {
+    const li = el('li', null, e.level === 'bad' ? 'bad' : e.level === 'warn' ? 'warn' : 'info');
+    const box = el('div', e.text);
+    box.append(el('small', e.at ? new Date(e.at * 1000).toLocaleString() : '', 'hint'));
+    li.append(box);
+    ev.push(li);
+  }
+  put($('watch-events'), ...(ev.length ? ev : [el('li', 'Nothing has changed since the watch started.', 'ok')]));
+
+  $('lan-meta').textContent = lan.length ? `${lan.length} devices${c.new ? ` · ${c.new} new` : ''} · click one for everything known about it` : '';
+  renderTable($('lan-table'), [{ label: 'Device', wrap: true }, { label: 'Type', wrap: true }, { label: 'System' }, { label: 'Model · maker', wrap: true }, { label: 'Address' },
+    { label: 'Open ports', wrap: true }, { label: 'Seen', align: 'r' }, { label: 'Status' }],
+    lan.map((d) => {
+      const key = d.key || d.mac;
+      return { cells: [stateCell(d.name || d.mac, deviceLevel(d)), d.kind || 'device', d.system || '', modelMaker(d), span(d.ip, 'mono'),
+        (d.ports || []).join(' '), seenText(d.seen), deviceStatus(d)],
+      detail: openDevice === key ? deviceDetail(d) : null,
+      onClick: () => { openDevice = openDevice === key ? null : key; if (latest) render(latest); } };
+    }), {});
+  $('lan-note').textContent = 'Names come from what each device announces (Bonjour, UPnP, DHCP, NetBIOS) and from nmap; a device that announces nothing is named by its maker and its open ports. '
+    + 'Give one your own name with sudo macserver devices name <address> "<name>".';
 }
 
 // ---- hardware -----------------------------------------------------------------------------------------------
@@ -821,7 +912,7 @@ function renderNetworkPage(s) {
   const ts = y.tailscale || {};
   const peers = ts.peers || [];
   $('tailnet-meta').textContent = peers.length ? `${peers.filter((p) => p.online).length} of ${peers.length} online${ts.version ? ` · Tailscale ${ts.version}` : ''}` : '';
-  renderTable($('tailnet-table'), [...DEVICE_COLUMNS.slice(0, 4), { label: 'Maker or link', wrap: true }, DEVICE_COLUMNS[4], { label: 'Received', align: 'r' }, { label: 'Sent', align: 'r' }],
+  renderTable($('tailnet-table'), [...DEVICE_COLUMNS.slice(0, 4), { label: 'Model, maker or link', wrap: true }, DEVICE_COLUMNS[4], { label: 'Received', align: 'r' }, { label: 'Sent', align: 'r' }],
     deviceRows(s, true), {});
   const notes = el('ul', null, 'list plain');
   for (const hn of ts.health || []) notes.append(el('li', hn, 'warn'));
@@ -928,6 +1019,7 @@ function render(s) {
   if (page === 'overview') { run(renderCpu); run(renderMem); run(renderNet); run(renderStorage); run(renderOverviewServices); run(renderDevices); run(renderStatus); run(renderConnect); }
   if (page === 'hardware') run(renderHardware);
   if (page === 'network') run(renderNetworkPage);
+  if (page === 'devices') run(renderDevicesPage);
   if (page === 'services') run(renderServicesPage);
   renderClaude(s.claude, s.tailscale.name);
 }
@@ -1070,7 +1162,7 @@ function pulse() {
 
 // ---- pages --------------------------------------------------------------------------------------------------
 
-const TABS = ['overview', 'hardware', 'network', 'services', 'terminal', 'dev'];
+const TABS = ['overview', 'hardware', 'network', 'devices', 'services', 'terminal', 'dev'];
 let currentTab = 'overview';
 
 function moveInk() {
@@ -1109,7 +1201,7 @@ $('tabs').addEventListener('keydown', (e) => {          // arrow keys move betwe
 });
 document.addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey || /^(INPUT|SELECT|TEXTAREA)$/.test((e.target || {}).tagName || '')) return;
-  const i = ['1', '2', '3', '4', '5', '6'].indexOf(e.key);
+  const i = ['1', '2', '3', '4', '5', '6', '7'].indexOf(e.key);
   if (i >= 0) showTab(TABS[i]);
 });
 $('term-frame').addEventListener('load', () => { $('term-frame').contentWindow.postMessage('focus', location.origin); });

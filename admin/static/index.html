@@ -18,9 +18,10 @@
     <button type="button" role="tab" id="tab-overview" data-tab="overview" aria-controls="view-overview" aria-selected="true"><span class="key">1</span>Overview</button>
     <button type="button" role="tab" id="tab-hardware" data-tab="hardware" aria-controls="view-hardware" aria-selected="false"><span class="key">2</span>Hardware</button>
     <button type="button" role="tab" id="tab-network" data-tab="network" aria-controls="view-network" aria-selected="false"><span class="key">3</span>Network</button>
-    <button type="button" role="tab" id="tab-services" data-tab="services" aria-controls="view-services" aria-selected="false"><span class="key">4</span>Services</button>
-    <button type="button" role="tab" id="tab-terminal" data-tab="terminal" aria-controls="view-terminal" aria-selected="false"><span class="key">5</span>Terminal</button>
-    <button type="button" role="tab" id="tab-dev" data-tab="dev" aria-controls="view-dev" aria-selected="false"><span class="key">6</span>Tools</button>
+    <button type="button" role="tab" id="tab-devices" data-tab="devices" aria-controls="view-devices" aria-selected="false"><span class="key">4</span>Devices</button>
+    <button type="button" role="tab" id="tab-services" data-tab="services" aria-controls="view-services" aria-selected="false"><span class="key">5</span>Services</button>
+    <button type="button" role="tab" id="tab-terminal" data-tab="terminal" aria-controls="view-terminal" aria-selected="false"><span class="key">6</span>Terminal</button>
+    <button type="button" role="tab" id="tab-dev" data-tab="dev" aria-controls="view-dev" aria-selected="false"><span class="key">7</span>Tools</button>
   </nav>
   <div class="top-right">
     <span id="summary" class="chip" role="status">Loading…</span>
@@ -89,6 +90,17 @@
       <section class="panel s12 t-net"><header><h2>Interfaces</h2><span class="meta" id="ifaces-meta"></span></header>
         <div class="body flush"><div class="scroll"><table id="iface-table"><thead></thead><tbody></tbody></table></div></div></section>
       <section class="panel s12 t-warn"><header><h2>Problems found in the logs</h2><span class="meta" id="problems-meta"></span></header><div class="body"><ul class="list" id="problems"></ul></div></section>
+    </div>
+  </div>
+
+  <!-- DEVICES: the network watch: every device on the local network, exactly, and what deserves a look -->
+  <div id="view-devices" class="view" role="tabpanel" aria-labelledby="tab-devices" hidden>
+    <div class="grid">
+      <section class="panel s5 t-warn" id="watch-panel"><header><h2>Network watch</h2><span class="meta" id="watch-meta"></span></header><div class="body" id="watch-body"></div></section>
+      <section class="panel s7 t-conn"><header><h2>Recent changes</h2><span class="meta" id="watch-events-meta"></span></header><div class="body"><ul class="list" id="watch-events"></ul></div></section>
+      <section class="panel s12 t-conn"><header><h2>Every device on the local network</h2><span class="meta" id="lan-meta"></span></header>
+        <div class="body flush"><div class="scroll"><table id="lan-table"><thead></thead><tbody></tbody></table></div>
+          <p class="sub body" id="lan-note"></p></div></section>
     </div>
   </div>
 
@@ -183,6 +195,6 @@
     </div>
   </div>
 </main>
-<footer><span id="viewer"></span> <span class="muted">· keys 1 to 6 switch page</span></footer>
+<footer><span id="viewer"></span> <span class="muted">· keys 1 to 7 switch page</span></footer>
 </body>
 </html>
