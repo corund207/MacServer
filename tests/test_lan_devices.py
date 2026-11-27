@@ -498,7 +498,8 @@ class WatchTests(unittest.TestCase):
         (self.proc / "net/arp").write_text(ARP + f"192.168.18.21    0x1  0x2  {EXTENDER}  *  wlp2s0\n"
                                                  f"192.168.18.41    0x1  0x2  {EXTENDER}  *  wlp2s0\n")
         state = {"devices": {}, "baseline_until": 0}
-        state["devices"][EXTENDER] = {"key": EXTENDER, "mac": EXTENDER, "ip": "192.168.18.21", "ips": ["192.168.18.21"], "obs": {},
+        mixed = {"mdns": {"services": ["_matter._tcp", "_spotify-connect._tcp"], "at": 400}}  # an Echo's, heard as the extender
+        state["devices"][EXTENDER] = {"key": EXTENDER, "mac": EXTENDER, "ip": "192.168.18.21", "ips": ["192.168.18.21"], "obs": mixed,
                                       "first_seen": 500, "last_seen": 500, "baseline": True}      # known before as one device
         self.sweep = lambda addresses: {"192.168.18.21": 64, "192.168.18.41": 128}
         state = self.look(state, 1000)
@@ -507,6 +508,8 @@ class WatchTests(unittest.TestCase):
         for key in keys:
             self.assertTrue(state["devices"][key]["baseline"])           # still the household, not two new devices
             self.assertEqual(state["devices"][key]["via"], EXTENDER)
+            self.assertNotIn("_matter._tcp", state["devices"][key]["obs"].get("mdns", {}).get("services", []))  # no one inherits it
+            self.assertNotIn("Echo", state["devices"][key]["kind"])
         self.assertFalse([a for a in state["alerts"] if EXTENDER in a["title"]])
 
     def test_the_capture_spots_an_extender_by_its_alternating_addresses(self):
@@ -550,9 +553,22 @@ class WatchTests(unittest.TestCase):
     def test_a_list_from_the_first_version_becomes_the_household(self):
         old = {"devices": {ROKU: {"ip": "192.168.18.4", "first_seen": 5, "last_seen": 9, "maker": "Roku, Inc", "label": "Roku …b6:38"}}}
         state = lan.migrate(old, 1000)
-        self.assertEqual(state["version"], 2)
+        self.assertEqual(state["version"], 3)
         self.assertTrue(state["devices"][ROKU]["baseline"])
         self.assertEqual(state["devices"][ROKU]["first_seen"], 5)
+        self.assertIs(lan.migrate(state, 2000), state)
+        self.assertEqual(state["baseline_until"], 1000 + lan.BASELINE_S)
+
+    def test_version_2_splits_forget_what_they_inherited(self):
+        echo = {"mdns": {"services": ["_matter._tcp"]}, "nmap": {"at": 5}}
+        old = {"version": 2, "baseline_until": 7, "devices": {
+            f"{EXTENDER}@192.168.18.250": {"key": f"{EXTENDER}@192.168.18.250", "ip": "192.168.18.250", "obs": echo, "first_seen": 3},
+            ROKU: {"key": ROKU, "ip": "192.168.18.4", "obs": {"ssdp": {"server": "Roku"}}, "first_seen": 4}}}
+        state = lan.migrate(old, 1000)
+        self.assertEqual((state["version"], state["baseline_until"]), (3, 7))
+        self.assertEqual(state["devices"][f"{EXTENDER}@192.168.18.250"]["obs"], {})
+        self.assertEqual(state["devices"][f"{EXTENDER}@192.168.18.250"]["first_seen"], 3)
+        self.assertEqual(state["devices"][ROKU]["obs"], {"ssdp": {"server": "Roku"}})   # a device on its own address keeps everything
 
     def test_state_round_trip(self):
         path = Path(self.tmp.name) / "state" / "devices.json"

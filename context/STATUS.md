@@ -1352,3 +1352,9 @@ identification from the real devices, baseline/new/trust, spoofing, rogue DHCP, 
 flooding, migration, CLI, unit sandboxing, no listening socket); collector merge and `lan_watch`; screen
 incidents and widths. Not verified: a real join alert on the phone; Fingerbank (optional, not built: it needs
 an account key and keeps what is sent).
+
+Follow-up (same day, after 172ba32 self-updated on the Mac: the watch active, listening on wlp2s0 as a dynamic user with
+only cap_net_raw, 20 MB, 28 devices, 0 alerts, the timer gone): the extender at .250 showed as "likely an Amazon Echo".
+Before an extender is detected every device behind it is heard under its one MAC, so the single record gathered the
+Echo's Bonjour services, and the split handed them to the IP that record last had. Now a split starts each IP empty
+(the same look asks each one again), and state version 3 clears the split records a version 2 watch kept.

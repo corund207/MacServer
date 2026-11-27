@@ -916,7 +916,10 @@ def event(state, now, level, text):
 
 def mark_shared(state, mac, ips, now):
     """One hardware address answering from several live IPs: an extender's MAC translation. Its old
-    single record is split into one per IP (keeping when it was first seen, and whether it is new)."""
+    single record is split into one per IP (keeping when it was first seen, and whether it is new). What
+    the old record learned is dropped: it came from every device behind the extender at once, so no one
+    IP can be given it (an Echo's Bonjour services would make the extender an Echo). The same look asks
+    each IP again."""
     if not usable_mac(mac) or mac == state.get("my_mac"):
         return
     shared = state.setdefault("shared_macs", {})
@@ -931,8 +934,6 @@ def mark_shared(state, mac, ips, now):
                 d = ensure(state, mac, ip, now)
                 if d:
                     d.update(first_seen=old.get("first_seen", now), baseline=old.get("baseline"), new_at=old.get("new_at"))
-                    if ip == old.get("ip"):
-                        d["obs"] = old.get("obs", {})
 
 
 def note_ip(state, recent, mac, ip, now):
@@ -1751,8 +1752,15 @@ def probe(ip, gateway):
 
 
 def migrate(state, now):
-    """A list from the first version (a timer and no listening): keep its devices as the household."""
+    """A list from the first version (a timer and no listening): keep its devices as the household. In
+    version 2 a split behind an extender kept what the shared record had learned from every device behind
+    it: those records start again (the next look asks each one)."""
     if state.get("version") == 2:
+        for key, d in (state.get("devices") or {}).items():
+            if "@" in key and isinstance(d, dict):
+                d["obs"] = {}
+        state["version"] = 3
+    if state.get("version") == 3:
         return state
     devices = {}
     for mac, d in (state.get("devices") or {}).items():
@@ -1761,7 +1769,7 @@ def migrate(state, now):
                             "first_seen": d.get("first_seen", now), "last_seen": d.get("last_seen", now), "baseline": True,
                             "ttl": d.get("ttl"), "maker": d.get("maker", ""), "obs": {}}
     state.clear()
-    state.update(version=2, devices=devices, baseline_until=now + BASELINE_S)
+    state.update(version=3, devices=devices, baseline_until=now + BASELINE_S)
     return state
 
 
